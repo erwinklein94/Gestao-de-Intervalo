@@ -464,10 +464,10 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .time-pair span { color: var(--muted); }
 .realized-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .realized-duration { display: block; margin-top: 9px; color: var(--muted); font-size: 9px; }
-.time-entry { position: relative; }
-.time-entry label { display: grid; gap: 5px; color: var(--blue); font-size: 10px; font-weight: 700; }
-.time-entry input { padding-right: 58px; background: var(--white); }
-.now-button { position: absolute; right: 5px; bottom: 5px; height: 34px; padding: 0 8px; border: 0; border-radius: 5px; background: var(--green); color: var(--white); cursor: pointer; font-size: 9px; font-weight: 700; }
+.time-entry { display: grid; grid-template-columns: minmax(112px, 1fr) auto; gap: 6px; align-items: end; min-width: 0; }
+.time-entry label { min-width: 0; display: grid; gap: 5px; color: var(--blue); font-size: 10px; font-weight: 700; }
+.time-entry input { min-width: 0; padding: 0 10px; background: var(--white); color: var(--ink); }
+.now-button { position: static; min-width: 48px; height: 44px; padding: 0 8px; border: 0; border-radius: 7px; background: var(--green); color: var(--white); cursor: pointer; font-size: 9px; font-weight: 700; }
 .notes-block textarea { min-height: 96px; }
 .execution-notes { padding-bottom: 26px; }
 .execution-notes .field { margin: 20px 28px 0; }
