@@ -621,29 +621,6 @@
       }
     });
 
-    $("#import-input").addEventListener("change", async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      try {
-        const data = JSON.parse(await file.text());
-        const imported = data.plan || data;
-        if (!imported || !Array.isArray(imported.steps)) throw new Error("Formato inválido");
-        normalizePlan(imported);
-        imported.id = uid();
-        imported.title = `${imported.title || "Plano importado"} — importado`;
-        imported.steps.forEach((step) => { step.id = uid(); });
-        store.plans.push(imported);
-        store.activePlanId = imported.id;
-        persist(true);
-        renderForm();
-        showToast("Plano importado com sucesso.");
-      } catch (error) {
-        showToast("Não foi possível importar este arquivo.");
-      } finally {
-        event.target.value = "";
-      }
-    });
-
     renderForm();
   }
 

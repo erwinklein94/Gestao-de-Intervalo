@@ -378,8 +378,6 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 }
 .data-tools > div:first-child { display: grid; gap: 3px; }
 .data-tools strong { color: var(--blue); font-size: 12px; }
-.file-button { position: relative; overflow: hidden; }
-.file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
 .confirm-dialog { max-width: 520px; padding: 0; border: 0; border-radius: 18px; box-shadow: 0 30px 90px rgba(0,38,68,.28); }
 .confirm-dialog::backdrop { background: rgba(0,35,62,.7); backdrop-filter: blur(3px); }
