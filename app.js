@@ -15,6 +15,9 @@
   let currentProfile = null;
   let cloudTimer;
   let cloudSyncing = false;
+  let cloudSyncPending = false;
+  let localRevision = 0;
+  let pageInitialized = false;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -150,17 +153,14 @@
   function persist(immediate = false) {
     const plan = activePlan();
     if (plan) plan.updatedAt = new Date().toISOString();
-    const save = () => {
-      localStorage.setItem(activeStorageKey, JSON.stringify(store));
-      const state = $("#save-state");
-      if (state) state.textContent = currentUser ? "Salvo na nuvem" : "Salvo neste dispositivo";
-      scheduleCloudSync(immediate);
-    };
+    store.pendingSync = Boolean(currentUser);
+    localRevision += 1;
+    localStorage.setItem(activeStorageKey, JSON.stringify(store));
     const state = $("#save-state");
     if (state) state.textContent = "Salvando…";
     clearTimeout(saveTimer);
-    if (immediate) save();
-    else saveTimer = setTimeout(save, 260);
+    if (immediate) scheduleCloudSync(true);
+    else saveTimer = setTimeout(() => scheduleCloudSync(false), 260);
   }
 
   function planToDatabase(plan) {
@@ -216,7 +216,9 @@
   }
 
   function scheduleCloudSync(immediate = false) {
-    if (!cloudClient || !currentUser || cloudSyncing) return;
+    if (!cloudClient || !currentUser) return;
+    cloudSyncPending = true;
+    if (cloudSyncing) return;
     clearTimeout(cloudTimer);
     cloudTimer = setTimeout(syncStoreToCloud, immediate ? 0 : 700);
   }
@@ -224,6 +226,8 @@
   async function syncStoreToCloud() {
     if (!cloudClient || !currentUser || cloudSyncing) return;
     cloudSyncing = true;
+    cloudSyncPending = false;
+    const syncingRevision = localRevision;
     const state = $("#save-state");
     if (state) state.textContent = "Salvando na nuvem…";
     try {
@@ -262,14 +266,21 @@
           if (stepError) throw stepError;
         }
       }
-      localStorage.setItem(activeStorageKey, JSON.stringify(store));
-      if (state) state.textContent = "Salvo na nuvem";
+      if (syncingRevision === localRevision && !cloudSyncPending) {
+        store.pendingSync = false;
+        localStorage.setItem(activeStorageKey, JSON.stringify(store));
+        if (state) state.textContent = "Salvo na nuvem";
+      }
     } catch (error) {
       console.error("Falha ao salvar no Supabase.", error);
       if (state) state.textContent = "Falha ao salvar na nuvem";
       showToast("Não foi possível salvar na nuvem. Os dados continuam neste dispositivo.");
     } finally {
       cloudSyncing = false;
+      if (cloudSyncPending || syncingRevision !== localRevision) {
+        clearTimeout(cloudTimer);
+        cloudTimer = setTimeout(syncStoreToCloud, 0);
+      }
     }
   }
 
@@ -637,7 +648,7 @@
       form.elements.title.focus();
     });
 
-    $("#example-plan-button").addEventListener("click", () => {
+    $("#example-plan-button")?.addEventListener("click", () => {
       const existingExample = store.plans.find((plan) => plan.isExample);
       if (existingExample) {
         store.activePlanId = existingExample.id;
@@ -1181,12 +1192,17 @@
     const plans = allowedData.map(databaseToPlan);
     const activeId = plans.some((plan) => plan.id === store.activePlanId) ? store.activePlanId : plans[0].id;
     store = { version: 2, activePlanId: activeId, plans };
+    store.pendingSync = false;
     localStorage.setItem(activeStorageKey, JSON.stringify(store));
-    const cloudLoadedKey = `gestaoIntervaloRumo.cloudLoaded.${currentUser.id}`;
-    if (sessionStorage.getItem(cloudLoadedKey) !== "yes") {
-      sessionStorage.setItem(cloudLoadedKey, "yes");
-      location.reload();
-    }
+  }
+
+  function initializeCurrentPage() {
+    if (pageInitialized) return;
+    pageInitialized = true;
+    if (page === "planning") planningPage();
+    if (page === "execution") executionPage();
+    if (page === "dashboard") dashboardPage();
+    if (page === "account") accountPage();
   }
 
   async function initializeCloud() {
@@ -1218,27 +1234,44 @@
       location.replace("login.html?status=disabled");
       return;
     }
+
+    activeStorageKey = `${STORAGE_KEY}.${currentUser.id}`;
+    const hasUserStore = Boolean(localStorage.getItem(activeStorageKey));
+    if (hasUserStore) {
+      store = loadStore();
+    } else if (currentProfile.role === "editor" && localStorage.getItem(STORAGE_KEY)) {
+      // Migra com segurança os dados da versão anterior, que ainda usava uma chave local única.
+      store.pendingSync = true;
+      localStorage.setItem(activeStorageKey, JSON.stringify(store));
+    } else {
+      const first = blankPlan();
+      store = { version: 2, activePlanId: first.id, plans: [first], pendingSync: false };
+      localStorage.setItem(activeStorageKey, JSON.stringify(store));
+    }
+
     if (currentProfile.role !== "editor") {
       $("#example-plan-button")?.remove();
       const hadExamples = store.plans.some((plan) => plan.isExample);
       store.plans = store.plans.filter((plan) => !plan.isExample);
       if (!store.plans.length) store.plans = [blankPlan()];
       if (!store.plans.some((plan) => plan.id === store.activePlanId)) store.activePlanId = store.plans[0].id;
+      if (hadExamples) store.pendingSync = true;
       localStorage.setItem(activeStorageKey, JSON.stringify(store));
-      if (hadExamples) {
-        location.reload();
-        return;
-      }
     }
-    document.documentElement.classList.remove("auth-checking");
     if (state) state.textContent = "Sincronizando…";
     try {
-      await loadCloudStore();
-      if (state) state.textContent = "Salvo na nuvem";
-      if (page === "account") accountPage();
+      if (store.pendingSync) {
+        cloudSyncPending = true;
+        await syncStoreToCloud();
+      }
+      if (!store.pendingSync) await loadCloudStore();
+      if (state) state.textContent = store.pendingSync ? "Pendente de sincronização" : "Salvo na nuvem";
     } catch (error) {
       console.error("Falha ao carregar dados do Supabase.", error);
       if (state) state.textContent = "Falha na sincronização";
+    } finally {
+      document.documentElement.classList.remove("auth-checking");
+      initializeCurrentPage();
     }
   }
 
@@ -1317,8 +1350,12 @@
   }
 
   initializeTheme();
-  if (page === "planning") planningPage();
-  if (page === "execution") executionPage();
-  if (page === "dashboard") dashboardPage();
+  window.addEventListener("online", () => {
+    if (store.pendingSync) scheduleCloudSync(true);
+  });
+  window.addEventListener("pagehide", () => {
+    clearTimeout(saveTimer);
+    if (store.pendingSync) scheduleCloudSync(true);
+  });
   initializeCloud();
 })();

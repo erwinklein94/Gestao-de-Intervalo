@@ -18,6 +18,8 @@ Todas as áreas operacionais são protegidas por autenticação. Usuários sem s
 
 Os dados locais são separados por usuário. A carga demonstrativa e o botão `Exemplo` são exclusivos do perfil editor; coordenadores não recebem exemplos e também são impedidos pelo RLS de gravar planos demonstrativos.
 
+Toda alteração de planejamento ou execução é gravada imediatamente no dispositivo e colocada em uma fila de sincronização com o Supabase. Se o usuário trocar de página, recarregar o site ou perder a conexão durante o salvamento, a versão local pendente é preservada e reenviada antes de qualquer leitura da nuvem, evitando que dados recentes sejam substituídos por uma versão anterior.
+
 O dashboard possui exportação em PDF por meio da impressão preparada do navegador, incluindo indicadores, gráficos e tabela operacional em formato A4 paisagem.
 
 ## Publicação
