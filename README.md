@@ -12,6 +12,8 @@ Aplicação web estática para planejar e acompanhar intervalos de manutenção 
 
 Os dados ficam no `localStorage` do navegador nesta primeira etapa. A tela de planejamento exporta um relatório Excel `.xlsx` com Programado x Realizado e mantém a importação JSON para restauração de planos. Essa camada foi isolada no início de `app.js` para facilitar a futura substituição por Supabase.
 
+O site possui temas claro e escuro. O tema claro é o padrão inicial, e a escolha do usuário fica memorizada no dispositivo.
+
 ## Publicação
 
 O workflow em `.github/workflows/deploy-pages.yml` publica todo push na branch `main` usando GitHub Pages via Actions.

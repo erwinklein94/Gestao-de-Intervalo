@@ -2,6 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "gestaoIntervaloRumo.v1";
+  const THEME_KEY = "gestaoIntervaloRumo.theme";
   const page = document.body.dataset.page;
   let store = loadStore();
   let saveTimer;
@@ -9,6 +10,38 @@
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+  function initializeTheme() {
+    let theme = "light";
+    try {
+      theme = localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
+    } catch (error) {
+      console.warn("Não foi possível ler a preferência de tema.", error);
+    }
+
+    function applyTheme(nextTheme) {
+      const isDark = nextTheme === "dark";
+      document.documentElement.dataset.theme = isDark ? "dark" : "light";
+      document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+      $$('[data-theme-toggle]').forEach((button) => {
+        button.setAttribute("aria-pressed", String(isDark));
+        button.setAttribute("aria-label", isDark ? "Ativar tema claro" : "Ativar tema escuro");
+        $("span", button).textContent = isDark ? "☀" : "☾";
+        $("b", button).textContent = isDark ? "Tema claro" : "Tema escuro";
+      });
+    }
+
+    applyTheme(theme);
+    $$('[data-theme-toggle]').forEach((button) => button.addEventListener("click", () => {
+      theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem(THEME_KEY, theme);
+      } catch (error) {
+        console.warn("Não foi possível salvar a preferência de tema.", error);
+      }
+      applyTheme(theme);
+    }));
+  }
 
   function uid() {
     return (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -938,6 +971,7 @@
     render();
   }
 
+  initializeTheme();
   if (page === "planning") planningPage();
   if (page === "execution") executionPage();
   if (page === "dashboard") dashboardPage();
