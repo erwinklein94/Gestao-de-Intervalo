@@ -170,18 +170,20 @@
       }
       if (end != null && start != null) while (end <= start) end += 1440;
       if (start != null) previousStart = start;
-      let actualStart = nearestDay(timeToMinutes(step.actualStart), start);
-      let actualEnd = nearestDay(timeToMinutes(step.actualEnd), end);
-      if (actualStart != null && actualEnd != null) while (actualEnd < actualStart) actualEnd += 1440;
+      let actualStartMinutes = nearestDay(timeToMinutes(step.actualStart), start);
+      let actualEndMinutes = nearestDay(timeToMinutes(step.actualEnd), end);
+      if (actualStartMinutes != null && actualEndMinutes != null) {
+        while (actualEndMinutes < actualStartMinutes) actualEndMinutes += 1440;
+      }
       return {
         ...step,
         index,
         start,
         end,
         duration: start != null && end != null ? end - start : null,
-        actualStart,
-        actualEnd,
-        actualDuration: actualStart != null && actualEnd != null ? actualEnd - actualStart : null
+        actualStartMinutes,
+        actualEndMinutes,
+        actualDuration: actualStartMinutes != null && actualEndMinutes != null ? actualEndMinutes - actualStartMinutes : null
       };
     });
     return { windowStart, windowEnd, duration: windowStart != null && windowEnd != null ? windowEnd - windowStart : null, steps };
@@ -559,23 +561,27 @@
 
     function getStatus() {
       const timeline = buildTimeline(plan);
-      const completed = timeline.steps.filter((step) => step.actualEnd != null);
+      const completed = timeline.steps.filter((step) => step.actualEndMinutes != null);
       const candidates = [];
       timeline.steps.forEach((step) => {
-        if (step.actualStart != null) candidates.push({ actual: step.actualStart, planned: step.start, type: "início", step });
-        if (step.actualEnd != null) candidates.push({ actual: step.actualEnd, planned: step.end, type: "fim", step });
+        if (step.actualStartMinutes != null) candidates.push({ actual: step.actualStartMinutes, planned: step.start, type: "início", step });
+        if (step.actualEndMinutes != null) candidates.push({ actual: step.actualEndMinutes, planned: step.end, type: "fim", step });
       });
       candidates.sort((a, b) => a.actual - b.actual);
       let milestone = candidates.at(-1) || null;
       let diff = milestone ? milestone.actual - milestone.planned : null;
-      const active = timeline.steps.find((step) => step.actualStart != null && step.actualEnd == null);
+      const active = timeline.steps
+        .filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null)
+        .sort((a, b) => a.actualStartMinutes - b.actualStartMinutes)
+        .at(-1) || null;
       const nowAbs = currentAbsolute(timeline);
       if (active && nowAbs != null && active.end != null && nowAbs > active.end) {
         const liveDelay = nowAbs - active.end;
-        if (diff == null || liveDelay > diff) diff = liveDelay;
+        diff = liveDelay;
+        milestone = { actual: nowAbs, planned: active.end, type: "andamento", step: active };
       }
       if (completed.length === timeline.steps.length && timeline.steps.length && timeline.windowEnd != null) {
-        const lastActual = Math.max(...completed.map((step) => step.actualEnd));
+        const lastActual = Math.max(...completed.map((step) => step.actualEndMinutes));
         diff = lastActual - timeline.windowEnd;
         milestone = { actual: lastActual, planned: timeline.windowEnd, type: "encerramento", step: completed.at(-1) };
       }
@@ -583,29 +589,29 @@
     }
 
     function varianceLabel(step) {
-      if (step.actualEnd != null && step.end != null) return step.actualEnd - step.end;
-      if (step.actualStart != null && step.start != null) return step.actualStart - step.start;
+      if (step.actualEndMinutes != null && step.end != null) return step.actualEndMinutes - step.end;
+      if (step.actualStartMinutes != null && step.start != null) return step.actualStartMinutes - step.start;
       return null;
     }
 
     function renderSteps() {
       const status = getStatus();
-      const firstPending = status.timeline.steps.find((step) => step.actualEnd == null);
+      const firstPending = status.timeline.steps.find((step) => step.actualEndMinutes == null);
       root.innerHTML = status.timeline.steps.map((step, index) => {
         const variance = varianceLabel(step);
         const durationVariance = step.actualDuration != null && step.duration != null ? step.actualDuration - step.duration : null;
         const realizedDurationText = step.actualDuration == null
           ? "Duração calculada ao informar início e fim"
           : `Duração realizada: ${formatMinutes(step.actualDuration)}${durationVariance === 0 ? " · igual ao previsto" : ` · ${durationVariance > 0 ? "+" : "−"}${formatMinutes(durationVariance)} vs. previsto`}`;
-        const stateClass = step.actualEnd != null ? "is-complete" : firstPending?.id === step.id ? "is-active" : "";
+        const stateClass = step.actualEndMinutes != null ? "is-complete" : firstPending?.id === step.id ? "is-active" : "";
         const varianceClass = variance == null ? "" : variance > 0 ? "delay" : variance < 0 ? "ahead" : "";
         const varianceText = variance == null ? "Aguardando" : variance > 0 ? `+${Math.round(variance)} min` : variance < 0 ? `${Math.round(variance)} min` : "No horário";
         return `<article class="execution-step ${stateClass}" data-step-id="${step.id}">
           <header class="execution-step-header">
-            <span class="execution-index">${step.actualEnd != null ? "✓" : String(index + 1).padStart(2, "0")}</span>
+            <span class="execution-index">${step.actualEndMinutes != null ? "✓" : String(index + 1).padStart(2, "0")}</span>
             <div class="execution-step-title">
               <h3>${escapeHtml(step.name || `Etapa ${index + 1}`)}</h3>
-              <span>${step.actualEnd != null ? "Etapa concluída" : step.actualStart != null ? "Em andamento" : "Aguardando início"}</span>
+              <span>${step.actualEndMinutes != null ? "Etapa concluída" : step.actualStartMinutes != null ? "Em andamento" : "Aguardando início"}</span>
             </div>
             <span class="step-variance ${varianceClass}">${varianceText}</span>
           </header>
@@ -651,7 +657,9 @@
         $("#status-description").textContent = "Preencha o primeiro horário realizado para iniciar o acompanhamento.";
       } else if (rounded > 1) {
         $("#status-label").textContent = `Intervalo atrasado em ${Math.abs(rounded)} minutos`;
-        $("#status-description").textContent = milestone ? `Comparação pelo ${milestone.type} de “${milestone.step.name}”.` : "Atraso em relação ao cronograma.";
+        $("#status-description").textContent = milestone?.type === "andamento"
+          ? `A etapa “${milestone.step.name}” ainda está em andamento após o fim programado.`
+          : milestone ? `Comparação pelo ${milestone.type} de “${milestone.step.name}”.` : "Atraso em relação ao cronograma.";
       } else if (rounded < -1) {
         $("#status-label").textContent = `Intervalo adiantado em ${Math.abs(rounded)} minutos`;
         $("#status-description").textContent = milestone ? `Comparação pelo ${milestone.type} de “${milestone.step.name}”.` : "Adiantamento em relação ao cronograma.";
@@ -664,14 +672,14 @@
       $("#metric-duration").textContent = timeline.duration == null ? "Janela não definida" : `${formatMinutes(timeline.duration)} de janela`;
       $("#metric-progress").textContent = `${completed.length} / ${timeline.steps.length}`;
       $("#progress-bar").style.width = timeline.steps.length ? `${(completed.length / timeline.steps.length) * 100}%` : "0%";
-      const current = active || timeline.steps.find((step) => step.actualEnd == null);
+      const current = active || timeline.steps.find((step) => step.actualEndMinutes == null);
       $("#metric-current").textContent = current?.name || (timeline.steps.length && completed.length === timeline.steps.length ? "Concluído" : "Aguardando");
       $("#metric-current-time").textContent = active ? `Iniciada às ${active.actualStart}` : current ? `Programada ${current.plannedStart}–${current.plannedEnd}` : "—";
       const forecast = timeline.windowEnd == null || diff == null ? null : timeline.windowEnd + diff;
       $("#metric-forecast").textContent = forecast == null ? "—" : absoluteToTime(forecast);
       $("#metric-forecast-note").textContent = diff == null ? "Aguardando primeiro marco" : `Meta de encerramento: ${plan.windowEnd}`;
 
-      const remaining = timeline.steps.filter((step) => step.actualEnd == null);
+      const remaining = timeline.steps.filter((step) => step.actualEndMinutes == null);
       const card = $("#compensation-card");
       card.className = "compensation-card ";
       if (diff != null && rounded > 1 && remaining.length) {
@@ -709,12 +717,14 @@
       const step = plan.steps.find((item) => item.id === stepElement?.dataset.stepId);
       if (!step) return;
       step[event.target.dataset.field] = event.target.value;
-      persist();
+      persist(event.target.matches('input[type="time"]'));
       renderDashboard();
     });
 
     root.addEventListener("change", (event) => {
       if (!event.target.matches('input[type="time"]')) return;
+      const label = event.target.dataset.field === "actualStart" ? "Início" : "Fim";
+      if (event.target.value) showToast(`${label} realizado registrado às ${event.target.value}.`);
       renderSteps();
       renderDashboard();
     });
