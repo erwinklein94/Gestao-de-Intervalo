@@ -905,6 +905,10 @@
       const progress = timeline.steps.length ? Math.round((completed.length / timeline.steps.length) * 100) : 0;
       const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
       const actualTotal = completed.reduce((sum, step) => sum + (step.actualDuration || 0), 0);
+      const comparableSteps = completed.filter((step) => step.duration != null && step.actualDuration != null);
+      const comparablePlannedTotal = comparableSteps.reduce((sum, step) => sum + step.duration, 0);
+      const comparableActualTotal = comparableSteps.reduce((sum, step) => sum + step.actualDuration, 0);
+      const durationDifference = comparableSteps.length ? Math.round(comparableActualTotal - comparablePlannedTotal) : null;
       const variance = lastVariance(timeline);
       const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
 
@@ -915,8 +919,15 @@
       $("#dashboard-planned-total").textContent = plannedTotal ? formatMinutes(plannedTotal) : "—";
       $("#dashboard-actual-total").textContent = completed.length ? formatMinutes(actualTotal) : "—";
       $("#dashboard-actual-note").textContent = completed.length ? `${completed.length} etapa${completed.length > 1 ? "s" : ""} com duração calculada` : "aguardando registros completos";
-      $("#dashboard-variance").textContent = variance == null ? "—" : variance > 1 ? `+${Math.round(variance)} min` : variance < -1 ? `${Math.round(variance)} min` : "No prazo";
-      $("#dashboard-variance-note").textContent = variance == null ? "sem horários realizados" : variance > 1 ? "atraso em relação ao programado" : variance < -1 ? "adiantamento em relação ao programado" : "aderente ao cronograma";
+      $("#dashboard-variance").textContent = durationDifference == null ? "—" : `${durationDifference > 0 ? "+" : ""}${durationDifference} min`;
+      $("#dashboard-variance-note").textContent = durationDifference == null
+        ? "sem etapas comparáveis"
+        : durationDifference > 0
+          ? `realizado consumiu ${durationDifference} min a mais`
+          : durationDifference < 0
+            ? `realizado consumiu ${Math.abs(durationDifference)} min a menos`
+            : "duração realizada igual à planejada";
+      $("#dashboard-variance-card").className = `dashboard-kpi featured ${durationDifference == null ? "variance-neutral" : durationDifference > 0 ? "variance-positive" : durationDifference < 0 ? "variance-negative" : "variance-zero"}`;
 
       const overall = $("#dashboard-status");
       if (completed.length === timeline.steps.length && timeline.steps.length) {

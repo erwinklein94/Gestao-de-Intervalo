@@ -507,6 +507,9 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .dashboard-kpi.featured { border-color: var(--blue); background: var(--blue); }
 .dashboard-kpi.featured > span, .dashboard-kpi.featured small { color: rgba(255,255,255,.66); }
 .dashboard-kpi.featured strong { color: var(--lime); }
+.dashboard-kpi.featured.variance-positive strong { color: #ffae7b; }
+.dashboard-kpi.featured.variance-negative strong { color: var(--lime); }
+.dashboard-kpi.featured.variance-zero strong { color: #82d8ff; }
 .dashboard-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }
 .chart-card { min-width: 0; padding: 24px; border: 1px solid #dbe4e8; border-radius: 16px; background: var(--white); box-shadow: 0 8px 24px rgba(0,56,101,.04); }
 .chart-card-wide { grid-column: 1 / -1; }
