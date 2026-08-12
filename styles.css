@@ -127,6 +127,9 @@ a { color: inherit; }
 .theme-toggle:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
 .theme-toggle span { color: var(--lime); font-size: 17px; line-height: 1; }
 .theme-toggle b { font-size: 10px; white-space: nowrap; }
+.auth-button { min-height: 38px; padding: 0 13px; border: 1px solid rgba(255,255,255,.28); border-radius: 8px; color: var(--blue); background: var(--lime); cursor: pointer; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.auth-button:hover { background: #92eb80; }
+.auth-button:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
 
 .page-hero {
   min-height: 360px;
@@ -558,6 +561,15 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .table-status.ahead, .table-status.on-time { color: #13735d; background: var(--success-soft); }
 .table-status.running { color: var(--blue); background: #fff5c7; }
 .table-status.waiting { color: var(--muted); background: var(--surface-2); }
+.cloud-dialog { width: min(92vw, 480px); padding: 0; border: 0; border-radius: 17px; color: var(--ink); background: var(--white); box-shadow: 0 24px 80px rgba(0,35,62,.35); }
+.cloud-dialog::backdrop { background: rgba(0,35,62,.76); backdrop-filter: blur(4px); }
+.cloud-dialog-content { position: relative; margin: 0; padding: 32px; display: grid; gap: 17px; }
+.cloud-dialog-content h2 { margin: 0; color: var(--blue); font-size: 23px; }
+.cloud-dialog-content > p:not(.section-kicker) { margin: 0; color: var(--muted); font-size: 12px; }
+.dialog-close { position: absolute; top: 13px; right: 13px; width: 36px; height: 36px; border: 0; border-radius: 50%; color: var(--muted); background: var(--surface); cursor: pointer; font-size: 20px; }
+.cloud-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 3px; }
+.auth-feedback { min-height: 18px; color: var(--green); font-size: 11px; }
+.account-email { padding: 12px; border-radius: 8px; color: var(--blue) !important; background: var(--surface); font-weight: 700; overflow-wrap: anywhere; }
 
 /* Tema escuro — azul operacional Rumo com acentos institucionais */
 html[data-theme="dark"] {
@@ -609,6 +621,9 @@ html[data-theme="dark"] .table-status.on-time { color: #79dfbd; background: #123
 html[data-theme="dark"] .step-variance.delay { color: #ffaaa0; background: #3b2226; }
 html[data-theme="dark"] .step-variance.ahead { color: #79dfbd; background: #12382f; }
 html[data-theme="dark"] .dashboard-plan-picker select { color: var(--ink); background: #0b2130; }
+html[data-theme="dark"] .cloud-dialog { color: var(--ink); background: var(--white); }
+html[data-theme="dark"] .cloud-dialog-content h2,
+html[data-theme="dark"] .account-email { color: #8ed1f5 !important; }
 html[data-theme="dark"] .workspace-topline h2,
 html[data-theme="dark"] .execution-heading h1,
 html[data-theme="dark"] .panel-heading h2,
@@ -684,6 +699,7 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   .header-tools { position: absolute; top: 15px; right: 18px; }
   .theme-toggle b { display: none; }
   .theme-toggle { width: 40px; padding: 0; justify-content: center; }
+  .auth-button { min-width: 52px; padding-inline: 9px; }
   .workspace, .execution-workspace { width: min(100% - 24px, 1280px); padding-top: 30px; }
   .workspace-topline, .execution-heading { align-items: stretch; flex-direction: column; }
   .plan-switcher { display: grid; grid-template-columns: 1fr auto auto; }
@@ -732,6 +748,9 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   .dashboard-kpis { grid-template-columns: 1fr; }
   .chart-card { padding: 18px; }
   .chart-heading { flex-direction: column; }
+  .cloud-dialog-content { padding: 26px 20px; }
+  .cloud-dialog-actions { flex-direction: column-reverse; }
+  .cloud-dialog-actions .button { width: 100%; }
 }
 
 @media print {

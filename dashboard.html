@@ -8,6 +8,7 @@
     <title>Gestão de Intervalo | Dashboard</title>
     <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png" />
     <link rel="stylesheet" href="styles.css" />
+    <script src="assets/supabase.min.js" defer></script>
     <script src="app.js" defer></script>
   </head>
   <body data-page="dashboard">
@@ -23,7 +24,7 @@
         <a class="active" href="dashboard.html" aria-current="page"><span>3</span> Dashboard</a>
       </nav>
       <div class="header-tools">
-        <div class="save-state">Dados deste dispositivo</div>
+        <div class="save-state" id="save-state">Dados deste dispositivo</div>
         <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false"><span aria-hidden="true">☾</span><b>Tema escuro</b></button>
       </div>
     </header>

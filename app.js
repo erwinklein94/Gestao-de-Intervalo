@@ -3,10 +3,16 @@
 
   const STORAGE_KEY = "gestaoIntervaloRumo.v1";
   const THEME_KEY = "gestaoIntervaloRumo.theme";
+  const SUPABASE_URL = "https://rzsybguxlueorjpsstmu.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sHHGnU3rob-unvk-_CCdcA_Ut4omY23";
   const page = document.body.dataset.page;
   let store = loadStore();
   let saveTimer;
   let toastTimer;
+  let cloudClient = null;
+  let currentUser = null;
+  let cloudTimer;
+  let cloudSyncing = false;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -145,13 +151,124 @@
     const save = () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
       const state = $("#save-state");
-      if (state) state.textContent = "Salvo neste dispositivo";
+      if (state) state.textContent = currentUser ? "Salvo na nuvem" : "Salvo neste dispositivo";
+      scheduleCloudSync(immediate);
     };
     const state = $("#save-state");
     if (state) state.textContent = "Salvando…";
     clearTimeout(saveTimer);
     if (immediate) save();
     else saveTimer = setTimeout(save, 260);
+  }
+
+  function planToDatabase(plan) {
+    return {
+      user_id: currentUser.id,
+      client_id: plan.id,
+      title: plan.title || "",
+      service_type: plan.serviceType || "",
+      coordinator: plan.coordinator || "",
+      interval_date: plan.date || null,
+      location: plan.location || "",
+      window_start: plan.windowStart || null,
+      window_end: plan.windowEnd || null,
+      planning_notes: plan.notes || "",
+      execution_notes: plan.executionNotes || "",
+      is_locked: Boolean(plan.locked),
+      locked_at: plan.lockedAt || null,
+      is_example: Boolean(plan.isExample),
+      created_at: plan.createdAt || new Date().toISOString(),
+      updated_at: plan.updatedAt || new Date().toISOString()
+    };
+  }
+
+  function databaseToPlan(row) {
+    return {
+      id: row.client_id,
+      databaseId: row.id,
+      title: row.title,
+      serviceType: row.service_type,
+      coordinator: row.coordinator,
+      date: row.interval_date || "",
+      location: row.location,
+      windowStart: (row.window_start || "").slice(0, 5),
+      windowEnd: (row.window_end || "").slice(0, 5),
+      notes: row.planning_notes,
+      executionNotes: row.execution_notes,
+      locked: row.is_locked,
+      lockedAt: row.locked_at,
+      isExample: row.is_example,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      steps: (row.interval_steps || []).sort((a, b) => a.position - b.position).map((step) => ({
+        id: step.client_id,
+        databaseId: step.id,
+        name: step.activity_name,
+        plannedStart: (step.planned_start || "").slice(0, 5),
+        plannedEnd: (step.planned_end || "").slice(0, 5),
+        actualStart: (step.actual_start || "").slice(0, 5),
+        actualEnd: (step.actual_end || "").slice(0, 5),
+        actualNotes: step.actual_notes
+      }))
+    };
+  }
+
+  function scheduleCloudSync(immediate = false) {
+    if (!cloudClient || !currentUser || cloudSyncing) return;
+    clearTimeout(cloudTimer);
+    cloudTimer = setTimeout(syncStoreToCloud, immediate ? 0 : 700);
+  }
+
+  async function syncStoreToCloud() {
+    if (!cloudClient || !currentUser || cloudSyncing) return;
+    cloudSyncing = true;
+    const state = $("#save-state");
+    if (state) state.textContent = "Salvando na nuvem…";
+    try {
+      const plansPayload = store.plans.map(planToDatabase);
+      const { data: savedPlans, error: planError } = await cloudClient
+        .from("interval_plans")
+        .upsert(plansPayload, { onConflict: "user_id,client_id" })
+        .select("id,client_id");
+      if (planError) throw planError;
+
+      const localPlanIds = store.plans.map((plan) => plan.id);
+      const deletePlans = cloudClient.from("interval_plans").delete().eq("user_id", currentUser.id);
+      if (localPlanIds.length) deletePlans.not("client_id", "in", `(${localPlanIds.map((id) => `\"${id}\"`).join(",")})`);
+      const { error: deletePlanError } = await deletePlans;
+      if (deletePlanError) throw deletePlanError;
+
+      for (const plan of store.plans) {
+        const savedPlan = savedPlans.find((item) => item.client_id === plan.id);
+        if (!savedPlan) continue;
+        plan.databaseId = savedPlan.id;
+        const { error: clearStepsError } = await cloudClient.from("interval_steps").delete().eq("plan_id", savedPlan.id);
+        if (clearStepsError) throw clearStepsError;
+        if (plan.steps.length) {
+          const stepsPayload = plan.steps.map((step, position) => ({
+            plan_id: savedPlan.id,
+            client_id: step.id,
+            position,
+            activity_name: step.name || "",
+            planned_start: step.plannedStart || null,
+            planned_end: step.plannedEnd || null,
+            actual_start: step.actualStart || null,
+            actual_end: step.actualEnd || null,
+            actual_notes: step.actualNotes || ""
+          }));
+          const { error: stepError } = await cloudClient.from("interval_steps").insert(stepsPayload);
+          if (stepError) throw stepError;
+        }
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+      if (state) state.textContent = "Salvo na nuvem";
+    } catch (error) {
+      console.error("Falha ao salvar no Supabase.", error);
+      if (state) state.textContent = "Falha ao salvar na nuvem";
+      showToast("Não foi possível salvar na nuvem. Os dados continuam neste dispositivo.");
+    } finally {
+      cloudSyncing = false;
+    }
   }
 
   function showToast(message) {
@@ -936,8 +1053,142 @@
     render();
   }
 
+  function renderAuthControls() {
+    const tools = $(".header-tools");
+    if (!tools || $("[data-auth-button]", tools)) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "auth-button";
+    button.dataset.authButton = "";
+    button.textContent = currentUser ? "Minha conta" : "Entrar";
+    button.addEventListener("click", () => currentUser ? openAccountDialog() : openAuthDialog());
+    tools.prepend(button);
+  }
+
+  function createDialog(className, content) {
+    const existing = $(`.${className}`);
+    if (existing) existing.remove();
+    const dialog = document.createElement("dialog");
+    dialog.className = `cloud-dialog ${className}`;
+    dialog.innerHTML = content;
+    document.body.append(dialog);
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    dialog.addEventListener("close", () => dialog.remove());
+    dialog.showModal();
+    return dialog;
+  }
+
+  function openAuthDialog() {
+    const dialog = createDialog("auth-dialog", `<form method="dialog" class="cloud-dialog-content" id="auth-form">
+      <button class="dialog-close" type="button" aria-label="Fechar">×</button>
+      <p class="section-kicker">Dados protegidos no Supabase</p>
+      <h2>Entrar na Gestão de Intervalo</h2>
+      <p>Use seu e-mail para acessar os mesmos planos em qualquer dispositivo.</p>
+      <label class="field"><span>E-mail</span><input name="email" type="email" autocomplete="email" required></label>
+      <label class="field"><span>Senha</span><input name="password" type="password" minlength="6" autocomplete="current-password" required></label>
+      <div class="cloud-dialog-actions">
+        <button class="button button-ghost" type="button" data-sign-up>Criar conta</button>
+        <button class="button button-secondary" type="submit">Entrar</button>
+      </div>
+      <span class="auth-feedback" role="status" aria-live="polite"></span>
+    </form>`);
+    const form = $("#auth-form", dialog);
+    const feedback = $(".auth-feedback", dialog);
+    $(".dialog-close", dialog).addEventListener("click", () => dialog.close());
+
+    async function authenticate(mode) {
+      if (!form.reportValidity()) return;
+      const email = form.email.value.trim();
+      const password = form.password.value;
+      feedback.textContent = mode === "signup" ? "Criando conta…" : "Entrando…";
+      const result = mode === "signup"
+        ? await cloudClient.auth.signUp({ email, password })
+        : await cloudClient.auth.signInWithPassword({ email, password });
+      if (result.error) {
+        feedback.textContent = result.error.message === "Invalid login credentials" ? "E-mail ou senha inválidos." : result.error.message;
+        return;
+      }
+      if (mode === "signup" && !result.data.session) {
+        feedback.textContent = "Conta criada. Confirme o e-mail recebido e depois entre no site.";
+        return;
+      }
+      dialog.close();
+      location.reload();
+    }
+
+    form.addEventListener("submit", (event) => { event.preventDefault(); authenticate("signin"); });
+    $("[data-sign-up]", dialog).addEventListener("click", () => authenticate("signup"));
+  }
+
+  function openAccountDialog() {
+    const dialog = createDialog("account-dialog", `<div class="cloud-dialog-content">
+      <button class="dialog-close" type="button" aria-label="Fechar">×</button>
+      <p class="section-kicker">Conta conectada</p>
+      <h2>Dados salvos na nuvem</h2>
+      <p class="account-email">${escapeHtml(currentUser.email || "Usuário Supabase")}</p>
+      <p>Seus planos e registros de execução estão associados a esta conta.</p>
+      <div class="cloud-dialog-actions"><button class="button button-ghost" type="button" data-sign-out>Sair da conta</button></div>
+    </div>`);
+    $(".dialog-close", dialog).addEventListener("click", () => dialog.close());
+    $("[data-sign-out]", dialog).addEventListener("click", async () => {
+      await cloudClient.auth.signOut();
+      localStorage.removeItem(STORAGE_KEY);
+      location.reload();
+    });
+  }
+
+  async function loadCloudStore() {
+    const { data, error } = await cloudClient
+      .from("interval_plans")
+      .select("*,interval_steps(*)")
+      .order("updated_at", { ascending: false });
+    if (error) throw error;
+    if (!data.length) {
+      await syncStoreToCloud();
+      return;
+    }
+    const plans = data.map(databaseToPlan);
+    const activeId = plans.some((plan) => plan.id === store.activePlanId) ? store.activePlanId : plans[0].id;
+    store = { version: 2, activePlanId: activeId, plans };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    const cloudLoadedKey = `gestaoIntervaloRumo.cloudLoaded.${currentUser.id}`;
+    if (sessionStorage.getItem(cloudLoadedKey) !== "yes") {
+      sessionStorage.setItem(cloudLoadedKey, "yes");
+      location.reload();
+    }
+  }
+
+  async function initializeCloud() {
+    if (!window.supabase?.createClient) {
+      console.warn("Biblioteca do Supabase indisponível.");
+      return;
+    }
+    cloudClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    const { data: { session } } = await cloudClient.auth.getSession();
+    currentUser = session?.user || null;
+    renderAuthControls();
+    const state = $("#save-state");
+    if (!currentUser) {
+      if (state) state.textContent = "Entre para salvar na nuvem";
+      return;
+    }
+    if (state) state.textContent = "Sincronizando…";
+    try {
+      await loadCloudStore();
+      if (state) state.textContent = "Salvo na nuvem";
+    } catch (error) {
+      console.error("Falha ao carregar dados do Supabase.", error);
+      if (state) state.textContent = "Falha na sincronização";
+    }
+  }
+
   initializeTheme();
   if (page === "planning") planningPage();
   if (page === "execution") executionPage();
   if (page === "dashboard") dashboardPage();
+  initializeCloud();
 })();

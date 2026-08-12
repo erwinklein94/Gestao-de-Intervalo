@@ -10,7 +10,7 @@ Aplicação web estática para planejar e acompanhar intervalos de manutenção 
 4. Consulte `dashboard.html` para comparar o planejado com o realizado e analisar progresso, duração e desvios por etapa.
 4. Acompanhe o indicador superior de atraso/adiantamento e a necessidade de compensação nas etapas seguintes.
 
-Os dados ficam no `localStorage` do navegador nesta primeira etapa. A tela de planejamento exporta um relatório Excel `.xlsx` com Programado x Realizado. Essa camada foi isolada no início de `app.js` para facilitar a futura substituição por Supabase.
+Os dados são mantidos localmente enquanto o usuário não está conectado. Ao entrar com e-mail e senha, planos e etapas são sincronizados com o Supabase, com acesso protegido por usuário e uma cópia local para continuidade em caso de falha temporária de conexão. A tela de planejamento também exporta um relatório Excel `.xlsx` com Programado x Realizado.
 
 O site possui temas claro e escuro. O tema claro é o padrão inicial, e a escolha do usuário fica memorizada no dispositivo.
 
