@@ -11,6 +11,7 @@
   let toastTimer;
   let cloudClient = null;
   let currentUser = null;
+  let currentProfile = null;
   let cloudTimer;
   let cloudSyncing = false;
 
@@ -1102,6 +1103,10 @@
       if (!form.reportValidity()) return;
       const email = form.email.value.trim();
       const password = form.password.value;
+      if (mode === "signup" && email.toLowerCase() !== "erwin.klein@ext.rumolog.com") {
+        feedback.textContent = "Novas contas devem ser criadas por um editor.";
+        return;
+      }
       feedback.textContent = mode === "signup" ? "Criando conta…" : "Entrando…";
       const result = mode === "signup"
         ? await cloudClient.auth.signUp({ email, password })
@@ -1174,16 +1179,70 @@
     const state = $("#save-state");
     if (!currentUser) {
       if (state) state.textContent = "Entre para salvar na nuvem";
+      if (page === "account") accountPage();
+      return;
+    }
+    const { data: profile } = await cloudClient.from("user_profiles").select("*").eq("id", currentUser.id).single();
+    currentProfile = profile || null;
+    if (!currentProfile?.enabled) {
+      if (state) state.textContent = "Conta desabilitada";
+      if (page === "account") accountPage();
       return;
     }
     if (state) state.textContent = "Sincronizando…";
     try {
       await loadCloudStore();
       if (state) state.textContent = "Salvo na nuvem";
+      if (page === "account") accountPage();
     } catch (error) {
       console.error("Falha ao carregar dados do Supabase.", error);
       if (state) state.textContent = "Falha na sincronização";
     }
+  }
+
+  async function accountPage() {
+    const gate = $("#account-gate");
+    const content = $("#account-content");
+    if (!currentUser || !currentProfile?.enabled) {
+      gate.hidden = false;
+      content.hidden = true;
+      $("#account-login")?.addEventListener("click", openAuthDialog, { once: true });
+      return;
+    }
+    gate.hidden = true;
+    content.hidden = false;
+    $("#account-name").textContent = currentProfile.full_name || "Usuário";
+    $("#account-email").textContent = currentProfile.email;
+    $("#account-role").textContent = currentProfile.role === "editor" ? "Editor" : "Usuário";
+    $("#account-history").innerHTML = store.plans.length ? [...store.plans].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map((plan) => {
+      const completed = plan.steps.filter((step) => step.actualEnd).length;
+      return `<article class="history-item"><div><strong>${escapeHtml(plan.title || "Plano sem nome")}</strong><span>${plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Sem data"} · ${escapeHtml(plan.serviceType || "Serviço não informado")}</span></div><div><b>${completed}/${plan.steps.length}</b><small>etapas concluídas</small></div><a class="button button-ghost" href="dashboard.html">Ver dashboard</a></article>`;
+    }).join("") : `<div class="chart-empty">Nenhum intervalo registrado nesta conta.</div>`;
+
+    if (currentProfile.role !== "editor") return;
+    $("#editor-panel").hidden = false;
+    const form = $("#user-create-form");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const feedback = $("#user-create-feedback");
+      feedback.textContent = "Criando conta…";
+      const { data, error } = await cloudClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value, email: form.email.value, password: form.password.value } });
+      if (error || data?.error) { feedback.textContent = data?.error || error.message; return; }
+      feedback.textContent = "Conta criada e habilitada.";
+      form.reset();
+      await renderUsers();
+    });
+
+    async function renderUsers() {
+      const { data } = await cloudClient.from("user_profiles").select("*").order("created_at", { ascending: false });
+      $("#users-list").innerHTML = (data || []).map((profile) => `<article class="user-row" data-user-id="${profile.id}"><div><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span></div><span>${profile.role === "editor" ? "Editor" : "Usuário"}</span><label class="account-switch"><input type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}><i></i><b>${profile.enabled ? "Habilitada" : "Desabilitada"}</b></label></article>`).join("");
+      $$(".user-row input", $("#users-list")).forEach((input) => input.addEventListener("change", async () => {
+        const row = input.closest(".user-row");
+        await cloudClient.from("user_profiles").update({ enabled: input.checked }).eq("id", row.dataset.userId);
+        await renderUsers();
+      }));
+    }
+    await renderUsers();
   }
 
   initializeTheme();

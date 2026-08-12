@@ -570,6 +570,22 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .cloud-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 3px; }
 .auth-feedback { min-height: 18px; color: var(--green); font-size: 11px; }
 .account-email { padding: 12px; border-radius: 8px; color: var(--blue) !important; background: var(--surface); font-weight: 700; overflow-wrap: anywhere; }
+.account-hero { padding: 60px max(24px, calc((100vw - 1280px) / 2)); color: white; background: linear-gradient(135deg, var(--blue) 0 72%, var(--blue-2) 72%); }
+.account-hero h1 { margin: 0; font-size: clamp(36px,5vw,58px); line-height: 1.05; letter-spacing: -.04em; }
+.account-hero > p:last-child { max-width: 650px; color: rgba(255,255,255,.72); }
+.account-workspace { width: min(100% - 48px,1280px); margin: 0 auto; padding: 36px 0 70px; display: grid; gap: 18px; }
+.account-gate { padding: 42px; border: 1px solid var(--line); border-radius: 16px; background: var(--white); text-align: center; }
+.account-gate h2 { color: var(--blue); }
+.account-gate p { color: var(--muted); }
+.account-summary { margin-bottom: 18px; padding: 25px; display: flex; align-items: center; justify-content: space-between; border-radius: 16px; color: white; background: var(--blue); }
+.account-summary h2 { margin: 0; color: var(--lime); }.account-summary p:last-child { margin: 5px 0 0; color: rgba(255,255,255,.7); }
+.role-badge { padding: 8px 12px; border-radius: 99px; color: var(--blue); background: var(--lime); font-size: 10px; font-weight: 700; }
+.history-list,.users-list { display: grid; gap: 10px; }
+.history-item,.user-row { padding: 14px; display: grid; grid-template-columns: minmax(220px,1fr) auto auto; align-items: center; gap: 18px; border: 1px solid var(--line); border-radius: 10px; }
+.history-item strong,.history-item span,.user-row strong,.user-row span { display: block; }.history-item strong,.user-row strong { color: var(--blue); }.history-item span,.user-row span,.history-item small { color: var(--muted); font-size: 10px; }
+.history-item > div:nth-child(2) { text-align: center; }.history-item b { display: block; color: var(--green); font-size: 18px; }
+.editor-panel { margin-top: 18px; }.user-create-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; align-items: end; gap: 12px; margin-bottom: 22px; }
+.account-switch { display: flex; align-items: center; gap: 8px; cursor: pointer; }.account-switch input { position: absolute; opacity: 0; }.account-switch i { width: 38px; height: 21px; padding: 3px; border-radius: 20px; background: var(--gray); }.account-switch i::after { content:""; display:block; width:15px; height:15px; border-radius:50%; background:white; transition:.2s; }.account-switch input:checked + i { background:var(--green); }.account-switch input:checked + i::after { transform:translateX(17px); }.account-switch b { font-size:9px; }
 
 /* Tema escuro — azul operacional Rumo com acentos institucionais */
 html[data-theme="dark"] {
@@ -624,6 +640,7 @@ html[data-theme="dark"] .dashboard-plan-picker select { color: var(--ink); backg
 html[data-theme="dark"] .cloud-dialog { color: var(--ink); background: var(--white); }
 html[data-theme="dark"] .cloud-dialog-content h2,
 html[data-theme="dark"] .account-email { color: #8ed1f5 !important; }
+html[data-theme="dark"] .account-gate h2,html[data-theme="dark"] .history-item strong,html[data-theme="dark"] .user-row strong { color:#8ed1f5; }
 html[data-theme="dark"] .workspace-topline h2,
 html[data-theme="dark"] .execution-heading h1,
 html[data-theme="dark"] .panel-heading h2,
@@ -751,6 +768,7 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   .cloud-dialog-content { padding: 26px 20px; }
   .cloud-dialog-actions { flex-direction: column-reverse; }
   .cloud-dialog-actions .button { width: 100%; }
+  .account-workspace { width:min(100% - 24px,1280px); }.history-item,.user-row { grid-template-columns:1fr; }.user-create-form { grid-template-columns:1fr; }
 }
 
 @media print {

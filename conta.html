@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="theme-color" content="#003865"><title>Gestão de Intervalo | Conta</title>
+  <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css">
+  <script src="assets/supabase.min.js" defer></script><script src="app.js" defer></script>
+</head>
+<body data-page="account">
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+  <header class="site-header">
+    <a class="brand" href="index.html"><img src="assets/rumo-logo-white.png" alt="Rumo"><span>Gestão de Intervalo</span></a>
+    <nav class="primary-nav" aria-label="Navegação principal">
+      <a href="index.html"><span>1</span> Planejar</a><a href="executar.html"><span>2</span> Executar</a>
+      <a href="dashboard.html"><span>3</span> Dashboard</a><a class="active" href="conta.html" aria-current="page"><span>4</span> Conta</a>
+    </nav>
+    <div class="header-tools"><div class="save-state" id="save-state">Verificando conta…</div><button class="theme-toggle" type="button" data-theme-toggle><span>☾</span><b>Tema escuro</b></button></div>
+  </header>
+  <main id="conteudo">
+    <section class="account-hero"><p class="eyebrow">Conta e histórico</p><h1>Seus intervalos,<br>sempre disponíveis.</h1><p>Acompanhe seus registros e, quando autorizado, administre o acesso da equipe.</p></section>
+    <section class="account-workspace">
+      <div class="account-gate" id="account-gate"><h2>Entre para acessar sua conta</h2><p>O histórico e a gestão de usuários ficam disponíveis após a autenticação.</p><button class="button button-secondary" type="button" id="account-login">Entrar</button></div>
+      <div id="account-content" hidden>
+        <section class="account-summary"><div><p class="section-kicker">Conta conectada</p><h2 id="account-name">Usuário</h2><p id="account-email">—</p></div><span class="role-badge" id="account-role">Usuário</span></section>
+        <section class="chart-card"><div class="chart-heading"><div><p class="section-kicker">Histórico pessoal</p><h2>Intervalos planejados e executados</h2></div></div><div class="history-list" id="account-history"></div></section>
+        <section class="chart-card editor-panel" id="editor-panel" hidden>
+          <div class="chart-heading"><div><p class="section-kicker">Acesso de editor</p><h2>Gerenciar contas</h2></div></div>
+          <form class="user-create-form" id="user-create-form">
+            <label class="field"><span>Nome</span><input name="fullName" required maxlength="120"></label>
+            <label class="field"><span>E-mail</span><input name="email" type="email" required></label>
+            <label class="field"><span>Senha inicial</span><input name="password" type="password" minlength="8" required></label>
+            <button class="button button-secondary" type="submit">Criar e habilitar conta</button><span class="auth-feedback" id="user-create-feedback"></span>
+          </form>
+          <div class="users-list" id="users-list"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer"><img src="assets/rumo-logo-blue.png" alt="Rumo"><span>Gestão de Intervalo · Operação com clareza e segurança</span></footer>
+</body></html>
