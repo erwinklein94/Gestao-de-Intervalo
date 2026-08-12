@@ -1140,7 +1140,7 @@
     $("[data-sign-out]", dialog).addEventListener("click", async () => {
       await cloudClient.auth.signOut();
       localStorage.removeItem(STORAGE_KEY);
-      location.reload();
+      location.replace("login.html");
     });
   }
 
@@ -1175,20 +1175,26 @@
     });
     const { data: { session } } = await cloudClient.auth.getSession();
     currentUser = session?.user || null;
+    if (page === "login") {
+      if (currentUser) location.replace("index.html");
+      else loginPage();
+      return;
+    }
     renderAuthControls();
     const state = $("#save-state");
     if (!currentUser) {
-      if (state) state.textContent = "Entre para salvar na nuvem";
-      if (page === "account") accountPage();
+      location.replace("login.html");
       return;
     }
     const { data: profile } = await cloudClient.from("user_profiles").select("*").eq("id", currentUser.id).single();
     currentProfile = profile || null;
     if (!currentProfile?.enabled) {
-      if (state) state.textContent = "Conta desabilitada";
-      if (page === "account") accountPage();
+      await cloudClient.auth.signOut();
+      localStorage.removeItem(STORAGE_KEY);
+      location.replace("login.html?status=disabled");
       return;
     }
+    document.documentElement.classList.remove("auth-checking");
     if (state) state.textContent = "Sincronizando…";
     try {
       await loadCloudStore();
@@ -1198,6 +1204,35 @@
       console.error("Falha ao carregar dados do Supabase.", error);
       if (state) state.textContent = "Falha na sincronização";
     }
+  }
+
+  function loginPage() {
+    const form = $("#login-form");
+    const feedback = $("#login-feedback");
+    if (new URLSearchParams(location.search).get("status") === "disabled") feedback.textContent = "Esta conta está desabilitada. Procure um editor.";
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = $("button[type='submit']", form);
+      button.disabled = true;
+      button.textContent = "Verificando acesso…";
+      feedback.textContent = "";
+      const { data, error } = await cloudClient.auth.signInWithPassword({ email: form.email.value.trim(), password: form.password.value });
+      if (error || !data.user) {
+        feedback.textContent = "E-mail ou senha inválidos.";
+        button.disabled = false;
+        button.textContent = "Entrar no sistema";
+        return;
+      }
+      const { data: profile } = await cloudClient.from("user_profiles").select("enabled").eq("id", data.user.id).single();
+      if (!profile?.enabled) {
+        await cloudClient.auth.signOut();
+        feedback.textContent = "Esta conta está desabilitada. Procure um editor.";
+        button.disabled = false;
+        button.textContent = "Entrar no sistema";
+        return;
+      }
+      location.replace("index.html");
+    });
   }
 
   async function accountPage() {

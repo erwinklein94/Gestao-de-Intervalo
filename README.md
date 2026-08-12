@@ -14,6 +14,8 @@ Os dados são mantidos localmente enquanto o usuário não está conectado. Ao e
 
 O site possui temas claro e escuro. O tema claro é o padrão inicial, e a escolha do usuário fica memorizada no dispositivo.
 
+Todas as áreas operacionais são protegidas por autenticação. Usuários sem sessão válida ou com conta desabilitada são direcionados para `login.html` antes de acessar planejamento, execução, dashboard ou conta.
+
 ## Publicação
 
 O workflow em `.github/workflows/deploy-pages.yml` publica todo push na branch `main` usando GitHub Pages via Actions.

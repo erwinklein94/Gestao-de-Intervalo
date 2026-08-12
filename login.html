@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
+  <meta name="description" content="Acesso seguro à Gestão de Intervalo"><title>Gestão de Intervalo | Login</title>
+  <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css">
+  <script src="assets/supabase.min.js" defer></script><script src="app.js" defer></script>
+</head>
+<body data-page="login" class="login-page">
+  <main class="login-layout">
+    <section class="login-brand-panel">
+      <img src="assets/rumo-logo-white.png" alt="Rumo">
+      <div><p class="eyebrow">Gestão de Intervalo</p><h1>Planejar com clareza.<br>Executar com segurança.</h1><p>Acesso exclusivo para editores e coordenadores habilitados.</p></div>
+      <small>Via Permanente · Planejamento e execução operacional</small>
+    </section>
+    <section class="login-form-panel">
+      <form class="login-card" id="login-form">
+        <div class="login-mark" aria-hidden="true">→</div><p class="section-kicker">Acesso seguro</p><h2>Entre na sua conta</h2>
+        <p>Use as credenciais fornecidas pelo editor responsável.</p>
+        <label class="field"><span>E-mail</span><input name="email" type="email" autocomplete="email" required autofocus></label>
+        <label class="field"><span>Senha</span><input name="password" type="password" autocomplete="current-password" minlength="8" required></label>
+        <button class="button button-secondary login-submit" type="submit">Entrar no sistema</button>
+        <span class="login-feedback" id="login-feedback" role="status" aria-live="polite"></span>
+      </form>
+    </section>
+  </main>
+</body></html>
