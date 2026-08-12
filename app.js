@@ -222,6 +222,80 @@
       .replaceAll("'", "&#039;");
   }
 
+  function escapeXml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&apos;");
+  }
+
+  function excelColumn(index) {
+    let result = "";
+    let value = index;
+    while (value > 0) {
+      value--;
+      result = String.fromCharCode(65 + (value % 26)) + result;
+      value = Math.floor(value / 26);
+    }
+    return result;
+  }
+
+  function excelCell(column, row, value, style = 5) {
+    const reference = `${excelColumn(column)}${row}`;
+    if (value === null || value === undefined || value === "") return `<c r="${reference}" s="${style}"/>`;
+    if (typeof value === "number" && Number.isFinite(value)) return `<c r="${reference}" s="${style}"><v>${value}</v></c>`;
+    return `<c r="${reference}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+  }
+
+  async function exportPlanToXlsx(plan) {
+    if (typeof JSZip === "undefined") throw new Error("Gerador de Excel indisponível");
+    const timeline = buildTimeline(plan);
+    const headers = ["#", "Atividade", "Início programado", "Fim programado", "Duração programada (min)", "Início realizado", "Fim realizado", "Duração realizada (min)", "Diferença no fim (min)", "Situação", "O que foi realizado"];
+    const dataRows = timeline.steps.map((step, index) => {
+      const difference = step.actualEndMinutes != null && step.end != null ? Math.round(step.actualEndMinutes - step.end) : null;
+      const status = difference == null ? (step.actualStart ? "Em andamento" : "Aguardando") : difference > 0 ? "Atrasado" : difference < 0 ? "Adiantado" : "No horário";
+      return [index + 1, step.name, step.plannedStart, step.plannedEnd, step.duration, step.actualStart, step.actualEnd, step.actualDuration, difference, status, step.actualNotes];
+    });
+    const rows = [];
+    rows.push(`<row r="1" ht="30" customHeight="1">${excelCell(1, 1, "GESTÃO DE INTERVALO — PROGRAMADO X REALIZADO", 1)}</row>`);
+    rows.push(`<row r="2" ht="8" customHeight="1"></row>`);
+    rows.push(`<row r="3">${excelCell(1, 3, "Nome do plano", 3)}${excelCell(4, 3, plan.title, 5)}${excelCell(7, 3, "Data", 3)}${excelCell(9, 3, plan.date, 5)}</row>`);
+    rows.push(`<row r="4">${excelCell(1, 4, "Tipo de serviço", 3)}${excelCell(4, 4, plan.serviceType, 5)}${excelCell(7, 4, "Janela", 3)}${excelCell(9, 4, `${plan.windowStart || "—"}–${plan.windowEnd || "—"}`, 5)}</row>`);
+    rows.push(`<row r="5">${excelCell(1, 5, "Coordenador(a)", 3)}${excelCell(4, 5, plan.coordinator, 5)}${excelCell(7, 5, "Local / trecho", 3)}${excelCell(9, 5, plan.location, 5)}</row>`);
+    rows.push(`<row r="6" ht="34" customHeight="1">${excelCell(1, 6, "Observações do planejamento", 3)}${excelCell(4, 6, plan.notes, 9)}</row>`);
+    rows.push(`<row r="7" ht="34" customHeight="1">${excelCell(1, 7, "Registro geral da execução", 3)}${excelCell(4, 7, plan.executionNotes, 9)}</row>`);
+    rows.push(`<row r="8" ht="8" customHeight="1"></row>`);
+    rows.push(`<row r="9" ht="28" customHeight="1">${headers.map((header, index) => excelCell(index + 1, 9, header, 4)).join("")}</row>`);
+    dataRows.forEach((values, index) => {
+      const rowNumber = index + 10;
+      const statusStyle = values[9] === "Atrasado" ? 7 : values[9] === "Adiantado" || values[9] === "No horário" ? 6 : 8;
+      rows.push(`<row r="${rowNumber}" ht="32" customHeight="1">${values.map((value, columnIndex) => excelCell(columnIndex + 1, rowNumber, value, columnIndex === 9 ? statusStyle : columnIndex === 1 || columnIndex === 10 ? 9 : 5)).join("")}</row>`);
+    });
+    const lastRow = Math.max(9, dataRows.length + 9);
+    const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="9" topLeftCell="A10" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="38" customWidth="1"/><col min="3" max="4" width="18" customWidth="1"/><col min="5" max="5" width="24" customWidth="1"/><col min="6" max="7" width="17" customWidth="1"/><col min="8" max="9" width="22" customWidth="1"/><col min="10" max="10" width="16" customWidth="1"/><col min="11" max="11" width="52" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A9:K${lastRow}"/><mergeCells count="17"><mergeCell ref="A1:K1"/><mergeCell ref="A3:C3"/><mergeCell ref="D3:F3"/><mergeCell ref="G3:H3"/><mergeCell ref="I3:K3"/><mergeCell ref="A4:C4"/><mergeCell ref="D4:F4"/><mergeCell ref="G4:H4"/><mergeCell ref="I4:K4"/><mergeCell ref="A5:C5"/><mergeCell ref="D5:F5"/><mergeCell ref="G5:H5"/><mergeCell ref="I5:K5"/><mergeCell ref="A6:C6"/><mergeCell ref="D6:K6"/><mergeCell ref="A7:C7"/><mergeCell ref="D7:K7"/></mergeCells></worksheet>`;
+    const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Verdana"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font></fonts><fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF003865"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF32A6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE5EBEE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9F8F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF0ED"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF6D1"/></patternFill></fill></fills><borders count="2"><border/><border><left style="thin"><color rgb="FFCAD6DD"/></left><right style="thin"><color rgb="FFCAD6DD"/></right><top style="thin"><color rgb="FFCAD6DD"/></top><bottom style="thin"><color rgb="FFCAD6DD"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0"/><xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFont="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`);
+    zip.folder("_rels").file(".rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`);
+    zip.folder("docProps").file("app.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Gestão de Intervalo</Application></Properties>`);
+    zip.folder("docProps").file("core.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${escapeXml(plan.title)}</dc:title><dc:creator>Gestão de Intervalo</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:created></cp:coreProperties>`);
+    const xl = zip.folder("xl");
+    xl.file("workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Intervalo" sheetId="1" r:id="rId1"/></sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`);
+    xl.folder("_rels").file("workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+    xl.folder("worksheets").file("sheet1.xml", sheetXml);
+    xl.file("styles.xml", stylesXml);
+    const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", compression: "DEFLATE" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${(plan.title || "plano-intervalo").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase()}.xlsx`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }
+
   function planningPage() {
     const form = $("#plan-form");
     const stepsRoot = $("#planning-steps");
@@ -497,15 +571,21 @@
       showToast("Cronograma destravado para edição.");
     });
 
-    $("#export-button").addEventListener("click", () => {
+    $("#export-button").addEventListener("click", async () => {
       const plan = activePlan();
-      const blob = new Blob([JSON.stringify({ app: "Gestão de Intervalo", version: 1, plan }, null, 2)], { type: "application/json" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${(plan.title || "plano-intervalo").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase()}.json`;
-      link.click();
-      URL.revokeObjectURL(link.href);
-      showToast("Cópia de segurança exportada.");
+      const button = $("#export-button");
+      button.disabled = true;
+      button.textContent = "Gerando planilha…";
+      try {
+        await exportPlanToXlsx(plan);
+        showToast("Planilha Excel exportada com sucesso.");
+      } catch (error) {
+        console.error(error);
+        showToast("Não foi possível gerar a planilha Excel.");
+      } finally {
+        button.disabled = false;
+        button.textContent = "Exportar Excel (.xlsx)";
+      }
     });
 
     $("#import-input").addEventListener("change", async (event) => {

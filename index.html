@@ -11,6 +11,7 @@
     <title>Gestão de Intervalo | Planejamento</title>
     <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png" />
     <link rel="stylesheet" href="styles.css" />
+    <script src="assets/jszip.min.js" defer></script>
     <script src="app.js" defer></script>
   </head>
   <body data-page="planning">
@@ -178,11 +179,11 @@
 
         <section class="data-tools" aria-label="Ferramentas de dados">
           <div>
-            <strong>Cópia de segurança local</strong>
-            <span>Até a integração com o Supabase, exporte o plano para restaurá-lo em outro dispositivo.</span>
+            <strong>Relatório e cópia de segurança</strong>
+            <span>Exporte o plano e a execução para Excel. A importação JSON permanece disponível até a integração com o Supabase.</span>
           </div>
           <div class="data-actions">
-            <button class="button button-ghost" id="export-button" type="button">Exportar JSON</button>
+            <button class="button button-ghost" id="export-button" type="button">Exportar Excel (.xlsx)</button>
             <label class="button button-ghost file-button">
               Importar JSON
               <input id="import-input" type="file" accept="application/json,.json" />
