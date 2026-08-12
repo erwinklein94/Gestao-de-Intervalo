@@ -4,8 +4,13 @@
   try {
     const raw = localStorage.getItem("sb-rzsybguxlueorjpsstmu-auth-token");
     const session = raw ? JSON.parse(raw) : null;
-    if (!session?.access_token && !session?.currentSession?.access_token) location.replace(loginPage.href);
-    else document.documentElement.classList.add("auth-checking");
+    const token = session?.access_token || session?.currentSession?.access_token;
+    if (!token) location.replace(loginPage.href);
+    else {
+      const encoded = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      window.__GESTAO_USER_ID__ = JSON.parse(atob(encoded)).sub;
+      document.documentElement.classList.add("auth-checking");
+    }
   } catch (error) {
     location.replace(loginPage.href);
   }

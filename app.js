@@ -6,6 +6,7 @@
   const SUPABASE_URL = "https://rzsybguxlueorjpsstmu.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sHHGnU3rob-unvk-_CCdcA_Ut4omY23";
   const page = document.body.dataset.page;
+  let activeStorageKey = window.__GESTAO_USER_ID__ ? `${STORAGE_KEY}.${window.__GESTAO_USER_ID__}` : STORAGE_KEY;
   let store = loadStore();
   let saveTimer;
   let toastTimer;
@@ -115,7 +116,7 @@
 
   function loadStore() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      const parsed = JSON.parse(localStorage.getItem(activeStorageKey));
       if (parsed && Array.isArray(parsed.plans) && parsed.plans.length) {
         parsed.plans.forEach(normalizePlan);
         if (!parsed.plans.some((plan) => plan.id === parsed.activePlanId)) parsed.activePlanId = parsed.plans[0].id;
@@ -150,7 +151,7 @@
     const plan = activePlan();
     if (plan) plan.updatedAt = new Date().toISOString();
     const save = () => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+      localStorage.setItem(activeStorageKey, JSON.stringify(store));
       const state = $("#save-state");
       if (state) state.textContent = currentUser ? "Salvo na nuvem" : "Salvo neste dispositivo";
       scheduleCloudSync(immediate);
@@ -261,7 +262,7 @@
           if (stepError) throw stepError;
         }
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+      localStorage.setItem(activeStorageKey, JSON.stringify(store));
       if (state) state.textContent = "Salvo na nuvem";
     } catch (error) {
       console.error("Falha ao salvar no Supabase.", error);
@@ -1139,7 +1140,7 @@
     $(".dialog-close", dialog).addEventListener("click", () => dialog.close());
     $("[data-sign-out]", dialog).addEventListener("click", async () => {
       await cloudClient.auth.signOut();
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(activeStorageKey);
       location.replace("login.html");
     });
   }
@@ -1150,14 +1151,20 @@
       .select("*,interval_steps(*)")
       .order("updated_at", { ascending: false });
     if (error) throw error;
-    if (!data.length) {
+    const allowedData = currentProfile?.role === "editor" ? data : data.filter((plan) => !plan.is_example);
+    if (!allowedData.length) {
+      if (currentProfile?.role !== "editor") {
+        const first = blankPlan();
+        store = { version: 2, activePlanId: first.id, plans: [first] };
+        localStorage.setItem(activeStorageKey, JSON.stringify(store));
+      }
       await syncStoreToCloud();
       return;
     }
-    const plans = data.map(databaseToPlan);
+    const plans = allowedData.map(databaseToPlan);
     const activeId = plans.some((plan) => plan.id === store.activePlanId) ? store.activePlanId : plans[0].id;
     store = { version: 2, activePlanId: activeId, plans };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    localStorage.setItem(activeStorageKey, JSON.stringify(store));
     const cloudLoadedKey = `gestaoIntervaloRumo.cloudLoaded.${currentUser.id}`;
     if (sessionStorage.getItem(cloudLoadedKey) !== "yes") {
       sessionStorage.setItem(cloudLoadedKey, "yes");
@@ -1190,9 +1197,21 @@
     currentProfile = profile || null;
     if (!currentProfile?.enabled) {
       await cloudClient.auth.signOut();
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(activeStorageKey);
       location.replace("login.html?status=disabled");
       return;
+    }
+    if (currentProfile.role !== "editor") {
+      $("#example-plan-button")?.remove();
+      const hadExamples = store.plans.some((plan) => plan.isExample);
+      store.plans = store.plans.filter((plan) => !plan.isExample);
+      if (!store.plans.length) store.plans = [blankPlan()];
+      if (!store.plans.some((plan) => plan.id === store.activePlanId)) store.activePlanId = store.plans[0].id;
+      localStorage.setItem(activeStorageKey, JSON.stringify(store));
+      if (hadExamples) {
+        location.reload();
+        return;
+      }
     }
     document.documentElement.classList.remove("auth-checking");
     if (state) state.textContent = "Sincronizando…";

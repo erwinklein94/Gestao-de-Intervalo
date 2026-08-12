@@ -16,6 +16,8 @@ O site possui temas claro e escuro. O tema claro é o padrão inicial, e a escol
 
 Todas as áreas operacionais são protegidas por autenticação. Usuários sem sessão válida ou com conta desabilitada são direcionados para `login.html` antes de acessar planejamento, execução, dashboard ou conta.
 
+Os dados locais são separados por usuário. A carga demonstrativa e o botão `Exemplo` são exclusivos do perfil editor; coordenadores não recebem exemplos e também são impedidos pelo RLS de gravar planos demonstrativos.
+
 ## Publicação
 
 O workflow em `.github/workflows/deploy-pages.yml` publica todo push na branch `main` usando GitHub Pages via Actions.
