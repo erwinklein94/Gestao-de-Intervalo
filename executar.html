@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#003865" />
+    <meta
+      name="description"
+      content="Acompanhamento em tempo real de intervalos de manutenção de via permanente."
+    />
+    <title>Gestão de Intervalo | Execução</title>
+    <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body data-page="execution">
+    <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Gestão de Intervalo - início">
+        <img src="assets/rumo-logo-white.png" alt="Rumo" />
+        <span>Gestão de Intervalo</span>
+      </a>
+      <nav class="primary-nav" aria-label="Navegação principal">
+        <a href="index.html"><span>1</span> Planejar</a>
+        <a class="active" href="executar.html" aria-current="page"><span>2</span> Executar</a>
+      </nav>
+      <div class="save-state" id="save-state" role="status" aria-live="polite">Salvo neste dispositivo</div>
+    </header>
+
+    <main id="conteudo">
+      <section class="status-hero status-neutral" id="status-hero" aria-live="polite">
+        <div class="status-main">
+          <p class="status-label" id="status-label">Aguardando início</p>
+          <div class="status-value"><span id="status-sign"></span><strong id="status-minutes">00</strong><span>min</span></div>
+          <p id="status-description">Preencha o primeiro horário realizado para iniciar o acompanhamento.</p>
+        </div>
+        <div class="status-clock">
+          <span>Horário atual</span>
+          <strong id="live-clock">--:--:--</strong>
+          <small id="live-date">—</small>
+        </div>
+      </section>
+
+      <section class="execution-workspace">
+        <div class="execution-heading">
+          <div>
+            <p class="section-kicker">Acompanhamento operacional</p>
+            <h1 id="execution-title">Intervalo</h1>
+            <p id="execution-subtitle">—</p>
+          </div>
+          <div class="execution-actions">
+            <a class="button button-ghost" href="index.html">Ver planejamento</a>
+            <button class="button button-secondary" id="print-button" type="button">Imprimir resumo</button>
+          </div>
+        </div>
+
+        <div class="blocked-state" id="execution-blocked" hidden>
+          <div class="blocked-icon" aria-hidden="true">!</div>
+          <div>
+            <h2>O cronograma ainda não foi travado</h2>
+            <p>Finalize e confirme o planejamento antes de registrar a execução.</p>
+          </div>
+          <a class="button button-accent" href="index.html">Voltar ao planejamento</a>
+        </div>
+
+        <div id="execution-content">
+          <section class="metric-grid" aria-label="Resumo do intervalo">
+            <article class="metric-card">
+              <span>Janela programada</span>
+              <strong id="metric-window">—</strong>
+              <small id="metric-duration">—</small>
+            </article>
+            <article class="metric-card">
+              <span>Progresso</span>
+              <strong id="metric-progress">0 / 0</strong>
+              <div class="progress-track"><span id="progress-bar"></span></div>
+            </article>
+            <article class="metric-card">
+              <span>Etapa em andamento</span>
+              <strong id="metric-current">Aguardando</strong>
+              <small id="metric-current-time">—</small>
+            </article>
+            <article class="metric-card emphasis">
+              <span>Previsão de encerramento</span>
+              <strong id="metric-forecast">—</strong>
+              <small id="metric-forecast-note">Conforme o último marco</small>
+            </article>
+          </section>
+
+          <section class="compensation-card compensation-neutral" id="compensation-card">
+            <div class="compensation-symbol" aria-hidden="true">↗</div>
+            <div>
+              <span class="section-kicker">Ritmo das próximas etapas</span>
+              <h2 id="compensation-title">Sem necessidade de compensação</h2>
+              <p id="compensation-description">O acompanhamento começará após o primeiro horário realizado.</p>
+            </div>
+            <div class="compensation-number" id="compensation-number">—</div>
+          </section>
+
+          <section class="panel execution-panel" aria-labelledby="execution-table-title">
+            <div class="panel-heading execution-panel-heading">
+              <div>
+                <span class="step-number">01</span>
+                <div>
+                  <h2 id="execution-table-title">Programado x realizado</h2>
+                  <p>O programado está protegido. Registre os horários e descreva o que efetivamente ocorreu.</p>
+                </div>
+              </div>
+              <div class="legend" aria-label="Legenda">
+                <span><i class="legend-programmed"></i> Programado</span>
+                <span><i class="legend-realized"></i> Realizado</span>
+              </div>
+            </div>
+
+            <div class="execution-list" id="execution-steps"></div>
+          </section>
+
+          <section class="execution-notes panel">
+            <div class="panel-heading compact">
+              <div>
+                <span class="step-number">02</span>
+                <div>
+                  <h2>Registro geral do intervalo</h2>
+                  <p>Consolide ocorrências, restrições e decisões que afetaram a execução.</p>
+                </div>
+              </div>
+            </div>
+            <label class="field">
+              <span>Observações da execução</span>
+              <textarea id="execution-notes" rows="4" maxlength="1200" placeholder="Registre fatos relevantes do intervalo"></textarea>
+            </label>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <footer class="site-footer">
+      <img src="assets/rumo-logo-blue.png" alt="Rumo" />
+      <span>Gestão de Intervalo · Operação com clareza e segurança</span>
+    </footer>
+  </body>
+</html>
