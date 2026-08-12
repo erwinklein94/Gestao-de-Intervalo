@@ -18,6 +18,8 @@ Todas as áreas operacionais são protegidas por autenticação. Usuários sem s
 
 Os dados locais são separados por usuário. A carga demonstrativa e o botão `Exemplo` são exclusivos do perfil editor; coordenadores não recebem exemplos e também são impedidos pelo RLS de gravar planos demonstrativos.
 
+O dashboard possui exportação em PDF por meio da impressão preparada do navegador, incluindo indicadores, gráficos e tabela operacional em formato A4 paisagem.
+
 ## Publicação
 
 O workflow em `.github/workflows/deploy-pages.yml` publica todo push na branch `main` usando GitHub Pages via Actions.

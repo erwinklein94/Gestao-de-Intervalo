@@ -1051,6 +1051,23 @@
       render();
     });
 
+    $("#export-dashboard-pdf").addEventListener("click", () => {
+      const button = $("#export-dashboard-pdf");
+      const previousTitle = document.title;
+      const planName = (activePlan()?.title || "intervalo").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase();
+      document.title = `dashboard-${planName}`;
+      button.disabled = true;
+      button.textContent = "Preparando PDF…";
+      const restore = () => {
+        document.title = previousTitle;
+        button.disabled = false;
+        button.textContent = "Exportar PDF";
+        window.removeEventListener("afterprint", restore);
+      };
+      window.addEventListener("afterprint", restore);
+      setTimeout(() => window.print(), 80);
+    });
+
     renderPlanOptions();
     render();
   }
