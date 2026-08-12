@@ -44,6 +44,35 @@
     };
   }
 
+  function examplePlan() {
+    const created = new Date().toISOString();
+    return {
+      id: uid(),
+      title: "Exemplo — Renovação de linha km 141+150",
+      serviceType: "Renovação de linha",
+      coordinator: "Coordenação de Via Permanente",
+      date: todayISO(),
+      location: "Linha Tronco — km 141+150",
+      windowStart: "08:00",
+      windowEnd: "12:00",
+      notes: "Plano demonstrativo para teste. Recursos previstos: equipe de via, equipamentos de pequeno porte e apoio operacional.",
+      executionNotes: "Execução demonstrativa: primeira frente liberada e equipe reposicionada para manter o ritmo do intervalo.",
+      locked: true,
+      lockedAt: created,
+      createdAt: created,
+      updatedAt: created,
+      isExample: true,
+      steps: [
+        { id: uid(), name: "DDS e liberação da frente de serviço", plannedStart: "08:00", plannedEnd: "08:15", actualStart: "08:02", actualEnd: "08:18", actualNotes: "DDS realizado com toda a equipe e frente liberada após confirmação da proteção." },
+        { id: uid(), name: "Desmontagem da grade existente", plannedStart: "08:15", plannedEnd: "09:00", actualStart: "08:18", actualEnd: "09:08", actualNotes: "Grade desmontada; houve cinco minutos adicionais para reposicionamento do equipamento." },
+        { id: uid(), name: "Regularização e preparação da plataforma", plannedStart: "09:00", plannedEnd: "09:45", actualStart: "09:08", actualEnd: "09:50", actualNotes: "Plataforma regularizada e liberada para o lançamento da nova grade." },
+        { id: uid(), name: "Lançamento e posicionamento da nova grade", plannedStart: "09:45", plannedEnd: "10:40", actualStart: "09:50", actualEnd: "", actualNotes: "Atividade em andamento no exemplo." },
+        { id: uid(), name: "Fixação, alinhamento e nivelamento", plannedStart: "10:40", plannedEnd: "11:30", actualStart: "", actualEnd: "", actualNotes: "" },
+        { id: uid(), name: "Inspeção final e liberação da via", plannedStart: "11:30", plannedEnd: "12:00", actualStart: "", actualEnd: "", actualNotes: "" }
+      ]
+    };
+  }
+
   function loadStore() {
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
@@ -378,6 +407,23 @@
       persist(true);
       renderForm();
       form.elements.title.focus();
+    });
+
+    $("#example-plan-button").addEventListener("click", () => {
+      const existingExample = store.plans.find((plan) => plan.isExample);
+      if (existingExample) {
+        store.activePlanId = existingExample.id;
+        persist(true);
+        renderForm();
+        showToast("Exemplo existente selecionado. Abra a execução para testar.");
+        return;
+      }
+      const plan = examplePlan();
+      store.plans.push(plan);
+      store.activePlanId = plan.id;
+      persist(true);
+      renderForm();
+      showToast("Exemplo criado com execução parcial. Clique em “Abrir execução”.");
     });
 
     $("#duplicate-plan-button").addEventListener("click", () => {

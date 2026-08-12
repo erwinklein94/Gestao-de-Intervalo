@@ -193,6 +193,8 @@ a { color: inherit; }
 .button-accent { color: var(--blue); background: var(--lime); box-shadow: 0 8px 22px rgba(127,224,108,.18); }
 .button-accent:hover { background: #92eb80; }
 .button-light { color: var(--blue); background: var(--white); }
+.button-example { color: var(--blue); background: var(--yellow); }
+.button-example:hover { background: #ffe24c; }
 .button-secondary { color: var(--white); background: var(--green); }
 .button-secondary:hover { background: #178c70; }
 .button-ghost { border-color: var(--line); color: var(--blue); background: var(--white); }
