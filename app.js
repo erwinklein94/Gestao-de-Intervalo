@@ -836,6 +836,109 @@
     }, 1000);
   }
 
+  function dashboardPage() {
+    const selector = $("#dashboard-plan-selector");
+
+    function lastVariance(timeline) {
+      const milestones = [];
+      timeline.steps.forEach((step) => {
+        if (step.actualStartMinutes != null && step.start != null) milestones.push({ actual: step.actualStartMinutes, planned: step.start });
+        if (step.actualEndMinutes != null && step.end != null) milestones.push({ actual: step.actualEndMinutes, planned: step.end });
+      });
+      milestones.sort((a, b) => a.actual - b.actual);
+      return milestones.length ? milestones.at(-1).actual - milestones.at(-1).planned : null;
+    }
+
+    function statusFor(step) {
+      if (step.actualEndMinutes != null) {
+        const variance = step.end == null ? null : Math.round(step.actualEndMinutes - step.end);
+        if (variance > 1) return { label: "Atrasada", className: "delay", variance };
+        if (variance < -1) return { label: "Adiantada", className: "ahead", variance };
+        return { label: "No prazo", className: "on-time", variance: variance || 0 };
+      }
+      if (step.actualStartMinutes != null) return { label: "Em andamento", className: "running", variance: null };
+      return { label: "Aguardando", className: "waiting", variance: null };
+    }
+
+    function renderPlanOptions() {
+      selector.innerHTML = store.plans.map((plan) => `<option value="${plan.id}" ${plan.id === store.activePlanId ? "selected" : ""}>${escapeHtml(plan.title || "Plano sem nome")}</option>`).join("");
+    }
+
+    function render() {
+      const plan = activePlan();
+      const timeline = buildTimeline(plan);
+      const completed = timeline.steps.filter((step) => step.actualEndMinutes != null);
+      const running = timeline.steps.filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null);
+      const progress = timeline.steps.length ? Math.round((completed.length / timeline.steps.length) * 100) : 0;
+      const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
+      const actualTotal = completed.reduce((sum, step) => sum + (step.actualDuration || 0), 0);
+      const variance = lastVariance(timeline);
+      const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
+
+      $("#dashboard-title").textContent = plan.title || "Intervalo sem nome";
+      $("#dashboard-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator].filter(Boolean).join(" · ") || "Plano ativo";
+      $("#dashboard-progress").textContent = `${progress}%`;
+      $("#dashboard-progress-note").textContent = `${completed.length} de ${timeline.steps.length} etapas concluídas`;
+      $("#dashboard-planned-total").textContent = plannedTotal ? formatMinutes(plannedTotal) : "—";
+      $("#dashboard-actual-total").textContent = completed.length ? formatMinutes(actualTotal) : "—";
+      $("#dashboard-actual-note").textContent = completed.length ? `${completed.length} etapa${completed.length > 1 ? "s" : ""} com duração calculada` : "aguardando registros completos";
+      $("#dashboard-variance").textContent = variance == null ? "—" : variance > 1 ? `+${Math.round(variance)} min` : variance < -1 ? `${Math.round(variance)} min` : "No prazo";
+      $("#dashboard-variance-note").textContent = variance == null ? "sem horários realizados" : variance > 1 ? "atraso em relação ao programado" : variance < -1 ? "adiantamento em relação ao programado" : "aderente ao cronograma";
+
+      const overall = $("#dashboard-status");
+      if (completed.length === timeline.steps.length && timeline.steps.length) {
+        overall.textContent = variance != null && variance > 1 ? `Concluído com ${Math.round(variance)} min de atraso` : variance != null && variance < -1 ? `Concluído ${Math.abs(Math.round(variance))} min adiantado` : "Concluído no prazo";
+        overall.className = `dashboard-status ${variance != null && variance > 1 ? "status-delay" : "status-good"}`;
+      } else if (running.length) {
+        overall.textContent = variance != null && variance > 1 ? `Em execução · ${Math.round(variance)} min de atraso` : variance != null && variance < -1 ? `Em execução · ${Math.abs(Math.round(variance))} min adiantado` : "Em execução · no prazo";
+        overall.className = `dashboard-status ${variance != null && variance > 1 ? "status-delay" : "status-running"}`;
+      } else {
+        overall.textContent = completed.length ? "Execução pausada" : "Aguardando execução";
+        overall.className = "dashboard-status status-waiting";
+      }
+
+      $("#duration-chart").innerHTML = timeline.steps.length ? timeline.steps.map((step, index) => `
+        <div class="duration-row">
+          <div class="duration-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div>
+          <div class="duration-bars">
+            <div class="chart-bar-line"><i class="planned" style="width:${Math.max(2, ((step.duration || 0) / maxDuration) * 100)}%"></i><b>${formatMinutes(step.duration)}</b></div>
+            <div class="chart-bar-line"><i class="actual" style="width:${step.actualDuration == null ? 0 : Math.max(2, (step.actualDuration / maxDuration) * 100)}%"></i><b>${step.actualDuration == null ? "—" : formatMinutes(step.actualDuration)}</b></div>
+          </div>
+        </div>`).join("") : `<div class="chart-empty">Adicione etapas ao planejamento para gerar o gráfico.</div>`;
+
+      $("#completion-ring").style.setProperty("--progress", `${progress * 3.6}deg`);
+      $("#completion-value").textContent = `${progress}%`;
+      $("#completion-breakdown").innerHTML = `
+        <span><i class="complete"></i><strong>${completed.length}</strong> concluídas</span>
+        <span><i class="running"></i><strong>${running.length}</strong> em andamento</span>
+        <span><i class="waiting"></i><strong>${Math.max(0, timeline.steps.length - completed.length - running.length)}</strong> aguardando</span>`;
+
+      const varianceSteps = timeline.steps.filter((step) => step.actualEndMinutes != null && step.end != null);
+      const maxVariance = Math.max(1, ...varianceSteps.map((step) => Math.abs(step.actualEndMinutes - step.end)));
+      $("#variance-chart").innerHTML = varianceSteps.length ? varianceSteps.map((step) => {
+        const value = Math.round(step.actualEndMinutes - step.end);
+        const width = Math.max(value === 0 ? 2 : 8, (Math.abs(value) / maxVariance) * 48);
+        return `<div class="variance-row"><span>${String(step.index + 1).padStart(2, "0")}</span><div class="variance-axis"><i class="${value > 1 ? "delay" : value < -1 ? "ahead" : "on-time"}" style="width:${width}%;${value < -1 ? "right:50%" : "left:50%"}"></i></div><strong>${value > 0 ? "+" : ""}${value} min</strong></div>`;
+      }).join("") : `<div class="chart-empty">Conclua uma etapa para visualizar os desvios.</div>`;
+
+      $("#dashboard-table-body").innerHTML = timeline.steps.length ? timeline.steps.map((step) => {
+        const status = statusFor(step);
+        const durationDiff = step.actualDuration != null && step.duration != null ? Math.round(step.actualDuration - step.duration) : null;
+        return `<tr><td><strong>${escapeHtml(step.name || "Etapa sem nome")}</strong><small>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</small></td><td>${formatMinutes(step.duration)}</td><td>${step.actualDuration == null ? "—" : formatMinutes(step.actualDuration)}</td><td>${durationDiff == null ? "—" : `${durationDiff > 0 ? "+" : ""}${durationDiff} min`}</td><td><span class="table-status ${status.className}">${status.label}</span></td></tr>`;
+      }).join("") : `<tr><td colspan="5">Nenhuma etapa cadastrada.</td></tr>`;
+    }
+
+    selector.addEventListener("change", () => {
+      store.activePlanId = selector.value;
+      persist(true);
+      render();
+    });
+
+    renderPlanOptions();
+    render();
+  }
+
   if (page === "planning") planningPage();
   if (page === "execution") executionPage();
+  if (page === "dashboard") dashboardPage();
 })();

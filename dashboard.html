@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#003865" />
+    <meta name="description" content="Indicadores do planejamento e da execução dos intervalos de manutenção." />
+    <title>Gestão de Intervalo | Dashboard</title>
+    <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body data-page="dashboard">
+    <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Gestão de Intervalo - início">
+        <img src="assets/rumo-logo-white.png" alt="Rumo" />
+        <span>Gestão de Intervalo</span>
+      </a>
+      <nav class="primary-nav" aria-label="Navegação principal">
+        <a href="index.html"><span>1</span> Planejar</a>
+        <a href="executar.html"><span>2</span> Executar</a>
+        <a class="active" href="dashboard.html" aria-current="page"><span>3</span> Dashboard</a>
+      </nav>
+      <div class="save-state">Dados deste dispositivo</div>
+    </header>
+
+    <main id="conteudo">
+      <section class="dashboard-hero">
+        <div>
+          <p class="eyebrow">Visão gerencial do intervalo</p>
+          <h1>Planejado e realizado,<br />lado a lado.</h1>
+          <p>Analise o ritmo da execução, identifique desvios e veja onde o cronograma precisa de atenção.</p>
+        </div>
+        <label class="dashboard-plan-picker" for="dashboard-plan-selector">
+          <span>Plano analisado</span>
+          <select id="dashboard-plan-selector" aria-label="Selecionar plano para análise"></select>
+        </label>
+      </section>
+
+      <section class="dashboard-workspace">
+        <div class="dashboard-context">
+          <div>
+            <p class="section-kicker">Resumo do plano</p>
+            <h2 id="dashboard-title">Intervalo</h2>
+            <p id="dashboard-subtitle">—</p>
+          </div>
+          <span class="dashboard-status status-waiting" id="dashboard-status">Aguardando execução</span>
+        </div>
+
+        <section class="dashboard-kpis" aria-label="Indicadores principais">
+          <article class="dashboard-kpi"><span>Progresso</span><strong id="dashboard-progress">0%</strong><small id="dashboard-progress-note">0 de 0 etapas concluídas</small></article>
+          <article class="dashboard-kpi"><span>Tempo programado</span><strong id="dashboard-planned-total">—</strong><small>somatório das etapas</small></article>
+          <article class="dashboard-kpi"><span>Tempo realizado</span><strong id="dashboard-actual-total">—</strong><small id="dashboard-actual-note">aguardando registros completos</small></article>
+          <article class="dashboard-kpi featured"><span>Desvio no último marco</span><strong id="dashboard-variance">—</strong><small id="dashboard-variance-note">sem horários realizados</small></article>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="chart-card chart-card-wide">
+            <header class="chart-heading">
+              <div><p class="section-kicker">Duração por atividade</p><h2>Programado x realizado</h2></div>
+              <div class="chart-legend"><span><i class="planned"></i>Programado</span><span><i class="actual"></i>Realizado</span></div>
+            </header>
+            <div class="duration-chart" id="duration-chart"></div>
+          </article>
+
+          <article class="chart-card">
+            <header class="chart-heading"><div><p class="section-kicker">Avanço</p><h2>Conclusão das etapas</h2></div></header>
+            <div class="completion-chart">
+              <div class="completion-ring" id="completion-ring"><div><strong id="completion-value">0%</strong><span>concluído</span></div></div>
+              <div class="completion-breakdown" id="completion-breakdown"></div>
+            </div>
+          </article>
+
+          <article class="chart-card">
+            <header class="chart-heading"><div><p class="section-kicker">Pontualidade</p><h2>Desvio no fim de cada etapa</h2></div></header>
+            <div class="variance-chart" id="variance-chart"></div>
+          </article>
+        </section>
+
+        <section class="chart-card dashboard-table-card">
+          <header class="chart-heading"><div><p class="section-kicker">Detalhamento</p><h2>Leitura operacional</h2></div></header>
+          <div class="dashboard-table-wrap">
+            <table class="dashboard-table">
+              <thead><tr><th>Atividade</th><th>Previsto</th><th>Realizado</th><th>Diferença</th><th>Situação</th></tr></thead>
+              <tbody id="dashboard-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <img src="assets/rumo-logo-blue.png" alt="Rumo" />
+      <span>Gestão de Intervalo · Operação com clareza e segurança</span>
+    </footer>
+  </body>
+</html>
