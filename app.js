@@ -1213,7 +1213,7 @@
     content.hidden = false;
     $("#account-name").textContent = currentProfile.full_name || "Usuário";
     $("#account-email").textContent = currentProfile.email;
-    $("#account-role").textContent = currentProfile.role === "editor" ? "Editor" : "Usuário";
+    $("#account-role").textContent = currentProfile.role === "editor" ? "Editor" : "Coordenador";
     $("#account-history").innerHTML = store.plans.length ? [...store.plans].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map((plan) => {
       const completed = plan.steps.filter((step) => step.actualEnd).length;
       return `<article class="history-item"><div><strong>${escapeHtml(plan.title || "Plano sem nome")}</strong><span>${plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Sem data"} · ${escapeHtml(plan.serviceType || "Serviço não informado")}</span></div><div><b>${completed}/${plan.steps.length}</b><small>etapas concluídas</small></div><a class="button button-ghost" href="dashboard.html">Ver dashboard</a></article>`;
@@ -1235,7 +1235,7 @@
 
     async function renderUsers() {
       const { data } = await cloudClient.from("user_profiles").select("*").order("created_at", { ascending: false });
-      $("#users-list").innerHTML = (data || []).map((profile) => `<article class="user-row" data-user-id="${profile.id}"><div><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span></div><span>${profile.role === "editor" ? "Editor" : "Usuário"}</span><label class="account-switch"><input type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}><i></i><b>${profile.enabled ? "Habilitada" : "Desabilitada"}</b></label></article>`).join("");
+      $("#users-list").innerHTML = (data || []).map((profile) => `<article class="user-row" data-user-id="${profile.id}"><div><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span></div><span>${profile.role === "editor" ? "Editor" : "Coordenador"}</span><label class="account-switch"><input type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}><i></i><b>${profile.enabled ? "Habilitada" : "Desabilitada"}</b></label></article>`).join("");
       $$(".user-row input", $("#users-list")).forEach((input) => input.addEventListener("change", async () => {
         const row = input.closest(".user-row");
         await cloudClient.from("user_profiles").update({ enabled: input.checked }).eq("id", row.dataset.userId);

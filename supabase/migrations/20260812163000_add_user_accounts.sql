@@ -23,13 +23,11 @@ revoke all on function private.is_editor(), private.is_enabled_user() from publi
 grant execute on function private.is_editor(), private.is_enabled_user() to authenticated;
 
 create function private.handle_new_user() returns trigger language plpgsql security definer set search_path = '' as $$
-declare is_bootstrap_editor boolean; created_by_editor boolean;
+declare is_bootstrap_editor boolean;
 begin
   is_bootstrap_editor := lower(coalesce(new.email, '')) = 'erwin.klein@ext.rumolog.com';
-  created_by_editor := coalesce((new.raw_app_meta_data ->> 'created_by_editor')::boolean, false);
-  if not is_bootstrap_editor and not created_by_editor then raise exception 'Novas contas devem ser criadas por um editor.'; end if;
   insert into public.user_profiles (id,email,full_name,role,enabled) values
-    (new.id,coalesce(new.email,''),coalesce(new.raw_user_meta_data->>'full_name',''),case when is_bootstrap_editor then 'editor' else 'user' end,true);
+    (new.id,coalesce(new.email,''),coalesce(new.raw_user_meta_data->>'full_name',''),case when is_bootstrap_editor then 'editor' else 'user' end,is_bootstrap_editor);
   return new;
 end; $$;
 revoke all on function private.handle_new_user() from public, anon, authenticated;

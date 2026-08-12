@@ -24,8 +24,13 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const email = String(body.email || "").trim().toLowerCase(); const password = String(body.password || ""); const fullName = String(body.fullName || "").trim().slice(0, 120);
     if (!email || !email.includes("@") || password.length < 8) return new Response(JSON.stringify({ error: "Informe e-mail válido e senha com ao menos 8 caracteres." }), { status: 400, headers });
-    const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: fullName }, app_metadata: { created_by_editor: true } });
+    const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: fullName } });
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers });
+    const { error: profileError } = await admin.from("user_profiles").update({ enabled: true }).eq("id", data.user.id);
+    if (profileError) {
+      await admin.auth.admin.deleteUser(data.user.id);
+      return new Response(JSON.stringify({ error: "A conta não pôde ser habilitada." }), { status: 500, headers });
+    }
     return new Response(JSON.stringify({ user: { id: data.user.id, email: data.user.email } }), { status: 201, headers });
   } catch { return new Response(JSON.stringify({ error: "Não foi possível criar a conta." }), { status: 500, headers }); }
 });
