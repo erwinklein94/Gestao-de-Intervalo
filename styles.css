@@ -494,11 +494,6 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .dashboard-context { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
 .dashboard-context h2 { margin: 0; color: var(--blue); font-size: 25px; }
 .dashboard-context > div > p:last-child { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
-.dashboard-status { padding: 10px 14px; border-radius: 99px; font-size: 11px; font-weight: 700; white-space: nowrap; }
-.dashboard-status.status-waiting { color: var(--muted); background: var(--surface-2); }
-.dashboard-status.status-running { color: var(--blue); background: #fff5c7; }
-.dashboard-status.status-good { color: #126b57; background: var(--success-soft); }
-.dashboard-status.status-delay { color: #a43b32; background: var(--danger-soft); }
 .dashboard-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
 .dashboard-kpi { min-height: 145px; padding: 22px; display: flex; flex-direction: column; justify-content: center; border: 1px solid #dbe4e8; border-radius: 14px; background: var(--white); }
 .dashboard-kpi > span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -609,11 +604,8 @@ html[data-theme="dark"] .blocked-state { border-color: #65542d; background: #302
 html[data-theme="dark"] .lock-banner { border-color: #276755; background: #12382f; }
 html[data-theme="dark"] .compensation-alert { border-color: #7c4b32; background: #34251f; }
 html[data-theme="dark"] .compensation-good { border-color: #276755; background: #12382f; }
-html[data-theme="dark"] .dashboard-status.status-running,
 html[data-theme="dark"] .table-status.running { color: #fbe66b; background: #40391a; }
-html[data-theme="dark"] .dashboard-status.status-delay,
 html[data-theme="dark"] .table-status.delay { color: #ffaaa0; background: #3b2226; }
-html[data-theme="dark"] .dashboard-status.status-good,
 html[data-theme="dark"] .table-status.ahead,
 html[data-theme="dark"] .table-status.on-time { color: #79dfbd; background: #12382f; }
 html[data-theme="dark"] .step-variance.delay { color: #ffaaa0; background: #3b2226; }

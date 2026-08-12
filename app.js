@@ -872,16 +872,6 @@
   function dashboardPage() {
     const selector = $("#dashboard-plan-selector");
 
-    function lastVariance(timeline) {
-      const milestones = [];
-      timeline.steps.forEach((step) => {
-        if (step.actualStartMinutes != null && step.start != null) milestones.push({ actual: step.actualStartMinutes, planned: step.start });
-        if (step.actualEndMinutes != null && step.end != null) milestones.push({ actual: step.actualEndMinutes, planned: step.end });
-      });
-      milestones.sort((a, b) => a.actual - b.actual);
-      return milestones.length ? milestones.at(-1).actual - milestones.at(-1).planned : null;
-    }
-
     function statusFor(step) {
       if (step.actualEndMinutes != null) {
         const variance = step.end == null ? null : Math.round(step.actualEndMinutes - step.end);
@@ -909,7 +899,6 @@
       const comparablePlannedTotal = comparableSteps.reduce((sum, step) => sum + step.duration, 0);
       const comparableActualTotal = comparableSteps.reduce((sum, step) => sum + step.actualDuration, 0);
       const durationDifference = comparableSteps.length ? Math.round(comparableActualTotal - comparablePlannedTotal) : null;
-      const variance = lastVariance(timeline);
       const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
 
       $("#dashboard-title").textContent = plan.title || "Intervalo sem nome";
@@ -928,18 +917,6 @@
             ? `realizado consumiu ${Math.abs(durationDifference)} min a menos`
             : "duração realizada igual à planejada";
       $("#dashboard-variance-card").className = `dashboard-kpi featured ${durationDifference == null ? "variance-neutral" : durationDifference > 0 ? "variance-positive" : durationDifference < 0 ? "variance-negative" : "variance-zero"}`;
-
-      const overall = $("#dashboard-status");
-      if (completed.length === timeline.steps.length && timeline.steps.length) {
-        overall.textContent = variance != null && variance > 1 ? `Concluído com ${Math.round(variance)} min de atraso` : variance != null && variance < -1 ? `Concluído ${Math.abs(Math.round(variance))} min adiantado` : "Concluído no prazo";
-        overall.className = `dashboard-status ${variance != null && variance > 1 ? "status-delay" : "status-good"}`;
-      } else if (running.length) {
-        overall.textContent = variance != null && variance > 1 ? `Em execução · ${Math.round(variance)} min de atraso` : variance != null && variance < -1 ? `Em execução · ${Math.abs(Math.round(variance))} min adiantado` : "Em execução · no prazo";
-        overall.className = `dashboard-status ${variance != null && variance > 1 ? "status-delay" : "status-running"}`;
-      } else {
-        overall.textContent = completed.length ? "Execução pausada" : "Aguardando execução";
-        overall.className = "dashboard-status status-waiting";
-      }
 
       $("#duration-chart").innerHTML = timeline.steps.length ? timeline.steps.map((step, index) => `
         <div class="duration-row">
