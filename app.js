@@ -352,6 +352,31 @@
     return { windowStart, windowEnd, duration: windowStart != null && windowEnd != null ? windowEnd - windowStart : null, steps };
   }
 
+  function currentAbsolute(plan, timeline) {
+    if (!plan.date || timeline.windowStart == null || plan.date !== todayISO()) return null;
+    const startDate = new Date(`${plan.date}T00:00:00`);
+    if (Number.isNaN(startDate.getTime())) return null;
+    return (Date.now() - startDate.getTime()) / 60000;
+  }
+
+  function totalScheduleDeviation(plan, timeline) {
+    const comparableCompleted = timeline.steps.filter((step) => step.duration != null && step.actualDuration != null);
+    const completedDeviation = comparableCompleted.reduce((sum, step) => sum + step.actualDuration - step.duration, 0);
+    const nowAbs = currentAbsolute(plan, timeline);
+    const activeSteps = timeline.steps.filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && step.duration != null);
+    const activeOverrun = nowAbs == null ? 0 : activeSteps.reduce((sum, step) => {
+      const elapsed = Math.max(0, nowAbs - step.actualStartMinutes);
+      return sum + Math.max(0, elapsed - step.duration);
+    }, 0);
+    const hasComparableData = comparableCompleted.length > 0 || (nowAbs != null && activeSteps.length > 0);
+    return {
+      value: hasComparableData ? Math.round(completedDeviation + activeOverrun) : null,
+      completedCount: comparableCompleted.length,
+      activeCount: activeSteps.length,
+      activeOverrun: Math.round(activeOverrun)
+    };
+  }
+
   function validatePlan(plan) {
     const timeline = buildTimeline(plan);
     const errors = [];
@@ -770,15 +795,6 @@
       return new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false });
     }
 
-    function currentAbsolute(timeline) {
-      if (!plan.date || timeline.windowStart == null) return null;
-      if (plan.date !== todayISO()) return null;
-      const startDate = new Date(`${plan.date}T00:00:00`);
-      if (Number.isNaN(startDate.getTime())) return null;
-      const now = new Date();
-      return (now.getTime() - startDate.getTime()) / 60000;
-    }
-
     function getStatus() {
       const timeline = buildTimeline(plan);
       const completed = timeline.steps.filter((step) => step.actualEndMinutes != null);
@@ -789,23 +805,17 @@
       });
       candidates.sort((a, b) => a.actual - b.actual);
       let milestone = candidates.at(-1) || null;
-      let diff = milestone ? milestone.actual - milestone.planned : null;
+      const totalDeviation = totalScheduleDeviation(plan, timeline);
+      let diff = totalDeviation.value;
       const active = timeline.steps
         .filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null)
         .sort((a, b) => a.actualStartMinutes - b.actualStartMinutes)
         .at(-1) || null;
-      const nowAbs = currentAbsolute(timeline);
+      const nowAbs = currentAbsolute(plan, timeline);
       if (active && nowAbs != null && active.end != null && nowAbs > active.end) {
-        const liveDelay = nowAbs - active.end;
-        diff = liveDelay;
         milestone = { actual: nowAbs, planned: active.end, type: "andamento", step: active };
       }
-      if (completed.length === timeline.steps.length && timeline.steps.length && timeline.windowEnd != null) {
-        const lastActual = Math.max(...completed.map((step) => step.actualEndMinutes));
-        diff = lastActual - timeline.windowEnd;
-        milestone = { actual: lastActual, planned: timeline.windowEnd, type: "encerramento", step: completed.at(-1) };
-      }
-      return { timeline, completed, milestone, diff, active };
+      return { timeline, completed, milestone, diff, active, totalDeviation };
     }
 
     function varianceLabel(step) {
@@ -876,13 +886,11 @@
         $("#status-label").textContent = "Aguardando início";
         $("#status-description").textContent = "Preencha o primeiro horário realizado para iniciar o acompanhamento.";
       } else if (rounded > 1) {
-        $("#status-label").textContent = `Atraso atual do cronograma: ${Math.abs(rounded)} minutos`;
-        $("#status-description").textContent = milestone?.type === "andamento"
-          ? `A etapa “${milestone.step.name}” ainda está em andamento após o fim programado.`
-          : milestone ? `Comparação pelo ${milestone.type} de “${milestone.step.name}”.` : "Atraso em relação ao cronograma.";
+        $("#status-label").textContent = `Atraso total acumulado: ${Math.abs(rounded)} minutos`;
+        $("#status-description").textContent = `Soma dos desvios de duração das etapas concluídas${status.totalDeviation.activeOverrun > 0 ? " e do excesso já consumido pela etapa em andamento" : ""}.`;
       } else if (rounded < -1) {
-        $("#status-label").textContent = `Adiantamento atual do cronograma: ${Math.abs(rounded)} minutos`;
-        $("#status-description").textContent = milestone ? `Comparação pelo ${milestone.type} de “${milestone.step.name}”.` : "Adiantamento em relação ao cronograma.";
+        $("#status-label").textContent = `Adiantamento total acumulado: ${Math.abs(rounded)} minutos`;
+        $("#status-description").textContent = "Saldo acumulado das durações realizadas em comparação com as programadas.";
       } else {
         $("#status-label").textContent = "Intervalo dentro do prazo";
         $("#status-description").textContent = "O último marco realizado está aderente ao cronograma programado.";
@@ -1002,10 +1010,8 @@
       const progress = timeline.steps.length ? Math.round((completed.length / timeline.steps.length) * 100) : 0;
       const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
       const actualTotal = completed.reduce((sum, step) => sum + (step.actualDuration || 0), 0);
-      const comparableSteps = completed.filter((step) => step.duration != null && step.actualDuration != null);
-      const comparablePlannedTotal = comparableSteps.reduce((sum, step) => sum + step.duration, 0);
-      const comparableActualTotal = comparableSteps.reduce((sum, step) => sum + step.actualDuration, 0);
-      const durationDifference = comparableSteps.length ? Math.round(comparableActualTotal - comparablePlannedTotal) : null;
+      const totalDeviation = totalScheduleDeviation(plan, timeline);
+      const durationDifference = totalDeviation.value;
       const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
 
       $("#dashboard-title").textContent = plan.title || "Intervalo sem nome";
@@ -1016,13 +1022,14 @@
       $("#dashboard-actual-total").textContent = completed.length ? formatMinutes(actualTotal) : "—";
       $("#dashboard-actual-note").textContent = completed.length ? `${completed.length} etapa${completed.length > 1 ? "s" : ""} com duração calculada` : "aguardando registros completos";
       $("#dashboard-variance").textContent = durationDifference == null ? "—" : `${durationDifference > 0 ? "+" : ""}${durationDifference} min`;
+      $("#dashboard-variance-label").textContent = durationDifference == null || durationDifference >= 0 ? "Atraso total acumulado" : "Adiantamento total acumulado";
       $("#dashboard-variance-note").textContent = durationDifference == null
-        ? "Somente etapas concluídas e comparáveis"
+        ? "Aguardando registros comparáveis"
         : durationDifference > 0
-          ? `${comparableSteps.length} etapa${comparableSteps.length > 1 ? "s" : ""} concluída${comparableSteps.length > 1 ? "s" : ""}: ${durationDifference} min a mais de duração`
+          ? `Total das concluídas${totalDeviation.activeOverrun > 0 ? " + excesso da etapa em andamento" : ""}`
           : durationDifference < 0
-            ? `${comparableSteps.length} etapa${comparableSteps.length > 1 ? "s" : ""} concluída${comparableSteps.length > 1 ? "s" : ""}: ${Math.abs(durationDifference)} min a menos de duração`
-            : "Etapas concluídas: duração realizada igual à planejada";
+            ? "Saldo total das durações concluídas"
+            : "Duração total realizada igual à programada";
       $("#dashboard-variance-card").className = `dashboard-kpi featured ${durationDifference == null ? "variance-neutral" : durationDifference > 0 ? "variance-positive" : durationDifference < 0 ? "variance-negative" : "variance-zero"}`;
 
       $("#duration-chart").innerHTML = timeline.steps.length ? timeline.steps.map((step, index) => `
@@ -1081,6 +1088,7 @@
 
     renderPlanOptions();
     render();
+    setInterval(render, 1000);
   }
 
   function renderAuthControls() {
