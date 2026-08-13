@@ -35,7 +35,8 @@
     </header>
 
     <main id="conteudo">
-      <section class="status-hero status-neutral" id="status-hero" aria-live="polite">
+      <section class="status-hero status-neutral" id="status-hero">
+        <p class="sr-only" id="status-announcement" role="status" aria-live="polite" aria-atomic="true">Aguardando início da execução</p>
         <div class="status-main">
           <p class="status-label" id="status-label">Aguardando início</p>
           <div class="status-value"><span id="status-sign"></span><strong id="status-minutes">00</strong><span>min</span></div>
@@ -100,6 +101,12 @@
               <strong id="metric-forecast">—</strong>
               <small id="metric-forecast-note">Conforme o último marco</small>
             </article>
+          </section>
+
+          <section class="operational-callout" aria-live="polite" aria-atomic="true">
+            <span>Próxima ação do coordenador(a)</span>
+            <strong id="operational-action">Aguardando o primeiro registro.</strong>
+            <small id="operational-detail">O desvio será calculado após o primeiro marco realizado.</small>
           </section>
 
           <section class="compensation-card compensation-neutral" id="compensation-card">

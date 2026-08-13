@@ -3,6 +3,7 @@
 
   const STORAGE_KEY = "gestaoIntervaloRumo.v1";
   const THEME_KEY = "gestaoIntervaloRumo.theme";
+  const SKIPPED_PREFIX = "[[ETAPA_NAO_EXECUTADA]]";
   const SUPABASE_URL = "https://rzsybguxlueorjpsstmu.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sHHGnU3rob-unvk-_CCdcA_Ut4omY23";
   const page = document.body.dataset.page;
@@ -18,6 +19,9 @@
   let cloudSyncPending = false;
   let localRevision = 0;
   let pageInitialized = false;
+  let pageRefreshHandler = null;
+  let cloudRefreshRunning = false;
+  let cloudRefreshTimer = null;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -65,7 +69,7 @@
   }
 
   function blankStep() {
-    return { id: uid(), name: "", plannedStart: "", plannedEnd: "", actualStart: "", actualEnd: "", actualNotes: "" };
+    return { id: uid(), name: "", plannedStart: "", plannedEnd: "", actualStart: "", actualEnd: "", actualNotes: "", executionStatus: "pending", skipReason: "" };
   }
 
   function blankPlan(title = "Novo plano") {
@@ -84,6 +88,8 @@
       lockedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      deletedStepIds: [],
+      structureDirty: false,
       steps: [blankStep()]
     };
   }
@@ -106,6 +112,8 @@
       createdAt: created,
       updatedAt: created,
       isExample: true,
+      deletedStepIds: [],
+      structureDirty: false,
       steps: [
         { id: uid(), name: "DDS e liberação da frente de serviço", plannedStart: "08:00", plannedEnd: "08:15", actualStart: "08:02", actualEnd: "08:18", actualNotes: "DDS realizado com toda a equipe e frente liberada após confirmação da proteção." },
         { id: uid(), name: "Desmontagem da grade existente", plannedStart: "08:15", plannedEnd: "09:00", actualStart: "08:18", actualEnd: "09:08", actualNotes: "Grade desmontada; houve cinco minutos adicionais para reposicionamento do equipamento." },
@@ -121,7 +129,7 @@
     try {
       const parsed = JSON.parse(localStorage.getItem(activeStorageKey));
       if (parsed && Array.isArray(parsed.plans) && parsed.plans.length) {
-        parsed.plans.forEach(normalizePlan);
+        normalizeStore(parsed);
         if (!parsed.plans.some((plan) => plan.id === parsed.activePlanId)) parsed.activePlanId = parsed.plans[0].id;
         return parsed;
       }
@@ -129,12 +137,14 @@
       console.warn("Não foi possível ler os dados locais.", error);
     }
     const first = blankPlan();
-    return { version: 1, activePlanId: first.id, plans: [first] };
+    return { version: 3, activePlanId: first.id, plans: [first], deletedPlanIds: [] };
   }
 
   function normalizePlan(plan) {
     plan.steps = Array.isArray(plan.steps) ? plan.steps : [];
     plan.executionNotes = plan.executionNotes || "";
+    plan.deletedStepIds = Array.isArray(plan.deletedStepIds) ? plan.deletedStepIds : [];
+    plan.structureDirty = Boolean(plan.structureDirty);
     plan.steps.forEach((step) => {
       step.id = step.id || uid();
       step.name = step.name || "";
@@ -142,8 +152,46 @@
       step.plannedEnd = step.plannedEnd || step.end || "";
       step.actualStart = step.actualStart || "";
       step.actualEnd = step.actualEnd || "";
-      step.actualNotes = step.actualNotes || "";
+      const parsedNotes = parseStoredActualNotes(step.actualNotes || "");
+      step.actualNotes = parsedNotes.notes;
+      step.executionStatus = step.executionStatus === "skipped" || parsedNotes.skipped ? "skipped" : "pending";
+      step.skipReason = step.skipReason || parsedNotes.reason;
     });
+  }
+
+  function normalizeStore(candidate) {
+    candidate.version = 3;
+    candidate.deletedPlanIds = Array.isArray(candidate.deletedPlanIds) ? candidate.deletedPlanIds : [];
+    candidate.plans.forEach(normalizePlan);
+    return candidate;
+  }
+
+  function parseStoredActualNotes(raw) {
+    const text = String(raw || "");
+    if (!text.startsWith(SKIPPED_PREFIX)) return { skipped: false, reason: "", notes: text };
+    const [statusLine, ...noteLines] = text.split("\n");
+    return {
+      skipped: true,
+      reason: statusLine.slice(SKIPPED_PREFIX.length).trim(),
+      notes: noteLines.join("\n").trim()
+    };
+  }
+
+  function storedActualNotes(step) {
+    if (step.executionStatus !== "skipped") return step.actualNotes || "";
+    const statusLine = `${SKIPPED_PREFIX}${step.skipReason ? ` ${step.skipReason}` : ""}`;
+    return step.actualNotes ? `${statusLine}\n${step.actualNotes}` : statusLine;
+  }
+
+  function writeStoreLocally() {
+    localStorage.setItem(activeStorageKey, JSON.stringify(store));
+  }
+
+  function selectPlan(planId) {
+    if (!store.plans.some((plan) => plan.id === planId)) return false;
+    store.activePlanId = planId;
+    writeStoreLocally();
+    return true;
   }
 
   function activePlan() {
@@ -155,12 +203,13 @@
     if (plan) plan.updatedAt = new Date().toISOString();
     store.pendingSync = Boolean(currentUser);
     localRevision += 1;
-    localStorage.setItem(activeStorageKey, JSON.stringify(store));
+    writeStoreLocally();
     const state = $("#save-state");
     if (state) state.textContent = "Salvando…";
     clearTimeout(saveTimer);
+    saveTimer = null;
     if (immediate) scheduleCloudSync(true);
-    else saveTimer = setTimeout(() => scheduleCloudSync(false), 260);
+    else saveTimer = setTimeout(() => { saveTimer = null; scheduleCloudSync(false); }, 260);
   }
 
   function planToDatabase(plan) {
@@ -202,16 +251,23 @@
       isExample: row.is_example,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      steps: (row.interval_steps || []).sort((a, b) => a.position - b.position).map((step) => ({
-        id: step.client_id,
-        databaseId: step.id,
-        name: step.activity_name,
-        plannedStart: (step.planned_start || "").slice(0, 5),
-        plannedEnd: (step.planned_end || "").slice(0, 5),
-        actualStart: (step.actual_start || "").slice(0, 5),
-        actualEnd: (step.actual_end || "").slice(0, 5),
-        actualNotes: step.actual_notes
-      }))
+      deletedStepIds: [],
+      structureDirty: false,
+      steps: (row.interval_steps || []).sort((a, b) => a.position - b.position).map((step) => {
+        const parsedNotes = parseStoredActualNotes(step.actual_notes || "");
+        return {
+          id: step.client_id,
+          databaseId: step.id,
+          name: step.activity_name,
+          plannedStart: (step.planned_start || "").slice(0, 5),
+          plannedEnd: (step.planned_end || "").slice(0, 5),
+          actualStart: (step.actual_start || "").slice(0, 5),
+          actualEnd: (step.actual_end || "").slice(0, 5),
+          actualNotes: parsedNotes.notes,
+          executionStatus: parsedNotes.skipped ? "skipped" : "pending",
+          skipReason: parsedNotes.reason
+        };
+      })
     };
   }
 
@@ -238,18 +294,19 @@
         .select("id,client_id");
       if (planError) throw planError;
 
-      const localPlanIds = store.plans.map((plan) => plan.id);
-      const deletePlans = cloudClient.from("interval_plans").delete().eq("user_id", currentUser.id);
-      if (localPlanIds.length) deletePlans.not("client_id", "in", `(${localPlanIds.map((id) => `\"${id}\"`).join(",")})`);
-      const { error: deletePlanError } = await deletePlans;
-      if (deletePlanError) throw deletePlanError;
+      if (store.deletedPlanIds?.length) {
+        const { error: deletePlanError } = await cloudClient
+          .from("interval_plans")
+          .delete()
+          .eq("user_id", currentUser.id)
+          .in("client_id", store.deletedPlanIds);
+        if (deletePlanError) throw deletePlanError;
+      }
 
       for (const plan of store.plans) {
         const savedPlan = savedPlans.find((item) => item.client_id === plan.id);
         if (!savedPlan) continue;
         plan.databaseId = savedPlan.id;
-        const { error: clearStepsError } = await cloudClient.from("interval_steps").delete().eq("plan_id", savedPlan.id);
-        if (clearStepsError) throw clearStepsError;
         if (plan.steps.length) {
           const stepsPayload = plan.steps.map((step, position) => ({
             plan_id: savedPlan.id,
@@ -260,15 +317,43 @@
             planned_end: step.plannedEnd || null,
             actual_start: step.actualStart || null,
             actual_end: step.actualEnd || null,
-            actual_notes: step.actualNotes || ""
+            actual_notes: storedActualNotes(step)
           }));
-          const { error: stepError } = await cloudClient.from("interval_steps").insert(stepsPayload);
-          if (stepError) throw stepError;
+          const stepRequest = !plan.structureDirty
+            ? cloudClient.from("interval_steps").upsert(stepsPayload, { onConflict: "plan_id,client_id" }).select("id,client_id")
+            : null;
+          if (stepRequest) {
+            const { data: savedSteps, error: stepError } = await stepRequest;
+            if (stepError) throw stepError;
+            (savedSteps || []).forEach((savedStep) => {
+              const localStep = plan.steps.find((step) => step.id === savedStep.client_id);
+              if (localStep) localStep.databaseId = savedStep.id;
+            });
+          } else {
+            const { error: clearStepsError } = await cloudClient.from("interval_steps").delete().eq("plan_id", savedPlan.id);
+            if (clearStepsError) throw clearStepsError;
+            const { data: savedSteps, error: stepError } = await cloudClient.from("interval_steps").insert(stepsPayload).select("id,client_id");
+            if (stepError) throw stepError;
+            (savedSteps || []).forEach((savedStep) => {
+              const localStep = plan.steps.find((step) => step.id === savedStep.client_id);
+              if (localStep) localStep.databaseId = savedStep.id;
+            });
+          }
+        }
+        if (plan.deletedStepIds?.length) {
+          const { error: deletedStepError } = await cloudClient
+            .from("interval_steps")
+            .delete()
+            .eq("plan_id", savedPlan.id)
+            .in("client_id", plan.deletedStepIds);
+          if (deletedStepError) throw deletedStepError;
         }
       }
       if (syncingRevision === localRevision && !cloudSyncPending) {
         store.pendingSync = false;
-        localStorage.setItem(activeStorageKey, JSON.stringify(store));
+        store.deletedPlanIds = [];
+        store.plans.forEach((plan) => { plan.deletedStepIds = []; plan.structureDirty = false; });
+        writeStoreLocally();
         if (state) state.textContent = "Salvo na nuvem";
       }
     } catch (error) {
@@ -308,6 +393,11 @@
     return `${hours}h ${String(minutes).padStart(2, "0")}min`;
   }
 
+  function wholeMinutes(total) {
+    if (!Number.isFinite(total)) return null;
+    return total < 0 ? Math.ceil(total) : Math.floor(total);
+  }
+
   function formatHoursMinutes(total) {
     if (!Number.isFinite(total)) return "—";
     const absolute = Math.abs(Math.round(total));
@@ -320,9 +410,14 @@
     return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(normalized % 60).padStart(2, "0")}`;
   }
 
-  function absoluteToClock(total, seconds = 0) {
+  function absoluteToClock(total) {
     if (!Number.isFinite(total)) return "--:--:--";
-    return `${absoluteToTime(total)}:${String(Math.max(0, Math.min(59, seconds))).padStart(2, "0")}`;
+    const totalSeconds = Math.floor(total * 60);
+    const normalized = ((totalSeconds % 86400) + 86400) % 86400;
+    const hours = Math.floor(normalized / 3600);
+    const minutes = Math.floor((normalized % 3600) / 60);
+    const clockSeconds = normalized % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(clockSeconds).padStart(2, "0")}`;
   }
 
   function nearestDay(raw, target) {
@@ -357,37 +452,52 @@
         duration: start != null && end != null ? end - start : null,
         actualStartMinutes,
         actualEndMinutes,
-        actualDuration: actualStartMinutes != null && actualEndMinutes != null ? actualEndMinutes - actualStartMinutes : null
+        actualDuration: actualStartMinutes != null && actualEndMinutes != null ? actualEndMinutes - actualStartMinutes : null,
+        skipped: step.executionStatus === "skipped"
       };
     });
     return { windowStart, windowEnd, duration: windowStart != null && windowEnd != null ? windowEnd - windowStart : null, steps };
   }
 
   function currentAbsolute(plan, timeline) {
-    if (!plan.date || timeline.windowStart == null || plan.date !== todayISO()) return null;
+    if (!plan.date || timeline.windowStart == null) return null;
     const startDate = new Date(`${plan.date}T00:00:00`);
     if (Number.isNaN(startDate.getTime())) return null;
-    return (Date.now() - startDate.getTime()) / 60000;
+    const absolute = (Date.now() - startDate.getTime()) / 60000;
+    const lastPlannedEnd = timeline.windowEnd ?? Math.max(timeline.windowStart, ...timeline.steps.map((step) => step.end || timeline.windowStart));
+    if (absolute < timeline.windowStart - 720) return null;
+    if (absolute > lastPlannedEnd + 2160) return null;
+    return absolute;
   }
 
   function isStepComplete(step) {
     return step.actualStartMinutes != null && step.actualEndMinutes != null;
   }
 
+  function isStepSkipped(step) {
+    return step.skipped || step.executionStatus === "skipped";
+  }
+
+  function isStepResolved(step) {
+    return isStepComplete(step) || isStepSkipped(step);
+  }
+
   function stepScheduleDeviation(step, nowAbs = null) {
-    if (isStepComplete(step) && step.end != null) return Math.round(step.actualEndMinutes - step.end);
+    if (isStepSkipped(step)) return null;
+    if (isStepComplete(step) && step.end != null) return step.actualEndMinutes - step.end;
     if (step.actualStartMinutes != null && step.start != null) {
-      if (nowAbs != null && step.end != null && nowAbs > step.end) return Math.round(nowAbs - step.end);
-      return Math.round(step.actualStartMinutes - step.start);
+      const startDeviation = step.actualStartMinutes - step.start;
+      if (nowAbs != null && step.end != null) return Math.max(startDeviation, nowAbs - step.end);
+      return startDeviation;
     }
-    if (nowAbs != null && step.start != null && nowAbs > step.start) return Math.round(nowAbs - step.start);
+    if (nowAbs != null && step.start != null && nowAbs > step.start) return nowAbs - step.start;
     return null;
   }
 
   function totalScheduleDeviation(plan, timeline) {
     const nowAbs = currentAbsolute(plan, timeline);
     const active = timeline.steps
-      .filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null)
+      .filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step))
       .sort((a, b) => a.actualStartMinutes - b.actualStartMinutes)
       .at(-1) || null;
     if (active) {
@@ -398,18 +508,21 @@
     const completed = timeline.steps
       .filter(isStepComplete)
       .sort((a, b) => a.actualEndMinutes - b.actualEndMinutes);
-    const pending = timeline.steps.find((step) => step.actualStartMinutes == null && step.actualEndMinutes == null);
+    const pending = timeline.steps.find((step) => !isStepResolved(step));
     if (pending && nowAbs != null) {
       if (pending.start != null && nowAbs > pending.start) {
         return { value: stepScheduleDeviation(pending, nowAbs), type: "waiting-overdue", step: pending };
       }
-      if (completed.length) return { value: 0, type: "waiting-on-time", step: pending };
+      if (completed.length) {
+        const last = completed.at(-1);
+        return { value: stepScheduleDeviation(last), type: "between-milestones", step: last, nextStep: pending };
+      }
     }
 
-    if (completed.length === timeline.steps.length && timeline.steps.length) {
+    if (timeline.steps.length && timeline.steps.every(isStepResolved)) {
       const last = completed.at(-1);
-      const plannedEnd = timeline.windowEnd ?? last.end;
-      return { value: plannedEnd == null ? null : Math.round(last.actualEndMinutes - plannedEnd), type: "interval-complete", step: last };
+      const plannedEnd = timeline.windowEnd ?? last?.end;
+      return { value: plannedEnd == null || !last ? null : last.actualEndMinutes - plannedEnd, type: "interval-complete", step: last || null };
     }
     if (completed.length) {
       const last = completed.at(-1);
@@ -425,10 +538,12 @@
     if (!plan.title.trim()) errors.push("informe o nome do plano");
     if (!plan.date) errors.push("informe a data");
     if (timeline.windowStart == null || timeline.windowEnd == null) errors.push("preencha a janela completa");
+    if (plan.windowStart && plan.windowEnd && plan.windowStart === plan.windowEnd) errors.push("o início e o fim da janela não podem ser iguais");
+    if (timeline.duration != null && timeline.duration > 720) warnings.push("a janela tem mais de 12 horas; confirme se atravessa a meia-noite");
     if (!plan.steps.length) errors.push("adicione ao menos uma etapa");
     timeline.steps.forEach((step, index) => {
       if (!step.name.trim() || step.start == null || step.end == null) errors.push(`complete a etapa ${index + 1}`);
-      if (step.duration != null && step.duration > 720) warnings.push(`revise a duração da etapa ${index + 1}`);
+      if (step.duration != null && step.duration > 720) errors.push(`a duração da etapa ${index + 1} supera 12 horas`);
       if (timeline.windowStart != null && step.start != null && step.start < timeline.windowStart) warnings.push(`a etapa ${index + 1} começa antes da janela`);
       if (timeline.windowEnd != null && step.end != null && step.end > timeline.windowEnd) errors.push(`a etapa ${index + 1} termina após a janela`);
       if (index > 0) {
@@ -485,12 +600,15 @@
     const nowAbs = currentAbsolute(plan, timeline);
     const dataRows = timeline.steps.map((step, index) => {
       const difference = stepScheduleDeviation(step, nowAbs);
-      const status = isStepComplete(step)
-        ? difference > 1 ? "Atrasado" : difference < -1 ? "Adiantado" : "No horário"
+      const roundedDifference = wholeMinutes(difference);
+      const status = isStepSkipped(step)
+        ? "Não executada"
+        : isStepComplete(step)
+        ? roundedDifference > 0 ? "Atrasado" : roundedDifference < 0 ? "Adiantado" : "No horário"
         : step.actualStartMinutes != null
-          ? difference > 1 ? "Em andamento - atrasado" : difference < -1 ? "Em andamento - adiantado" : "Em andamento"
-          : difference > 1 ? "Início atrasado" : "Aguardando";
-      return [index + 1, step.name, step.plannedStart, step.plannedEnd, step.duration, step.actualStart, step.actualEnd, step.actualDuration, difference, status, step.actualNotes];
+          ? roundedDifference > 0 ? "Em andamento - atrasado" : roundedDifference < 0 ? "Em andamento - adiantado" : "Em andamento"
+          : roundedDifference > 0 ? "Início atrasado" : "Aguardando";
+      return [index + 1, step.name, step.plannedStart, step.plannedEnd, step.duration, step.actualStart, step.actualEnd, step.actualDuration, roundedDifference, status, step.actualNotes || step.skipReason];
     });
     const rows = [];
     rows.push(`<row r="1" ht="30" customHeight="1">${excelCell(1, 1, "GESTÃO DE INTERVALO — PROGRAMADO X REALIZADO", 1)}</row>`);
@@ -554,6 +672,9 @@
         }
       });
       $("#lock-banner").hidden = !plan.locked;
+      const hasExecution = plan.steps.some((step) => step.actualStart || step.actualEnd || step.executionStatus === "skipped" || step.actualNotes) || plan.executionNotes;
+      $("#unlock-plan-button").disabled = Boolean(plan.locked && hasExecution);
+      $("#unlock-plan-button").textContent = plan.locked && hasExecution ? "Planejamento protegido após iniciar" : "Destravar para editar";
       $("#lock-plan-button").disabled = plan.locked;
       $("#lock-plan-button").textContent = plan.locked ? "Cronograma travado" : "Revisar e travar cronograma";
       $("#add-step-button").disabled = plan.locked;
@@ -673,9 +794,19 @@
       if (plan.locked) return;
       const row = button.closest("tr");
       const index = plan.steps.findIndex((item) => item.id === row.dataset.stepId);
-      if (button.dataset.action === "delete") plan.steps.splice(index, 1);
-      if (button.dataset.action === "up" && index > 0) [plan.steps[index - 1], plan.steps[index]] = [plan.steps[index], plan.steps[index - 1]];
-      if (button.dataset.action === "down" && index < plan.steps.length - 1) [plan.steps[index], plan.steps[index + 1]] = [plan.steps[index + 1], plan.steps[index]];
+      if (button.dataset.action === "delete") {
+        const [removed] = plan.steps.splice(index, 1);
+        if (removed) plan.deletedStepIds.push(removed.id);
+        plan.structureDirty = true;
+      }
+      if (button.dataset.action === "up" && index > 0) {
+        [plan.steps[index - 1], plan.steps[index]] = [plan.steps[index], plan.steps[index - 1]];
+        plan.structureDirty = true;
+      }
+      if (button.dataset.action === "down" && index < plan.steps.length - 1) {
+        [plan.steps[index], plan.steps[index + 1]] = [plan.steps[index + 1], plan.steps[index]];
+        plan.structureDirty = true;
+      }
       persist();
       renderSteps();
       renderValidation();
@@ -706,8 +837,7 @@
     });
 
     selector.addEventListener("change", () => {
-      store.activePlanId = selector.value;
-      persist(true);
+      selectPlan(selector.value);
       renderForm();
     });
 
@@ -741,17 +871,23 @@
       const source = activePlan();
       const copy = structuredClone(source);
       copy.id = uid();
+      delete copy.databaseId;
       copy.title = `${source.title || "Plano"} — cópia`;
       copy.locked = false;
       copy.lockedAt = null;
       copy.createdAt = new Date().toISOString();
       copy.steps.forEach((step) => {
         step.id = uid();
+        delete step.databaseId;
         step.actualStart = "";
         step.actualEnd = "";
         step.actualNotes = "";
+        step.executionStatus = "pending";
+        step.skipReason = "";
       });
       copy.executionNotes = "";
+      copy.deletedStepIds = [];
+      copy.structureDirty = false;
       store.plans.push(copy);
       store.activePlanId = copy.id;
       persist(true);
@@ -766,6 +902,7 @@
       }
       const plan = activePlan();
       if (!confirm(`Excluir “${plan.title || "Plano sem nome"}”? Esta ação não pode ser desfeita.`)) return;
+      store.deletedPlanIds.push(plan.id);
       store.plans = store.plans.filter((item) => item.id !== plan.id);
       store.activePlanId = store.plans[0].id;
       persist(true);
@@ -794,7 +931,11 @@
 
     $("#unlock-plan-button").addEventListener("click", () => {
       const plan = activePlan();
-      const hasExecution = plan.steps.some((step) => step.actualStart || step.actualEnd || step.actualNotes) || plan.executionNotes;
+      const hasExecution = plan.steps.some((step) => step.actualStart || step.actualEnd || step.executionStatus === "skipped" || step.actualNotes) || plan.executionNotes;
+      if (hasExecution) {
+        showToast("O planejamento fica protegido após o início. Duplique o plano para criar uma nova versão.");
+        return;
+      }
       const message = hasExecution
         ? "Este plano já possui dados realizados. Destravar pode alterar a referência da execução. Deseja continuar?"
         : "Destravar o cronograma para edição?";
@@ -824,19 +965,14 @@
     });
 
     renderForm();
+    pageRefreshHandler = renderForm;
   }
 
   function executionPage() {
-    const plan = activePlan();
+    let plan = activePlan();
     const root = $("#execution-steps");
     const blocked = $("#execution-blocked");
     const content = $("#execution-content");
-    blocked.hidden = plan.locked;
-    content.hidden = !plan.locked;
-    $("#execution-title").textContent = plan.title || "Intervalo sem nome";
-    $("#execution-subtitle").textContent = [plan.serviceType, plan.location, plan.coordinator && `Coordenação: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Plano ativo";
-    $("#execution-notes").value = plan.executionNotes || "";
-    $("#execution-notes").disabled = !plan.locked;
 
     function nowTime() {
       return new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -845,39 +981,55 @@
     function getStatus() {
       const timeline = buildTimeline(plan);
       const completed = timeline.steps.filter(isStepComplete);
+      const resolved = timeline.steps.filter(isStepResolved);
       const totalDeviation = totalScheduleDeviation(plan, timeline);
       const active = timeline.steps
-        .filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null)
+        .filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step))
         .sort((a, b) => a.actualStartMinutes - b.actualStartMinutes)
         .at(-1) || null;
-      return { timeline, completed, diff: totalDeviation.value, active, totalDeviation };
+      return { timeline, completed, resolved, diff: totalDeviation.value, active, totalDeviation };
     }
 
-    function varianceLabel(step, timeline) {
-      return stepScheduleDeviation(step, currentAbsolute(plan, timeline));
+    function variancePresentation(step, timeline) {
+      const variance = stepScheduleDeviation(step, currentAbsolute(plan, timeline));
+      const rounded = wholeMinutes(variance);
+      if (isStepSkipped(step)) return { className: "skipped", text: "Não executada", value: null };
+      if (rounded == null) return { className: "", text: "Aguardando", value: null };
+      if (rounded > 0) return { className: "delay", text: `+${rounded} min`, value: rounded };
+      if (rounded < 0) return { className: "ahead", text: `${rounded} min`, value: rounded };
+      return { className: "", text: "No horário", value: 0 };
+    }
+
+    function stepStateText(step) {
+      if (isStepSkipped(step)) return "Etapa não executada";
+      if (isStepComplete(step)) return "Etapa concluída";
+      if (step.actualStartMinutes != null) return "Em andamento";
+      return "Aguardando início";
     }
 
     function renderSteps() {
       const status = getStatus();
-      const firstPending = status.timeline.steps.find((step) => !isStepComplete(step));
+      const firstPending = status.active || status.timeline.steps.find((step) => !isStepResolved(step));
       root.innerHTML = status.timeline.steps.map((step, index) => {
-        const variance = varianceLabel(step, status.timeline);
-        const durationVariance = step.actualDuration != null && step.duration != null ? step.actualDuration - step.duration : null;
-        const realizedDurationText = step.actualDuration == null
-          ? "Duração calculada ao informar início e fim"
-          : `Duração realizada: ${formatMinutes(step.actualDuration)}${durationVariance === 0 ? " · igual ao previsto" : ` · ${durationVariance > 0 ? "+" : "−"}${formatMinutes(durationVariance)} vs. previsto`}`;
+        const variance = variancePresentation(step, status.timeline);
+        const durationVariance = step.actualDuration != null && step.duration != null ? Math.round(step.actualDuration - step.duration) : null;
+        const realizedDurationText = isStepSkipped(step)
+          ? `Não executada${step.skipReason ? ` · ${escapeHtml(step.skipReason)}` : ""}`
+          : step.actualDuration == null
+            ? "Duração calculada ao informar início e fim"
+            : `Duração realizada: ${formatMinutes(step.actualDuration)}${durationVariance === 0 ? " · igual ao previsto" : ` · ${durationVariance > 0 ? "+" : "−"}${formatMinutes(durationVariance)} vs. previsto`}`;
         const stepComplete = isStepComplete(step);
-        const stateClass = stepComplete ? "is-complete" : firstPending?.id === step.id ? "is-active" : "";
-        const varianceClass = variance == null ? "" : variance > 0 ? "delay" : variance < 0 ? "ahead" : "";
-        const varianceText = variance == null ? "Aguardando" : variance > 0 ? `+${Math.round(variance)} min` : variance < 0 ? `${Math.round(variance)} min` : "No horário";
+        const skipped = isStepSkipped(step);
+        const stateClass = skipped ? "is-skipped" : stepComplete ? "is-complete" : firstPending?.id === step.id ? "is-active" : "";
+        const disabled = skipped ? "disabled" : "";
         return `<article class="execution-step ${stateClass}" data-step-id="${step.id}">
           <header class="execution-step-header">
-            <span class="execution-index">${stepComplete ? "✓" : String(index + 1).padStart(2, "0")}</span>
+            <span class="execution-index">${stepComplete ? "✓" : skipped ? "—" : String(index + 1).padStart(2, "0")}</span>
             <div class="execution-step-title">
               <h3>${escapeHtml(step.name || `Etapa ${index + 1}`)}</h3>
-              <span>${stepComplete ? "Etapa concluída" : step.actualStartMinutes != null ? "Em andamento" : "Aguardando início"}</span>
+              <span data-step-state>${stepStateText(step)}</span>
             </div>
-            <span class="step-variance ${varianceClass}">${varianceText}</span>
+            <span class="step-variance ${variance.className}" data-step-variance>${variance.text}</span>
           </header>
           <div class="execution-step-grid">
             <div class="programmed-block">
@@ -889,100 +1041,126 @@
               <span class="block-label">Realizado</span>
               <div class="realized-times">
                 <div class="time-entry">
-                  <label>Início<input data-field="actualStart" type="time" value="${escapeHtml(step.actualStart)}" aria-label="Início realizado da etapa ${index + 1}"></label>
-                  <button class="now-button" type="button" data-now="actualStart">Agora</button>
+                  <label>Início<input data-field="actualStart" type="time" value="${escapeHtml(step.actualStart)}" aria-label="Início realizado da etapa ${index + 1}" ${disabled}></label>
+                  <button class="now-button" type="button" data-now="actualStart" ${disabled}>Agora</button>
                 </div>
                 <div class="time-entry">
-                  <label>Fim<input data-field="actualEnd" type="time" value="${escapeHtml(step.actualEnd)}" aria-label="Fim realizado da etapa ${index + 1}" ${step.actualStart ? "" : "disabled"}></label>
-                  <button class="now-button" type="button" data-now="actualEnd" ${step.actualStart ? "" : "disabled"}>Agora</button>
+                  <label>Fim<input data-field="actualEnd" type="time" value="${escapeHtml(step.actualEnd)}" aria-label="Fim realizado da etapa ${index + 1}" ${step.actualStart && !skipped ? "" : "disabled"}></label>
+                  <button class="now-button" type="button" data-now="actualEnd" ${step.actualStart && !skipped ? "" : "disabled"}>Agora</button>
                 </div>
               </div>
               <small class="realized-duration">${realizedDurationText}</small>
+              <button class="step-status-button" type="button" data-step-action="${skipped ? "restore" : "skip"}" ${stepComplete ? "disabled" : ""}>${skipped ? "Reativar etapa" : "Marcar como não executada"}</button>
             </div>
             <label class="field notes-block">
-              <span>O que foi realizado</span>
-              <textarea data-field="actualNotes" maxlength="600" rows="3" placeholder="Descreva o serviço executado, ocorrências ou desvios">${escapeHtml(step.actualNotes)}</textarea>
+              <span>${skipped ? "Observação / motivo" : "O que foi realizado"}</span>
+              <textarea data-field="actualNotes" maxlength="600" rows="3" placeholder="${skipped ? "Registre detalhes da decisão" : "Descreva o serviço executado, ocorrências ou desvios"}">${escapeHtml(step.actualNotes)}</textarea>
             </label>
           </div>
         </article>`;
       }).join("");
     }
 
+    function refreshStepIndicators() {
+      const status = getStatus();
+      const firstPending = status.active || status.timeline.steps.find((step) => !isStepResolved(step));
+      status.timeline.steps.forEach((step) => {
+        const article = $(`[data-step-id="${step.id}"]`, root);
+        if (!article) return;
+        const variance = variancePresentation(step, status.timeline);
+        article.classList.toggle("is-active", !isStepSkipped(step) && !isStepComplete(step) && firstPending?.id === step.id);
+        const badge = $("[data-step-variance]", article);
+        badge.className = `step-variance ${variance.className}`;
+        badge.textContent = variance.text;
+        $("[data-step-state]", article).textContent = stepStateText(step);
+      });
+    }
+
     function renderDashboard() {
       const status = getStatus();
-      const { timeline, completed, diff, active } = status;
-      const rounded = diff == null ? 0 : Math.round(diff);
+      const { timeline, completed, resolved, diff, active } = status;
+      const rounded = diff == null ? 0 : wholeMinutes(diff);
       const hero = $("#status-hero");
-      hero.className = "status-hero " + (diff == null ? "status-neutral" : rounded > 1 ? "status-delay" : rounded < -1 ? "status-ahead" : "status-on-time");
+      hero.className = "status-hero " + (diff == null ? "status-neutral" : rounded > 0 ? "status-delay" : rounded < 0 ? "status-ahead" : "status-on-time");
       $("#status-minutes").textContent = String(Math.abs(rounded)).padStart(2, "0");
-      $("#status-sign").textContent = diff == null || Math.abs(rounded) <= 1 ? "" : rounded > 0 ? "+" : "−";
+      $("#status-sign").textContent = diff == null || rounded === 0 ? "" : rounded > 0 ? "+" : "−";
       $("#status-readable").hidden = diff == null;
-      $("#status-readable").textContent = diff == null ? "" : `Equivale a ${formatHoursMinutes(rounded)}`;
+      $("#status-readable").textContent = diff == null ? "" : `${Math.abs(rounded)} min · ${formatHoursMinutes(rounded)}`;
+      const reference = status.totalDeviation.step?.name ? `“${status.totalDeviation.step.name}”` : "o marco atual";
       if (diff == null) {
         $("#status-label").textContent = "Aguardando início";
         $("#status-description").textContent = "Preencha o primeiro horário realizado para iniciar o acompanhamento.";
-      } else if (rounded > 1) {
-        $("#status-label").textContent = `Atraso total do intervalo inteiro: ${Math.abs(rounded)} minutos`;
-        const reference = status.totalDeviation.step?.name ? `“${status.totalDeviation.step.name}”` : "a etapa atual";
-        $("#status-description").textContent = status.totalDeviation.type === "waiting-overdue"
-          ? `Este é o atraso do intervalo inteiro, não apenas de uma etapa. Referência atual: ${reference} ainda não foi iniciada.`
-          : status.totalDeviation.type === "active-overdue"
-            ? `Este é o atraso do intervalo inteiro, não apenas desta etapa. Referência atual: ${reference} continua em andamento após o fim programado.`
-            : status.totalDeviation.type === "active-start"
-              ? `Este é o atraso do intervalo inteiro. Referência atual: início realizado de ${reference}.`
-              : `Este é o atraso do intervalo inteiro. Referência atual: último término registrado em ${reference}.`;
-      } else if (rounded < -1) {
-        $("#status-label").textContent = `Adiantamento total do intervalo: ${Math.abs(rounded)} minutos`;
-        $("#status-description").textContent = "Posição atual do intervalo em relação ao marco programado correspondente.";
+      } else if (rounded > 0) {
+        $("#status-label").textContent = `Atraso total atual do intervalo: ${rounded} minutos`;
+        $("#status-description").textContent = `Diferença total entre a posição atual do intervalo e o marco planejado correspondente. Referência: ${reference}. Não é a soma dos atrasos das etapas.`;
+      } else if (rounded < 0) {
+        $("#status-label").textContent = `Adiantamento total atual do intervalo: ${Math.abs(rounded)} minutos`;
+        $("#status-description").textContent = `Diferença total entre a posição atual e o marco planejado correspondente. Referência: ${reference}.`;
       } else {
-        $("#status-label").textContent = "Intervalo dentro do prazo";
-        $("#status-description").textContent = "A posição atual do intervalo está aderente ao cronograma programado.";
+        $("#status-label").textContent = "Intervalo no horário planejado";
+        $("#status-description").textContent = `A posição atual está alinhada ao marco planejado correspondente: ${reference}.`;
       }
+      $("#status-announcement").textContent = diff == null ? "Aguardando início da execução" : `${rounded > 0 ? "Atraso" : rounded < 0 ? "Adiantamento" : "Intervalo no horário"}: ${Math.abs(rounded)} minutos.`;
 
       $("#metric-window").textContent = timeline.windowStart == null ? "—" : `${plan.windowStart}–${plan.windowEnd}`;
       $("#metric-duration").textContent = timeline.duration == null ? "Janela não definida" : `${formatMinutes(timeline.duration)} de janela`;
-      $("#metric-progress").textContent = `${completed.length} / ${timeline.steps.length}`;
-      $("#progress-bar").style.width = timeline.steps.length ? `${(completed.length / timeline.steps.length) * 100}%` : "0%";
-      const current = active || timeline.steps.find((step) => !isStepComplete(step));
-      $("#metric-current").textContent = current?.name || (timeline.steps.length && completed.length === timeline.steps.length ? "Concluído" : "Aguardando");
+      $("#metric-progress").textContent = `${resolved.length} / ${timeline.steps.length}`;
+      $("#progress-bar").style.width = timeline.steps.length ? `${(resolved.length / timeline.steps.length) * 100}%` : "0%";
+      const current = active || timeline.steps.find((step) => !isStepResolved(step));
+      $("#metric-current").textContent = current?.name || (timeline.steps.length && resolved.length === timeline.steps.length ? "Concluído" : "Aguardando");
       $("#metric-current-time").textContent = active ? `Iniciada às ${active.actualStart}` : current ? `Programada ${current.plannedStart}–${current.plannedEnd}` : "—";
       const forecast = timeline.windowEnd == null || diff == null ? null : timeline.windowEnd + diff;
-      $("#metric-forecast").textContent = forecast == null ? "—" : absoluteToTime(forecast);
-      $("#metric-forecast-note").textContent = diff == null ? "Aguardando primeiro marco" : `Projeção pelo desvio atual · meta: ${plan.windowEnd}`;
-      const forecastIsLive = status.totalDeviation.type === "active-overdue" || status.totalDeviation.type === "waiting-overdue";
-      $("#live-forecast").textContent = absoluteToClock(forecast, forecastIsLive ? new Date().getSeconds() : 0);
+      $("#metric-forecast").textContent = forecast == null ? "—" : absoluteToTime(Math.floor(forecast));
+      $("#metric-forecast-note").textContent = diff == null ? "Aguardando primeiro marco" : `Se o desvio atual for mantido · meta ${plan.windowEnd}`;
+      $("#live-forecast").textContent = absoluteToClock(forecast);
       $("#live-forecast-note").textContent = forecast == null
         ? "Aguardando o primeiro marco"
-        : rounded > 1
+        : rounded > 0
           ? `${formatHoursMinutes(rounded)} após a meta de ${plan.windowEnd}`
-          : rounded < -1
+          : rounded < 0
             ? `${formatHoursMinutes(rounded)} antes da meta de ${plan.windowEnd}`
             : `Dentro da meta de ${plan.windowEnd}`;
 
-      const remaining = timeline.steps.filter((step) => !isStepComplete(step));
+      $("#operational-action").textContent = active
+        ? `Acompanhe “${active.name}” e registre o término real.`
+        : current
+          ? `Registre o início real de “${current.name}”.`
+          : "Execução encerrada: revise os registros finais.";
+      $("#operational-detail").textContent = diff == null
+        ? "O desvio será calculado assim que houver um primeiro marco realizado."
+        : `Situação consolidada: ${rounded > 0 ? `${rounded} min de atraso` : rounded < 0 ? `${Math.abs(rounded)} min de adiantamento` : "no horário"}; previsão ${forecast == null ? "indisponível" : absoluteToTime(Math.floor(forecast))}.`;
+
+      const futureSteps = timeline.steps.filter((step) => !isStepResolved(step) && step.id !== active?.id);
+      const unresolved = timeline.steps.filter((step) => !isStepResolved(step));
       const card = $("#compensation-card");
-      card.className = "compensation-card ";
-      if (diff != null && rounded > 1 && remaining.length) {
-        const each = Math.ceil(rounded / remaining.length);
+      card.className = "compensation-card";
+      if (diff != null && rounded > 0 && unresolved.length) {
         card.classList.add("compensation-alert");
-        $("#compensation-title").textContent = `Recuperar ${rounded} min em ${remaining.length} etapa${remaining.length > 1 ? "s" : ""}`;
-        $("#compensation-description").textContent = `Para preservar o fim às ${plan.windowEnd}, distribua a recuperação entre as próximas atividades e reavalie após cada marco.`;
-        $("#compensation-number").textContent = `≈ ${each} min/etapa`;
-      } else if (diff != null && rounded < -1) {
+        if (futureSteps.length) {
+          const each = Math.ceil(rounded / futureSteps.length);
+          $("#compensation-title").textContent = `${rounded} min a recuperar antes de ${plan.windowEnd}`;
+          $("#compensation-description").textContent = `Referência matemática: cerca de ${each} min por próxima etapa. Valide segurança, recursos e viabilidade antes de ajustar o ritmo.`;
+          $("#compensation-number").textContent = `≈ ${each} min/etapa`;
+        } else {
+          $("#compensation-title").textContent = "Meta de término em risco";
+          $("#compensation-description").textContent = "Não há outra etapa planejada para distribuir a recuperação. Reavalie imediatamente a previsão de encerramento.";
+          $("#compensation-number").textContent = `+${rounded} min`;
+        }
+      } else if (diff != null && rounded < 0) {
         card.classList.add("compensation-good");
-        $("#compensation-title").textContent = `Margem de ${Math.abs(rounded)} min no cronograma`;
-        $("#compensation-description").textContent = "O intervalo está adiantado; preserve a execução segura antes de converter essa margem em ganho.";
+        $("#compensation-title").textContent = `Margem atual de ${Math.abs(rounded)} min`;
+        $("#compensation-description").textContent = "Preserve a execução segura; o adiantamento só se confirma a cada novo marco registrado.";
         $("#compensation-number").textContent = `${Math.abs(rounded)} min`;
-      } else if (!remaining.length && timeline.steps.length) {
+      } else if (!unresolved.length && timeline.steps.length) {
         card.classList.add("compensation-good");
-        $("#compensation-title").textContent = "Intervalo concluído";
-        $("#compensation-description").textContent = rounded > 1 ? "Encerrado após o limite programado." : "Todas as etapas possuem horário de término realizado.";
-        $("#compensation-number").textContent = rounded > 1 ? `+${rounded} min` : rounded < -1 ? `${rounded} min` : "No prazo";
+        $("#compensation-title").textContent = "Intervalo encerrado";
+        $("#compensation-description").textContent = "Todas as etapas foram concluídas ou registradas como não executadas.";
+        $("#compensation-number").textContent = rounded > 0 ? `+${rounded} min` : rounded < 0 ? `${rounded} min` : "No horário";
       } else {
         card.classList.add("compensation-neutral");
-        $("#compensation-title").textContent = "Sem necessidade de compensação";
-        $("#compensation-description").textContent = diff == null ? "O acompanhamento começará após o primeiro horário realizado." : "O ritmo atual não exige recuperação de tempo.";
-        $("#compensation-number").textContent = diff == null ? "—" : "No prazo";
+        $("#compensation-title").textContent = "Sem recuperação indicada agora";
+        $("#compensation-description").textContent = diff == null ? "O acompanhamento começará após o primeiro horário realizado." : "O marco atual está alinhado ao planejamento.";
+        $("#compensation-number").textContent = diff == null ? "—" : "No horário";
       }
     }
 
@@ -992,77 +1170,86 @@
       $("#live-date").textContent = now.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
     }
 
+    function updateActualTime(step, field, value) {
+      const previous = step[field];
+      if (isStepSkipped(step)) {
+        showToast("Reative a etapa antes de registrar horários.");
+        return false;
+      }
+      if (field === "actualStart" && !value && step.actualEnd) {
+        showToast("Limpe primeiro o horário de fim para não deixar um término sem início.");
+        return false;
+      }
+      if (field === "actualEnd" && value && !step.actualStart) {
+        showToast("Informe o início antes de registrar o fim.");
+        return false;
+      }
+      const willBecomeActive = (field === "actualStart" && value && !step.actualEnd) || (field === "actualEnd" && !value && step.actualStart);
+      if (willBecomeActive) {
+        const otherActive = plan.steps.find((item) => item.id !== step.id && item.executionStatus !== "skipped" && item.actualStart && !item.actualEnd);
+        if (otherActive) {
+          showToast(`Finalize “${otherActive.name || "a etapa em andamento"}” antes de manter outra etapa ativa.`);
+          return false;
+        }
+      }
+      step[field] = value;
+      const timelineStep = buildTimeline(plan).steps.find((item) => item.id === step.id);
+      if (isStepComplete(timelineStep) && (timelineStep.actualDuration <= 0 || timelineStep.actualDuration > 720)) {
+        step[field] = previous;
+        showToast("A duração realizada deve ser maior que zero e não pode superar 12 horas.");
+        return false;
+      }
+      persist(true);
+      return true;
+    }
+
     root.addEventListener("input", (event) => {
+      if (!event.target.matches("textarea[data-field='actualNotes']")) return;
       const stepElement = event.target.closest("[data-step-id]");
       const step = plan.steps.find((item) => item.id === stepElement?.dataset.stepId);
       if (!step) return;
-      step[event.target.dataset.field] = event.target.value;
-      persist(event.target.matches('input[type="time"]'));
-      renderDashboard();
+      step.actualNotes = event.target.value;
+      persist();
     });
 
     root.addEventListener("change", (event) => {
       if (!event.target.matches('input[type="time"]')) return;
       const stepElement = event.target.closest("[data-step-id]");
       const step = plan.steps.find((item) => item.id === stepElement?.dataset.stepId);
-      if (event.target.dataset.field === "actualEnd" && event.target.value) {
-        const timelineStep = buildTimeline(plan).steps.find((item) => item.id === step?.id);
-        if (timelineStep?.actualDuration > 720) {
-          step.actualEnd = "";
-          event.target.value = "";
-          persist(true);
-          renderSteps();
-          renderDashboard();
-          showToast("O fim informado gera duração superior a 12 horas. Revise os horários de início e fim.");
-          return;
-        }
-      }
-      if (event.target.dataset.field === "actualStart" && event.target.value) {
-        const otherActive = plan.steps.find((item) => item.id !== step?.id && item.actualStart && !item.actualEnd);
-        if (otherActive) {
-          step.actualStart = "";
-          event.target.value = "";
-          persist(true);
-          renderSteps();
-          renderDashboard();
-          showToast(`Finalize “${otherActive.name || "a etapa em andamento"}” antes de iniciar outra etapa.`);
-          return;
-        }
-      }
-      const label = event.target.dataset.field === "actualStart" ? "Início" : "Fim";
-      if (event.target.value) showToast(`${label} realizado registrado às ${event.target.value}.`);
+      if (!step) return;
+      const field = event.target.dataset.field;
+      if (!updateActualTime(step, field, event.target.value)) event.target.value = step[field] || "";
+      else if (event.target.value) showToast(`${field === "actualStart" ? "Início" : "Fim"} realizado registrado às ${event.target.value}.`);
       renderSteps();
       renderDashboard();
     });
 
     root.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-now]");
+      const button = event.target.closest("[data-now], [data-step-action]");
       if (!button) return;
       const stepElement = button.closest("[data-step-id]");
-      const step = plan.steps.find((item) => item.id === stepElement.dataset.stepId);
-      if (button.dataset.now === "actualStart") {
-        const otherActive = plan.steps.find((item) => item.id !== step.id && item.actualStart && !item.actualEnd);
-        if (otherActive) {
-          showToast(`Finalize “${otherActive.name || "a etapa em andamento"}” antes de iniciar outra etapa.`);
-          return;
-        }
+      const step = plan.steps.find((item) => item.id === stepElement?.dataset.stepId);
+      if (!step) return;
+      if (button.dataset.now) {
+        const value = nowTime();
+        if (updateActualTime(step, button.dataset.now, value)) showToast(`Horário registrado: ${value}.`);
+      } else if (button.dataset.stepAction === "skip") {
+        const reason = prompt("Motivo para a etapa não ser executada (opcional):", "");
+        if (reason === null) return;
+        step.executionStatus = "skipped";
+        step.skipReason = reason.trim();
+        step.actualStart = "";
+        step.actualEnd = "";
+        persist(true);
+        showToast("Etapa registrada como não executada.");
+      } else if (button.dataset.stepAction === "restore") {
+        step.executionStatus = "pending";
+        step.skipReason = "";
+        persist(true);
+        showToast("Etapa reativada para execução.");
       }
-      step[button.dataset.now] = nowTime();
-      if (button.dataset.now === "actualEnd") {
-        const timelineStep = buildTimeline(plan).steps.find((item) => item.id === step.id);
-        if (timelineStep?.actualDuration > 720) {
-          step.actualEnd = "";
-          persist(true);
-          renderSteps();
-          renderDashboard();
-          showToast("O horário atual gera duração superior a 12 horas. Revise o início antes de registrar o fim.");
-          return;
-        }
-      }
-      persist(true);
       renderSteps();
       renderDashboard();
-      showToast(`Horário registrado: ${step[button.dataset.now]}.`);
     });
 
     $("#execution-notes").addEventListener("input", (event) => {
@@ -1071,12 +1258,28 @@
     });
     $("#print-button").addEventListener("click", () => window.print());
 
-    renderSteps();
-    renderDashboard();
-    renderClock();
+    function renderPage() {
+      plan = activePlan();
+      blocked.hidden = plan.locked;
+      content.hidden = !plan.locked;
+      $("#execution-title").textContent = plan.title || "Intervalo sem nome";
+      const dateLabel = plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Data não informada";
+      $("#execution-subtitle").textContent = [dateLabel, plan.serviceType, plan.location, plan.coordinator && `Coordenação: ${plan.coordinator}`].filter(Boolean).join(" · ");
+      if (document.activeElement !== $("#execution-notes")) $("#execution-notes").value = plan.executionNotes || "";
+      $("#execution-notes").disabled = !plan.locked;
+      renderSteps();
+      renderDashboard();
+      renderClock();
+    }
+
+    renderPage();
+    pageRefreshHandler = renderPage;
     setInterval(() => {
       renderClock();
-      if (plan.locked) renderDashboard();
+      if (plan.locked) {
+        renderDashboard();
+        refreshStepIndicators();
+      }
     }, 1000);
   }
 
@@ -1085,17 +1288,19 @@
 
     function statusFor(step, nowAbs) {
       const variance = stepScheduleDeviation(step, nowAbs);
+      const rounded = wholeMinutes(variance);
+      if (isStepSkipped(step)) return { label: "Não executada", className: "skipped", variance: null };
       if (isStepComplete(step)) {
-        if (variance > 1) return { label: "Atrasada", className: "delay", variance };
-        if (variance < -1) return { label: "Adiantada", className: "ahead", variance };
-        return { label: "No prazo", className: "on-time", variance: variance || 0 };
+        if (rounded > 0) return { label: "Atrasada", className: "delay", variance: rounded };
+        if (rounded < 0) return { label: "Adiantada", className: "ahead", variance: rounded };
+        return { label: "No horário", className: "on-time", variance: 0 };
       }
       if (step.actualStartMinutes != null) {
-        if (variance > 1) return { label: "Em andamento · atrasada", className: "delay", variance };
-        if (variance < -1) return { label: "Em andamento · adiantada", className: "ahead", variance };
-        return { label: "Em andamento", className: "running", variance: variance || 0 };
+        if (rounded > 0) return { label: "Em andamento · atrasada", className: "delay", variance: rounded };
+        if (rounded < 0) return { label: "Em andamento · adiantada", className: "ahead", variance: rounded };
+        return { label: "Em andamento", className: "running", variance: 0 };
       }
-      if (variance > 1) return { label: "Início atrasado", className: "delay", variance };
+      if (rounded > 0) return { label: "Início atrasado", className: "delay", variance: rounded };
       return { label: "Aguardando", className: "waiting", variance: null };
     }
 
@@ -1107,24 +1312,26 @@
       const plan = activePlan();
       const timeline = buildTimeline(plan);
       const completed = timeline.steps.filter(isStepComplete);
-      const running = timeline.steps.filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null);
-      const progress = timeline.steps.length ? Math.round((completed.length / timeline.steps.length) * 100) : 0;
+      const resolved = timeline.steps.filter(isStepResolved);
+      const skipped = timeline.steps.filter(isStepSkipped);
+      const running = timeline.steps.filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step));
+      const progress = timeline.steps.length ? Math.round((resolved.length / timeline.steps.length) * 100) : 0;
       const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
       const actualTotal = completed.reduce((sum, step) => sum + (step.actualDuration || 0), 0);
       const totalDeviation = totalScheduleDeviation(plan, timeline);
-      const scheduleDeviation = totalDeviation.value;
+      const scheduleDeviation = wholeMinutes(totalDeviation.value);
       const nowAbs = currentAbsolute(plan, timeline);
       const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
 
       $("#dashboard-title").textContent = plan.title || "Intervalo sem nome";
       $("#dashboard-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator].filter(Boolean).join(" · ") || "Plano ativo";
       $("#dashboard-progress").textContent = `${progress}%`;
-      $("#dashboard-progress-note").textContent = `${completed.length} de ${timeline.steps.length} etapas concluídas`;
+      $("#dashboard-progress-note").textContent = `${resolved.length} de ${timeline.steps.length} etapas encerradas`;
       $("#dashboard-planned-total").textContent = plannedTotal ? formatMinutes(plannedTotal) : "—";
       $("#dashboard-actual-total").textContent = completed.length ? formatMinutes(actualTotal) : "—";
       $("#dashboard-actual-note").textContent = completed.length ? `Soma de ${completed.length} etapa${completed.length > 1 ? "s" : ""} concluída${completed.length > 1 ? "s" : ""}` : "Somente etapas concluídas";
       $("#dashboard-variance").textContent = scheduleDeviation == null ? "—" : `${scheduleDeviation > 0 ? "+" : ""}${scheduleDeviation} min`;
-      $("#dashboard-variance-label").textContent = scheduleDeviation == null || scheduleDeviation >= 0 ? "Atraso total do intervalo" : "Adiantamento total do intervalo";
+      $("#dashboard-variance-label").textContent = scheduleDeviation == null || scheduleDeviation >= 0 ? "Atraso total atual do intervalo" : "Adiantamento total atual do intervalo";
       $("#dashboard-variance-note").textContent = scheduleDeviation == null
         ? "Aguardando o primeiro marco operacional"
         : totalDeviation.type === "waiting-overdue"
@@ -1135,7 +1342,10 @@
               ? "Posição calculada pelo início da etapa atual"
               : totalDeviation.type === "interval-complete"
                 ? "Diferença entre o encerramento real e a meta"
-                : "Posição pelo último término registrado";
+                : `Posição pelo último término registrado · ${formatHoursMinutes(scheduleDeviation)}`;
+      if (scheduleDeviation != null && !$("#dashboard-variance-note").textContent.includes("h")) {
+        $("#dashboard-variance-note").textContent += ` · ${formatHoursMinutes(scheduleDeviation)}`;
+      }
       $("#dashboard-variance-card").className = `dashboard-kpi featured ${scheduleDeviation == null ? "variance-neutral" : scheduleDeviation > 0 ? "variance-positive" : scheduleDeviation < 0 ? "variance-negative" : "variance-zero"}`;
 
       $("#duration-chart").innerHTML = timeline.steps.length ? timeline.steps.map((step, index) => `
@@ -1152,14 +1362,15 @@
       $("#completion-breakdown").innerHTML = `
         <span><i class="complete"></i><strong>${completed.length}</strong> concluídas</span>
         <span><i class="running"></i><strong>${running.length}</strong> em andamento</span>
-        <span><i class="waiting"></i><strong>${Math.max(0, timeline.steps.length - completed.length - running.length)}</strong> aguardando</span>`;
+        <span><i class="waiting"></i><strong>${Math.max(0, timeline.steps.length - resolved.length - running.length)}</strong> aguardando</span>
+        ${skipped.length ? `<span><i class="skipped"></i><strong>${skipped.length}</strong> não executada${skipped.length > 1 ? "s" : ""}</span>` : ""}`;
 
       const varianceSteps = timeline.steps.filter((step) => isStepComplete(step) && step.end != null);
       const maxVariance = Math.max(1, ...varianceSteps.map((step) => Math.abs(step.actualEndMinutes - step.end)));
       $("#variance-chart").innerHTML = varianceSteps.length ? varianceSteps.map((step) => {
         const value = Math.round(step.actualEndMinutes - step.end);
         const width = Math.max(value === 0 ? 2 : 8, (Math.abs(value) / maxVariance) * 48);
-        return `<div class="variance-row"><span>${String(step.index + 1).padStart(2, "0")}</span><div class="variance-axis"><i class="${value > 1 ? "delay" : value < -1 ? "ahead" : "on-time"}" style="width:${width}%;${value < -1 ? "right:50%" : "left:50%"}"></i></div><strong>${value > 0 ? "+" : ""}${value} min</strong></div>`;
+        return `<div class="variance-row"><span>${String(step.index + 1).padStart(2, "0")}</span><div class="variance-axis"><i class="${value > 0 ? "delay" : value < 0 ? "ahead" : "on-time"}" style="width:${width}%;${value < 0 ? "right:50%" : "left:50%"}"></i></div><strong>${value > 0 ? "+" : ""}${value} min</strong></div>`;
       }).join("") : `<div class="chart-empty">Conclua uma etapa para visualizar os desvios.</div>`;
 
       $("#dashboard-table-body").innerHTML = timeline.steps.length ? timeline.steps.map((step) => {
@@ -1170,8 +1381,7 @@
     }
 
     selector.addEventListener("change", () => {
-      store.activePlanId = selector.value;
-      persist(true);
+      selectPlan(selector.value);
       render();
     });
 
@@ -1192,8 +1402,11 @@
       setTimeout(() => window.print(), 80);
     });
 
+    const requestedPlan = new URLSearchParams(location.search).get("plan");
+    if (requestedPlan) selectPlan(requestedPlan);
     renderPlanOptions();
     render();
+    pageRefreshHandler = () => { renderPlanOptions(); render(); };
     setInterval(render, 1000);
   }
 
@@ -1297,17 +1510,51 @@
     if (!allowedData.length) {
       if (currentProfile?.role !== "editor") {
         const first = blankPlan();
-        store = { version: 2, activePlanId: first.id, plans: [first] };
-        localStorage.setItem(activeStorageKey, JSON.stringify(store));
+        store = { version: 3, activePlanId: first.id, plans: [first], deletedPlanIds: [] };
+        writeStoreLocally();
       }
       await syncStoreToCloud();
       return;
     }
     const plans = allowedData.map(databaseToPlan);
     const activeId = plans.some((plan) => plan.id === store.activePlanId) ? store.activePlanId : plans[0].id;
-    store = { version: 2, activePlanId: activeId, plans };
+    store = { version: 3, activePlanId: activeId, plans, deletedPlanIds: [] };
     store.pendingSync = false;
-    localStorage.setItem(activeStorageKey, JSON.stringify(store));
+    writeStoreLocally();
+  }
+
+  async function refreshCloudStore() {
+    if (!cloudClient || !currentUser || cloudRefreshRunning || cloudSyncing || store.pendingSync || document.hidden) return;
+    cloudRefreshRunning = true;
+    try {
+      const { data, error } = await cloudClient
+        .from("interval_plans")
+        .select("*,interval_steps(*)")
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      const allowedData = currentProfile?.role === "editor" ? data : data.filter((plan) => !plan.is_example);
+      if (!allowedData.length) return;
+      const plans = allowedData.map(databaseToPlan);
+      const activeId = plans.some((item) => item.id === store.activePlanId) ? store.activePlanId : plans[0].id;
+      const incomingSignature = JSON.stringify(plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes])]));
+      const currentSignature = JSON.stringify(store.plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes])]));
+      if (incomingSignature === currentSignature) return;
+      store = { version: 3, activePlanId: activeId, plans, deletedPlanIds: [], pendingSync: false };
+      writeStoreLocally();
+      pageRefreshHandler?.();
+      const state = $("#save-state");
+      if (state) state.textContent = "Atualizado da nuvem";
+    } catch (error) {
+      console.warn("Não foi possível atualizar os dados da nuvem.", error);
+    } finally {
+      cloudRefreshRunning = false;
+    }
+  }
+
+  function startCloudRefresh() {
+    clearInterval(cloudRefreshTimer);
+    if (!cloudClient || !currentUser || !["execution", "dashboard"].includes(page)) return;
+    cloudRefreshTimer = setInterval(refreshCloudStore, 10000);
   }
 
   function initializeCurrentPage() {
@@ -1356,11 +1603,12 @@
     } else if (currentProfile.role === "editor" && localStorage.getItem(STORAGE_KEY)) {
       // Migra com segurança os dados da versão anterior, que ainda usava uma chave local única.
       store.pendingSync = true;
-      localStorage.setItem(activeStorageKey, JSON.stringify(store));
+      normalizeStore(store);
+      writeStoreLocally();
     } else {
       const first = blankPlan();
-      store = { version: 2, activePlanId: first.id, plans: [first], pendingSync: false };
-      localStorage.setItem(activeStorageKey, JSON.stringify(store));
+      store = { version: 3, activePlanId: first.id, plans: [first], deletedPlanIds: [], pendingSync: false };
+      writeStoreLocally();
     }
 
     if (currentProfile.role !== "editor") {
@@ -1370,7 +1618,7 @@
       if (!store.plans.length) store.plans = [blankPlan()];
       if (!store.plans.some((plan) => plan.id === store.activePlanId)) store.activePlanId = store.plans[0].id;
       if (hadExamples) store.pendingSync = true;
-      localStorage.setItem(activeStorageKey, JSON.stringify(store));
+      writeStoreLocally();
     }
     if (state) state.textContent = "Sincronizando…";
     try {
@@ -1386,6 +1634,7 @@
     } finally {
       document.documentElement.classList.remove("auth-checking");
       initializeCurrentPage();
+      startCloudRefresh();
     }
   }
 
@@ -1433,8 +1682,9 @@
     $("#account-email").textContent = currentProfile.email;
     $("#account-role").textContent = currentProfile.role === "editor" ? "Editor" : "Coordenador";
     $("#account-history").innerHTML = store.plans.length ? [...store.plans].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map((plan) => {
-      const completed = plan.steps.filter((step) => step.actualEnd).length;
-      return `<article class="history-item"><div><strong>${escapeHtml(plan.title || "Plano sem nome")}</strong><span>${plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Sem data"} · ${escapeHtml(plan.serviceType || "Serviço não informado")}</span></div><div><b>${completed}/${plan.steps.length}</b><small>etapas concluídas</small></div><a class="button button-ghost" href="dashboard.html">Ver dashboard</a></article>`;
+      const timeline = buildTimeline(plan);
+      const resolved = timeline.steps.filter(isStepResolved).length;
+      return `<article class="history-item"><div><strong>${escapeHtml(plan.title || "Plano sem nome")}</strong><span>${plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Sem data"} · ${escapeHtml(plan.serviceType || "Serviço não informado")}</span></div><div><b>${resolved}/${plan.steps.length}</b><small>etapas encerradas</small></div><a class="button button-ghost" href="dashboard.html?plan=${encodeURIComponent(plan.id)}">Ver dashboard</a></article>`;
     }).join("") : `<div class="chart-empty">Nenhum intervalo registrado nesta conta.</div>`;
 
     if (currentProfile.role !== "editor") return;
@@ -1466,6 +1716,24 @@
   initializeTheme();
   window.addEventListener("online", () => {
     if (store.pendingSync) scheduleCloudSync(true);
+    else refreshCloudStore();
+  });
+  window.addEventListener("focus", refreshCloudStore);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshCloudStore();
+  });
+  window.addEventListener("storage", (event) => {
+    if (event.key !== activeStorageKey || !event.newValue || (store.pendingSync && (cloudSyncPending || cloudSyncing || saveTimer))) return;
+    try {
+      const incoming = JSON.parse(event.newValue);
+      if (!incoming || !Array.isArray(incoming.plans) || !incoming.plans.length) return;
+      const currentActiveId = store.activePlanId;
+      store = normalizeStore(incoming);
+      store.activePlanId = store.plans.some((plan) => plan.id === currentActiveId) ? currentActiveId : store.plans[0].id;
+      pageRefreshHandler?.();
+    } catch (error) {
+      console.warn("Não foi possível atualizar os dados de outra aba.", error);
+    }
   });
   window.addEventListener("pagehide", () => {
     clearTimeout(saveTimer);
