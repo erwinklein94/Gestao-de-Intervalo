@@ -66,6 +66,19 @@
         </section>
 
         <section class="dashboard-grid">
+          <article class="chart-card chart-card-wide timeline-comparison-card">
+            <header class="chart-heading">
+              <div><p class="section-kicker">Linha do tempo do intervalo</p><h2>Planejado x execução</h2><small id="dashboard-timeline-range">—</small></div>
+              <div class="chart-legend timeline-legend" aria-label="Legenda da linha do tempo">
+                <span><i class="timeline-planned-key"></i>Planejado</span>
+                <span><i class="timeline-realized-key"></i>Executado</span>
+                <span><i class="timeline-running-key"></i>Em andamento</span>
+              </div>
+            </header>
+            <p class="timeline-help">Cada atividade apresenta o horário planejado e, logo abaixo, o período efetivamente executado.</p>
+            <div class="timeline-comparison" id="dashboard-timeline"></div>
+          </article>
+
           <article class="chart-card chart-card-wide">
             <header class="chart-heading">
               <div><p class="section-kicker">Duração por atividade</p><h2>Programado x realizado</h2></div>

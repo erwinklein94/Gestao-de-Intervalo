@@ -1378,6 +1378,40 @@
       }
       $("#dashboard-variance-card").className = `dashboard-kpi featured ${scheduleDeviation == null ? "variance-neutral" : scheduleDeviation > 0 ? "variance-positive" : scheduleDeviation < 0 ? "variance-negative" : "variance-zero"}`;
 
+      const activeTimelineEnd = (step) => step.actualEndMinutes ?? (step.actualStartMinutes != null ? nowAbs ?? step.actualStartMinutes : null);
+      const timelineValues = [timeline.windowStart, timeline.windowEnd];
+      timeline.steps.forEach((step) => {
+        timelineValues.push(step.start, step.end, step.actualStartMinutes, activeTimelineEnd(step));
+      });
+      const validTimelineValues = timelineValues.filter(Number.isFinite);
+      const comparisonStart = validTimelineValues.length ? Math.min(...validTimelineValues) : null;
+      const comparisonEnd = validTimelineValues.length ? Math.max(...validTimelineValues) : null;
+      const comparisonDuration = comparisonStart != null && comparisonEnd != null ? Math.max(1, comparisonEnd - comparisonStart) : null;
+      const comparisonPosition = (value) => comparisonDuration == null || value == null ? 0 : Math.max(0, Math.min(100, ((value - comparisonStart) / comparisonDuration) * 100));
+      const comparisonWidth = (start, end) => start == null || end == null ? 0 : Math.max(0.8, comparisonPosition(end) - comparisonPosition(start));
+      $("#dashboard-timeline-range").textContent = comparisonDuration == null
+        ? "Defina os horários do intervalo"
+        : `Escala comparativa: ${absoluteToTime(comparisonStart)}–${absoluteToTime(comparisonEnd)} · ${formatMinutes(comparisonDuration)}`;
+      $("#dashboard-timeline").innerHTML = comparisonDuration == null || !timeline.steps.length
+        ? `<div class="chart-empty">Adicione etapas e horários para gerar a linha do tempo comparativa.</div>`
+        : `${timeline.steps.map((step, index) => {
+          const actualEnd = activeTimelineEnd(step);
+          const runningStep = step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step);
+          const actualText = isStepSkipped(step)
+            ? "Não executada"
+            : step.actualStartMinutes == null
+              ? "Aguardando execução"
+              : `${absoluteToTime(step.actualStartMinutes)}–${runningStep ? "agora" : absoluteToTime(step.actualEndMinutes)}`;
+          return `<div class="timeline-compare-row">
+            <div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div>
+            <div class="timeline-compare-track" aria-label="${escapeHtml(step.name || `Etapa ${index + 1}`)}: planejado ${escapeHtml(step.plannedStart || "—")} a ${escapeHtml(step.plannedEnd || "—")}; realizado ${actualText}">
+              <div class="timeline-lane timeline-planned-lane"><i style="left:${comparisonPosition(step.start)}%;width:${comparisonWidth(step.start, step.end)}%"></i></div>
+              <div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i class="${runningStep ? "running" : "complete"}" style="left:${comparisonPosition(step.actualStartMinutes)}%;width:${comparisonWidth(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div>
+            </div>
+            <div class="timeline-compare-times"><span><b>P</b>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</span><span class="${runningStep ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${actualText}</span></div>
+          </div>`;
+        }).join("")}<div class="timeline-axis"><span>${absoluteToTime(comparisonStart)}</span><span>${absoluteToTime(comparisonStart + comparisonDuration / 2)}</span><span>${absoluteToTime(comparisonEnd)}</span></div>`;
+
       $("#duration-chart").innerHTML = timeline.steps.length ? timeline.steps.map((step, index) => `
         <div class="duration-row">
           <div class="duration-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div>
