@@ -308,6 +308,12 @@
     return `${hours}h ${String(minutes).padStart(2, "0")}min`;
   }
 
+  function formatHoursMinutes(total) {
+    if (!Number.isFinite(total)) return "—";
+    const absolute = Math.abs(Math.round(total));
+    return `${Math.floor(absolute / 60)}h ${String(absolute % 60).padStart(2, "0")}min`;
+  }
+
   function absoluteToTime(total) {
     if (!Number.isFinite(total)) return "—";
     const normalized = ((Math.round(total) % 1440) + 1440) % 1440;
@@ -905,6 +911,8 @@
       hero.className = "status-hero " + (diff == null ? "status-neutral" : rounded > 1 ? "status-delay" : rounded < -1 ? "status-ahead" : "status-on-time");
       $("#status-minutes").textContent = String(Math.abs(rounded)).padStart(2, "0");
       $("#status-sign").textContent = diff == null || Math.abs(rounded) <= 1 ? "" : rounded > 0 ? "+" : "−";
+      $("#status-readable").hidden = diff == null;
+      $("#status-readable").textContent = diff == null ? "" : `Equivale a ${formatHoursMinutes(rounded)}`;
       if (diff == null) {
         $("#status-label").textContent = "Aguardando início";
         $("#status-description").textContent = "Preencha o primeiro horário realizado para iniciar o acompanhamento.";

@@ -410,6 +410,7 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .status-value strong { font-size: clamp(72px, 10vw, 122px); letter-spacing: -.08em; }
 .status-value span:first-child { font-size: 42px; }
 .status-value span:last-child { font-size: 24px; font-weight: 700; margin-left: 8px; }
+.status-readable { width: fit-content; margin: 10px 0 0; padding: 6px 10px; border: 1px solid rgba(255,255,255,.28); border-radius: 7px; color: var(--white); background: rgba(0,0,0,.1); font-size: 13px; font-weight: 700; }
 .status-main > p:last-child { margin: 12px 0 0; color: rgba(255,255,255,.84); font-size: 15px; }
 .status-clock { min-width: 250px; padding: 24px 28px; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: rgba(0,0,0,.09); display: grid; text-align: right; }
 .status-clock span { color: rgba(255,255,255,.62); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
@@ -788,6 +789,7 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   .status-hero { min-height: auto; padding: 22px; color: var(--blue); background: white !important; border: 2px solid var(--blue); }
   .status-clock { color: var(--blue); border-color: var(--line); }
   .status-clock span, .status-clock small, .status-main > p:last-child, .status-label { color: var(--muted); }
+  .status-readable { color:var(--blue); border-color:var(--line); background:var(--surface); }
   .execution-workspace { width: 100%; padding: 18px 0; }
   .metric-grid { grid-template-columns: repeat(4, 1fr); }
   .metric-card { min-height: 90px; break-inside: avoid; }
