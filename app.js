@@ -917,15 +917,15 @@
         $("#status-label").textContent = "Aguardando início";
         $("#status-description").textContent = "Preencha o primeiro horário realizado para iniciar o acompanhamento.";
       } else if (rounded > 1) {
-        $("#status-label").textContent = `Atraso total do intervalo: ${Math.abs(rounded)} minutos`;
+        $("#status-label").textContent = `Atraso total do intervalo inteiro: ${Math.abs(rounded)} minutos`;
         const reference = status.totalDeviation.step?.name ? `“${status.totalDeviation.step.name}”` : "a etapa atual";
         $("#status-description").textContent = status.totalDeviation.type === "waiting-overdue"
-          ? `${reference} ainda não foi iniciada e ultrapassou o início programado.`
+          ? `Este é o atraso do intervalo inteiro, não apenas de uma etapa. Referência atual: ${reference} ainda não foi iniciada.`
           : status.totalDeviation.type === "active-overdue"
-            ? `${reference} continua em andamento após o fim programado.`
+            ? `Este é o atraso do intervalo inteiro, não apenas desta etapa. Referência atual: ${reference} continua em andamento após o fim programado.`
             : status.totalDeviation.type === "active-start"
-              ? `Desvio atual calculado pelo início realizado de ${reference}.`
-              : `Desvio calculado pelo último término registrado em ${reference}.`;
+              ? `Este é o atraso do intervalo inteiro. Referência atual: início realizado de ${reference}.`
+              : `Este é o atraso do intervalo inteiro. Referência atual: último término registrado em ${reference}.`;
       } else if (rounded < -1) {
         $("#status-label").textContent = `Adiantamento total do intervalo: ${Math.abs(rounded)} minutos`;
         $("#status-description").textContent = "Posição atual do intervalo em relação ao marco programado correspondente.";
