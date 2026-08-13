@@ -876,12 +876,12 @@
         $("#status-label").textContent = "Aguardando início";
         $("#status-description").textContent = "Preencha o primeiro horário realizado para iniciar o acompanhamento.";
       } else if (rounded > 1) {
-        $("#status-label").textContent = `Intervalo atrasado em ${Math.abs(rounded)} minutos`;
+        $("#status-label").textContent = `Atraso atual do cronograma: ${Math.abs(rounded)} minutos`;
         $("#status-description").textContent = milestone?.type === "andamento"
           ? `A etapa “${milestone.step.name}” ainda está em andamento após o fim programado.`
           : milestone ? `Comparação pelo ${milestone.type} de “${milestone.step.name}”.` : "Atraso em relação ao cronograma.";
       } else if (rounded < -1) {
-        $("#status-label").textContent = `Intervalo adiantado em ${Math.abs(rounded)} minutos`;
+        $("#status-label").textContent = `Adiantamento atual do cronograma: ${Math.abs(rounded)} minutos`;
         $("#status-description").textContent = milestone ? `Comparação pelo ${milestone.type} de “${milestone.step.name}”.` : "Adiantamento em relação ao cronograma.";
       } else {
         $("#status-label").textContent = "Intervalo dentro do prazo";
@@ -897,7 +897,7 @@
       $("#metric-current-time").textContent = active ? `Iniciada às ${active.actualStart}` : current ? `Programada ${current.plannedStart}–${current.plannedEnd}` : "—";
       const forecast = timeline.windowEnd == null || diff == null ? null : timeline.windowEnd + diff;
       $("#metric-forecast").textContent = forecast == null ? "—" : absoluteToTime(forecast);
-      $("#metric-forecast-note").textContent = diff == null ? "Aguardando primeiro marco" : `Meta de encerramento: ${plan.windowEnd}`;
+      $("#metric-forecast-note").textContent = diff == null ? "Aguardando primeiro marco" : `Projeção pelo desvio atual · meta: ${plan.windowEnd}`;
 
       const remaining = timeline.steps.filter((step) => step.actualEndMinutes == null);
       const card = $("#compensation-card");
@@ -1017,12 +1017,12 @@
       $("#dashboard-actual-note").textContent = completed.length ? `${completed.length} etapa${completed.length > 1 ? "s" : ""} com duração calculada` : "aguardando registros completos";
       $("#dashboard-variance").textContent = durationDifference == null ? "—" : `${durationDifference > 0 ? "+" : ""}${durationDifference} min`;
       $("#dashboard-variance-note").textContent = durationDifference == null
-        ? "sem etapas comparáveis"
+        ? "Somente etapas concluídas e comparáveis"
         : durationDifference > 0
-          ? `realizado consumiu ${durationDifference} min a mais`
+          ? `${comparableSteps.length} etapa${comparableSteps.length > 1 ? "s" : ""} concluída${comparableSteps.length > 1 ? "s" : ""}: ${durationDifference} min a mais de duração`
           : durationDifference < 0
-            ? `realizado consumiu ${Math.abs(durationDifference)} min a menos`
-            : "duração realizada igual à planejada";
+            ? `${comparableSteps.length} etapa${comparableSteps.length > 1 ? "s" : ""} concluída${comparableSteps.length > 1 ? "s" : ""}: ${Math.abs(durationDifference)} min a menos de duração`
+            : "Etapas concluídas: duração realizada igual à planejada";
       $("#dashboard-variance-card").className = `dashboard-kpi featured ${durationDifference == null ? "variance-neutral" : durationDifference > 0 ? "variance-positive" : durationDifference < 0 ? "variance-negative" : "variance-zero"}`;
 
       $("#duration-chart").innerHTML = timeline.steps.length ? timeline.steps.map((step, index) => `
