@@ -792,8 +792,17 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   .metric-card { min-height: 90px; break-inside: avoid; }
   .metric-card.emphasis { background: white; border-color: var(--blue); }
   .metric-card.emphasis strong { color: var(--blue); }
-  .execution-step { break-inside: avoid; }
-  textarea, input { border-color: transparent; padding-left: 0; }
+  .compensation-card, .execution-panel, .execution-notes { box-shadow: none; }
+  .execution-step { break-inside: avoid; page-break-inside: avoid; }
+  .execution-step-header { grid-template-columns: 36px minmax(0, 1fr) auto; }
+  .execution-step-grid { grid-template-columns: minmax(0, .8fr) minmax(0, 1.15fr) minmax(0, 1.45fr); gap: 10px; }
+  .programmed-block, .realized-block { min-width: 0; padding: 12px; }
+  .realized-times { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .time-entry { grid-template-columns: minmax(0, 1fr); }
+  .time-entry input { width: 100%; min-width: 0; }
+  .notes-block { min-width: 0; }
+  textarea, input { max-width: 100%; border-color: transparent; padding-left: 0; overflow: hidden; }
+  textarea { resize: none; }
   .dashboard-workspace { width:100%; padding:0; }
   .dashboard-print-header { margin-bottom:14px; padding-bottom:10px; display:flex; align-items:center; gap:15px; border-bottom:2px solid var(--blue); }
   .dashboard-print-header img { width:70px; }.dashboard-print-header div { display:grid; }.dashboard-print-header strong { color:var(--blue); font-size:16px; }.dashboard-print-header span { color:var(--muted); font-size:9px; }
