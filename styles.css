@@ -264,6 +264,12 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .lock-icon { width: 34px; height: 34px; display: grid; place-items: center; background: var(--green); color: white; border-radius: 50%; font-weight: 700; }
 .lock-banner > div:nth-child(2) { flex: 1; display: grid; gap: 2px; }
 .lock-banner span { color: var(--muted); font-size: 12px; }
+.planning-revision-banner, .execution-revision-banner { margin-bottom: 22px; padding: 16px 18px; display: flex; align-items: center; gap: 14px; border: 1px solid #e2ba58; border-radius: 12px; background: #fff7dc; }
+.planning-revision-banner[hidden], .execution-revision-banner[hidden] { display: none; }
+.planning-revision-banner > div:nth-child(2), .execution-revision-banner > span { flex: 1; }
+.planning-revision-banner > div:nth-child(2) { display: grid; gap: 2px; }
+.planning-revision-banner span, .execution-revision-banner span { color: var(--muted); font-size: 11px; }
+.execution-revision-banner strong { color: var(--blue); }
 
 .panel {
   margin-bottom: 22px;
@@ -673,6 +679,7 @@ html[data-theme="dark"] .chart-bar-line b { background: rgba(16,39,55,.9); }
 html[data-theme="dark"] .completion-ring::before { background: var(--white); }
 html[data-theme="dark"] .blocked-state { border-color: #65542d; background: #302b1d; }
 html[data-theme="dark"] .lock-banner { border-color: #276755; background: #12382f; }
+html[data-theme="dark"] .planning-revision-banner, html[data-theme="dark"] .execution-revision-banner { border-color:#705d2c; background:#342d19; }
 html[data-theme="dark"] .compensation-alert { border-color: #7c4b32; background: #34251f; }
 html[data-theme="dark"] .compensation-good { border-color: #276755; background: #12382f; }
 html[data-theme="dark"] .operational-callout { border-color:#276755; background:#12382f; }
@@ -796,6 +803,8 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   .schedule-actions .button { flex: 1; }
   .lock-banner { align-items: stretch; flex-wrap: wrap; padding: 14px; }
   .lock-banner .button { width: 100%; }
+  .planning-revision-banner, .execution-revision-banner { align-items: stretch; flex-direction: column; padding: 14px; }
+  .execution-revision-banner .button { width: 100%; }
   .schedule-table-wrap { overflow: visible; padding: 12px 14px 20px; }
   .schedule-table, .schedule-table tbody { display: block; width: 100%; min-width: 0; }
   .schedule-table thead { display: none; }

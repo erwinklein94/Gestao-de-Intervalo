@@ -482,6 +482,10 @@
     return isStepComplete(step) || isStepSkipped(step);
   }
 
+  function hasExecutionData(plan) {
+    return Boolean(plan.executionNotes) || plan.steps.some((step) => step.actualStart || step.actualEnd || step.executionStatus === "skipped" || step.actualNotes);
+  }
+
   function hasConcurrentExecution(timeline, nowAbs = null) {
     const intervals = timeline.steps
       .filter((step) => step.actualStartMinutes != null && !isStepSkipped(step))
@@ -683,7 +687,7 @@
 
     function renderSelector() {
       selector.innerHTML = store.plans
-        .map((plan) => `<option value="${plan.id}" ${plan.id === store.activePlanId ? "selected" : ""}>${escapeHtml(plan.title || "Plano sem nome")}${plan.locked ? " · travado" : ""}</option>`)
+        .map((plan) => `<option value="${plan.id}" ${plan.id === store.activePlanId ? "selected" : ""}>${escapeHtml(plan.title || "Plano sem nome")}${plan.locked ? " · travado" : hasExecutionData(plan) ? " · em revisão" : ""}</option>`)
         .join("");
     }
 
@@ -698,11 +702,12 @@
         }
       });
       $("#lock-banner").hidden = !plan.locked;
-      const hasExecution = plan.steps.some((step) => step.actualStart || step.actualEnd || step.executionStatus === "skipped" || step.actualNotes) || plan.executionNotes;
-      $("#unlock-plan-button").disabled = Boolean(plan.locked && hasExecution);
-      $("#unlock-plan-button").textContent = plan.locked && hasExecution ? "Planejamento protegido após iniciar" : "Destravar para editar";
+      const hasExecution = hasExecutionData(plan);
+      $("#planning-revision-banner").hidden = plan.locked || !hasExecution;
+      $("#unlock-plan-button").disabled = false;
+      $("#unlock-plan-button").textContent = hasExecution ? "Revisar planejamento em execução" : "Destravar para editar";
       $("#lock-plan-button").disabled = plan.locked;
-      $("#lock-plan-button").textContent = plan.locked ? "Cronograma travado" : "Revisar e travar cronograma";
+      $("#lock-plan-button").textContent = plan.locked ? "Cronograma travado" : hasExecution ? "Confirmar planejamento atualizado" : "Revisar e travar cronograma";
       $("#add-step-button").disabled = plan.locked;
       $("#chain-times-button").disabled = plan.locked;
       renderSteps();
@@ -821,6 +826,9 @@
       const row = button.closest("tr");
       const index = plan.steps.findIndex((item) => item.id === row.dataset.stepId);
       if (button.dataset.action === "delete") {
+        const target = plan.steps[index];
+        const targetHasExecution = target && (target.actualStart || target.actualEnd || target.executionStatus === "skipped" || target.actualNotes);
+        if (targetHasExecution && !confirm(`A etapa “${target.name || `Etapa ${index + 1}`}” possui registros realizados. Excluir também removerá esses registros. Deseja continuar?`)) return;
         const [removed] = plan.steps.splice(index, 1);
         if (removed) plan.deletedStepIds.push(removed.id);
         plan.structureDirty = true;
@@ -942,35 +950,37 @@
         $("#validation-summary").scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
+      const revisingExecution = hasExecutionData(activePlan());
+      $("#confirm-dialog-title").textContent = revisingExecution ? "Confirmar planejamento atualizado?" : "Travar o cronograma?";
+      $("#confirm-dialog-description").textContent = revisingExecution
+        ? "Os novos horários e etapas passarão a ser a referência da execução. Os dados realizados serão preservados e os indicadores permanecerão recalculados com o planejamento atualizado."
+        : "Depois da confirmação, as etapas e os horários programados ficarão protegidos contra alterações acidentais. Se o CCO mudar a janela durante a execução, o planejamento poderá ser revisado novamente sem apagar os dados realizados.";
+      $("#confirm-dialog-submit").textContent = revisingExecution ? "Confirmar atualização" : "Sim, travar plano";
       dialog.showModal();
     });
 
     dialog.addEventListener("close", () => {
       if (dialog.returnValue !== "confirm") return;
       const plan = activePlan();
+      const wasInExecution = hasExecutionData(plan);
       plan.locked = true;
       plan.lockedAt = new Date().toISOString();
       persist(true);
       renderForm();
-      showToast("Cronograma travado. Execução liberada.");
+      showToast(wasInExecution ? "Planejamento atualizado. A execução e os cálculos foram recalculados." : "Cronograma travado. Execução liberada.");
     });
 
     $("#unlock-plan-button").addEventListener("click", () => {
       const plan = activePlan();
-      const hasExecution = plan.steps.some((step) => step.actualStart || step.actualEnd || step.executionStatus === "skipped" || step.actualNotes) || plan.executionNotes;
-      if (hasExecution) {
-        showToast("O planejamento fica protegido após o início. Duplique o plano para criar uma nova versão.");
-        return;
-      }
+      const hasExecution = hasExecutionData(plan);
       const message = hasExecution
-        ? "Este plano já possui dados realizados. Destravar pode alterar a referência da execução. Deseja continuar?"
+        ? "O intervalo está em execução. As alterações serão salvas na nuvem e recalcularão automaticamente atrasos, previsão de término, dashboard e relatórios. Deseja revisar o planejamento?"
         : "Destravar o cronograma para edição?";
       if (!confirm(message)) return;
       plan.locked = false;
-      plan.lockedAt = null;
       persist(true);
       renderForm();
-      showToast("Cronograma destravado para edição.");
+      showToast(hasExecution ? "Planejamento em revisão. A execução permanece disponível." : "Cronograma destravado para edição.");
     });
 
     $("#export-button").addEventListener("click", async () => {
@@ -1285,13 +1295,15 @@
 
     function renderPage() {
       plan = activePlan();
-      blocked.hidden = plan.locked;
-      content.hidden = !plan.locked;
+      const executionAvailable = plan.locked || hasExecutionData(plan);
+      blocked.hidden = executionAvailable;
+      content.hidden = !executionAvailable;
+      $("#execution-revision-banner").hidden = plan.locked || !hasExecutionData(plan);
       $("#execution-title").textContent = plan.title || "Intervalo sem nome";
       const dateLabel = plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Data não informada";
       $("#execution-subtitle").textContent = [dateLabel, plan.serviceType, plan.location, plan.coordinator && `Coordenação: ${plan.coordinator}`].filter(Boolean).join(" · ");
       if (document.activeElement !== $("#execution-notes")) $("#execution-notes").value = plan.executionNotes || "";
-      $("#execution-notes").disabled = !plan.locked;
+      $("#execution-notes").disabled = !executionAvailable;
       renderSteps();
       renderDashboard();
       renderClock();
@@ -1301,7 +1313,7 @@
     pageRefreshHandler = renderPage;
     setInterval(() => {
       renderClock();
-      if (plan.locked) {
+      if (plan.locked || hasExecutionData(plan)) {
         renderDashboard();
         refreshStepIndicators();
       }

@@ -69,9 +69,17 @@
           <div class="lock-icon" aria-hidden="true">✓</div>
           <div>
             <strong>Cronograma travado</strong>
-            <span>O programado está protegido. Na execução, apenas os dados realizados poderão ser alterados.</span>
+            <span>O programado está protegido. Se o CCO mudar a janela, use a revisão para atualizar o plano sem interromper a execução.</span>
           </div>
           <button class="button button-ghost" id="unlock-plan-button" type="button">Destravar para editar</button>
+        </div>
+
+        <div class="planning-revision-banner" id="planning-revision-banner" hidden>
+          <div class="blocked-icon" aria-hidden="true">↻</div>
+          <div>
+            <strong>Planejamento em revisão durante a execução</strong>
+            <span>Altere a janela e as etapas conforme a nova autorização do CCO. Os horários realizados serão preservados e todos os cálculos serão atualizados automaticamente.</span>
+          </div>
         </div>
 
         <form id="plan-form" novalidate>
@@ -199,13 +207,13 @@
     <dialog id="confirm-dialog" class="confirm-dialog">
       <form method="dialog">
         <div class="dialog-mark" aria-hidden="true">✓</div>
-        <h2>Travar o cronograma?</h2>
-        <p>
-          Depois da confirmação, as etapas e os horários programados ficarão protegidos. A tela de execução continuará permitindo apenas o preenchimento do realizado.
+        <h2 id="confirm-dialog-title">Travar o cronograma?</h2>
+        <p id="confirm-dialog-description">
+          Depois da confirmação, as etapas e os horários programados ficarão protegidos contra alterações acidentais. Se o CCO mudar a janela durante a execução, o planejamento poderá ser revisado novamente sem apagar os dados realizados.
         </p>
         <div class="dialog-actions">
           <button class="button button-ghost" value="cancel">Voltar e revisar</button>
-          <button class="button button-accent" value="confirm">Sim, travar plano</button>
+          <button class="button button-accent" id="confirm-dialog-submit" value="confirm">Sim, travar plano</button>
         </div>
       </form>
     </dialog>
