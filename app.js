@@ -320,6 +320,11 @@
     return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(normalized % 60).padStart(2, "0")}`;
   }
 
+  function absoluteToClock(total, seconds = 0) {
+    if (!Number.isFinite(total)) return "--:--:--";
+    return `${absoluteToTime(total)}:${String(Math.max(0, Math.min(59, seconds))).padStart(2, "0")}`;
+  }
+
   function nearestDay(raw, target) {
     if (raw == null || target == null) return raw;
     return [raw - 1440, raw, raw + 1440, raw + 2880].sort((a, b) => Math.abs(a - target) - Math.abs(b - target))[0];
@@ -944,6 +949,15 @@
       const forecast = timeline.windowEnd == null || diff == null ? null : timeline.windowEnd + diff;
       $("#metric-forecast").textContent = forecast == null ? "—" : absoluteToTime(forecast);
       $("#metric-forecast-note").textContent = diff == null ? "Aguardando primeiro marco" : `Projeção pelo desvio atual · meta: ${plan.windowEnd}`;
+      const forecastIsLive = status.totalDeviation.type === "active-overdue" || status.totalDeviation.type === "waiting-overdue";
+      $("#live-forecast").textContent = absoluteToClock(forecast, forecastIsLive ? new Date().getSeconds() : 0);
+      $("#live-forecast-note").textContent = forecast == null
+        ? "Aguardando o primeiro marco"
+        : rounded > 1
+          ? `${formatHoursMinutes(rounded)} após a meta de ${plan.windowEnd}`
+          : rounded < -1
+            ? `${formatHoursMinutes(rounded)} antes da meta de ${plan.windowEnd}`
+            : `Dentro da meta de ${plan.windowEnd}`;
 
       const remaining = timeline.steps.filter((step) => !isStepComplete(step));
       const card = $("#compensation-card");

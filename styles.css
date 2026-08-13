@@ -412,10 +412,13 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .status-value span:last-child { font-size: 24px; font-weight: 700; margin-left: 8px; }
 .status-readable { width: fit-content; margin: 10px 0 0; padding: 6px 10px; border: 1px solid rgba(255,255,255,.28); border-radius: 7px; color: var(--white); background: rgba(0,0,0,.1); font-size: 13px; font-weight: 700; }
 .status-main > p:last-child { margin: 12px 0 0; color: rgba(255,255,255,.84); font-size: 15px; }
-.status-clock { min-width: 250px; padding: 24px 28px; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: rgba(0,0,0,.09); display: grid; text-align: right; }
+.status-clocks { width: 270px; flex: 0 0 270px; display: grid; gap: 14px; }
+.status-clock { min-width: 0; padding: 20px 24px; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: rgba(0,0,0,.09); display: grid; text-align: right; }
 .status-clock span { color: rgba(255,255,255,.62); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
 .status-clock strong { margin: 3px 0; font-size: 34px; letter-spacing: -.03em; }
 .status-clock small { color: rgba(255,255,255,.7); }
+.status-forecast-clock { background:rgba(0,0,0,.16); border-color:rgba(255,255,255,.34); }
+.status-forecast-clock strong { color:var(--lime); }
 
 .execution-workspace { padding-top: 38px; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
@@ -744,6 +747,7 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   .finalize-panel, .data-tools { align-items: stretch; flex-direction: column; }
   .finalize-panel .button { width: 100%; }
   .status-hero { min-height: 300px; padding: 34px 20px; align-items: stretch; flex-direction: column; gap: 24px; }
+  .status-clocks { width:100%; flex-basis:auto; grid-template-columns:1fr; }
   .status-clock { min-width: 0; text-align: left; padding: 16px 18px; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
   .metric-card { min-height: 118px; }
@@ -787,7 +791,11 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   body { background: white; font-size: 11px; }
   .site-header, .site-footer, .execution-actions, .now-button, .toast, .dashboard-hero, .dashboard-pdf-button { display: none !important; }
   .status-hero { min-height: auto; padding: 22px; color: var(--blue); background: white !important; border: 2px solid var(--blue); }
-  .status-clock { color: var(--blue); border-color: var(--line); }
+  .status-clocks { width:250px; flex-basis:250px; gap:8px; }
+  .status-clock { padding:12px 15px; color: var(--blue); border-color: var(--line); }
+  .status-clock strong { font-size:24px; }
+  .status-forecast-clock { background:var(--surface); }
+  .status-forecast-clock strong { color:var(--blue); }
   .status-clock span, .status-clock small, .status-main > p:last-child, .status-label { color: var(--muted); }
   .status-readable { color:var(--blue); border-color:var(--line); background:var(--surface); }
   .execution-workspace { width: 100%; padding: 18px 0; }
