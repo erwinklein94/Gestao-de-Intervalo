@@ -578,6 +578,31 @@
     return { value: null, type: "not-started", step: pending || null, activeSteps: [] };
   }
 
+  function finalDeadlineStatus(plan, timeline) {
+    if (timeline.windowEnd == null) return { value: null, remaining: null, type: "no-deadline", reference: null };
+    const allResolved = timeline.steps.length > 0 && timeline.steps.every(isStepResolved);
+    const completedEnds = timeline.steps.filter(isStepComplete).map((step) => step.actualEndMinutes).filter(Number.isFinite);
+    const finalActualEnd = completedEnds.length ? Math.max(...completedEnds) : null;
+
+    if (allResolved && finalActualEnd != null) {
+      return {
+        value: Math.max(0, finalActualEnd - timeline.windowEnd),
+        remaining: Math.max(0, timeline.windowEnd - finalActualEnd),
+        type: finalActualEnd > timeline.windowEnd ? "completed-late" : "completed-on-time",
+        reference: finalActualEnd
+      };
+    }
+
+    const nowAbs = currentAbsolute(plan, timeline);
+    if (nowAbs == null) return { value: null, remaining: null, type: "unavailable", reference: null };
+    return {
+      value: Math.max(0, nowAbs - timeline.windowEnd),
+      remaining: Math.max(0, timeline.windowEnd - nowAbs),
+      type: nowAbs > timeline.windowEnd ? "deadline-exceeded" : "within-deadline",
+      reference: nowAbs
+    };
+  }
+
   function validatePlan(plan) {
     const timeline = buildTimeline(plan);
     const errors = [];
@@ -1134,28 +1159,32 @@
       const status = getStatus();
       const { timeline, completed, resolved, diff, active, activeSteps } = status;
       const rounded = diff == null ? 0 : wholeMinutes(diff);
+      const deadline = finalDeadlineStatus(plan, timeline);
+      const deadlineRounded = deadline.value == null ? null : wholeMinutes(deadline.value);
+      const remainingToDeadline = deadline.remaining == null ? null : Math.ceil(deadline.remaining);
       const hero = $("#status-hero");
-      hero.className = "status-hero " + (diff == null ? "status-neutral" : rounded > 0 ? "status-delay" : rounded < 0 ? "status-ahead" : "status-on-time");
-      $("#status-minutes").textContent = String(Math.abs(rounded)).padStart(2, "0");
-      $("#status-sign").textContent = diff == null || rounded === 0 ? "" : rounded > 0 ? "+" : "−";
-      $("#status-readable").hidden = diff == null;
-      $("#status-readable").textContent = diff == null ? "" : `${Math.abs(rounded)} min · ${formatHoursMinutes(rounded)}`;
-      const reference = status.totalDeviation.step?.name ? `“${status.totalDeviation.step.name}”` : "o marco atual";
+      hero.className = "status-hero " + (deadlineRounded == null ? "status-neutral" : deadlineRounded > 0 ? "status-delay" : "status-on-time");
+      $("#status-minutes").textContent = deadlineRounded == null ? "—" : String(deadlineRounded).padStart(2, "0");
+      $("#status-sign").textContent = deadlineRounded > 0 ? "+" : "";
+      $("#status-readable").hidden = deadlineRounded == null;
+      $("#status-readable").textContent = deadlineRounded == null ? "" : `${deadlineRounded} min · ${formatHoursMinutes(deadlineRounded)}`;
       const concurrencyText = activeSteps.length > 1 ? ` entre ${activeSteps.length} etapas simultâneas` : "";
-      if (diff == null) {
-        $("#status-label").textContent = "Aguardando início";
-        $("#status-description").textContent = "Preencha o primeiro horário realizado para iniciar o acompanhamento.";
-      } else if (rounded > 0) {
-        $("#status-label").textContent = `Atraso total atual do intervalo: ${rounded} minutos`;
-        $("#status-description").textContent = `Maior desvio que ameaça o cronograma${concurrencyText}. Referência crítica: ${reference}. Tempos concomitantes não são somados.`;
-      } else if (rounded < 0) {
-        $("#status-label").textContent = `Adiantamento total atual do intervalo: ${Math.abs(rounded)} minutos`;
-        $("#status-description").textContent = `Margem consolidada pelo compromisso mais crítico${concurrencyText}. Referência: ${reference}. Tempos concomitantes não são somados.`;
+      if (deadlineRounded == null) {
+        $("#status-label").textContent = "Prazo final não disponível";
+        $("#status-description").textContent = "Defina a data e o horário final do intervalo para acompanhar o atraso do prazo.";
+      } else if (deadlineRounded > 0) {
+        $("#status-label").textContent = `Atraso em relação ao prazo final: ${deadlineRounded} minutos`;
+        $("#status-description").textContent = deadline.type === "completed-late"
+          ? `O intervalo foi encerrado ${formatHoursMinutes(deadlineRounded)} após o prazo final de ${plan.windowEnd}.`
+          : `O prazo final de ${plan.windowEnd} já foi ultrapassado em ${formatHoursMinutes(deadlineRounded)}.`;
+      } else if (deadline.type === "completed-on-time") {
+        $("#status-label").textContent = "Intervalo encerrado dentro do prazo final";
+        $("#status-description").textContent = `Encerramento dentro da meta de ${plan.windowEnd}${remainingToDeadline > 0 ? `, com ${formatMinutes(remainingToDeadline)} de margem` : ""}.`;
       } else {
-        $("#status-label").textContent = "Intervalo no horário planejado";
-        $("#status-description").textContent = `A posição atual está alinhada ao marco planejado correspondente: ${reference}.`;
+        $("#status-label").textContent = "Sem atraso em relação ao prazo final";
+        $("#status-description").textContent = `O prazo final é ${plan.windowEnd} e ainda não foi vencido${remainingToDeadline == null ? "" : `. Restam ${formatMinutes(remainingToDeadline)}`}. O término ao lado é uma projeção, não um atraso já ocorrido.`;
       }
-      $("#status-announcement").textContent = diff == null ? "Aguardando início da execução" : `${rounded > 0 ? "Atraso" : rounded < 0 ? "Adiantamento" : "Intervalo no horário"}: ${Math.abs(rounded)} minutos.`;
+      $("#status-announcement").textContent = deadlineRounded == null ? "Prazo final indisponível" : `Atraso em relação ao prazo final: ${deadlineRounded} minutos.`;
 
       $("#metric-window").textContent = timeline.windowStart == null ? "—" : `${plan.windowStart}–${plan.windowEnd}`;
       $("#metric-duration").textContent = timeline.duration == null ? "Janela não definida" : `${formatMinutes(timeline.duration)} de janela`;
@@ -1799,6 +1828,9 @@
       const deviationResult = totalScheduleDeviation(plan, timeline);
       const deviation = wholeMinutes(deviationResult.value);
       const rounded = deviation == null ? 0 : deviation;
+      const deadline = finalDeadlineStatus(plan, timeline);
+      const deadlineRounded = deadline.value == null ? null : wholeMinutes(deadline.value);
+      const remainingToDeadline = deadline.remaining == null ? null : Math.ceil(deadline.remaining);
       const forecast = timeline.windowEnd == null || deviation == null ? null : timeline.windowEnd + deviation;
       const progress = timeline.steps.length ? Math.round((resolved.length / timeline.steps.length) * 100) : 0;
       const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
@@ -1810,11 +1842,21 @@
       $("#shared-expiry").textContent = `Link válido até ${new Date(metadata.share.expires_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`;
 
       const status = $("#shared-status");
-      status.className = `shared-status ${deviation == null ? "status-neutral" : rounded > 0 ? "status-delay" : rounded < 0 ? "status-ahead" : "status-on-time"}`;
-      $("#shared-status-sign").textContent = deviation == null || rounded === 0 ? "" : rounded > 0 ? "+" : "−";
-      $("#shared-status-minutes").textContent = deviation == null ? "—" : Math.abs(rounded);
-      $("#shared-status-label").textContent = deviation == null ? "Aguardando início" : rounded > 0 ? "Atraso total atual do intervalo" : rounded < 0 ? "Adiantamento total atual do intervalo" : "Intervalo no horário planejado";
-      $("#shared-status-readable").textContent = deviation == null ? "Aguardando o primeiro marco operacional" : `${Math.abs(rounded)} min · ${formatHoursMinutes(rounded)} · tempos simultâneos não são somados`;
+      status.className = `shared-status ${deadlineRounded == null ? "status-neutral" : deadlineRounded > 0 ? "status-delay" : "status-on-time"}`;
+      $("#shared-status-sign").textContent = deadlineRounded > 0 ? "+" : "";
+      $("#shared-status-minutes").textContent = deadlineRounded == null ? "—" : deadlineRounded;
+      $("#shared-status-label").textContent = deadlineRounded == null
+        ? "Prazo final não disponível"
+        : deadlineRounded > 0
+          ? "Atraso em relação ao prazo final"
+          : deadline.type === "completed-on-time" ? "Encerrado dentro do prazo final" : "Sem atraso no prazo final";
+      $("#shared-status-readable").textContent = deadlineRounded == null
+        ? "Defina o prazo final para acompanhar este indicador"
+        : deadlineRounded > 0
+          ? `${deadlineRounded} min · ${formatHoursMinutes(deadlineRounded)} após a meta de ${plan.windowEnd}`
+          : deadline.type === "completed-on-time"
+            ? `Meta ${plan.windowEnd}${remainingToDeadline > 0 ? ` · encerrado com ${formatMinutes(remainingToDeadline)} de margem` : ""}`
+            : `Meta ${plan.windowEnd}${remainingToDeadline == null ? "" : ` · restam ${formatMinutes(remainingToDeadline)}`}`;
       $("#shared-forecast").textContent = forecast == null ? "—" : absoluteToTime(forecast);
       $("#shared-forecast-note").textContent = forecast == null ? "Aguardando primeiro marco" : `Meta planejada ${plan.windowEnd || "—"}`;
 
