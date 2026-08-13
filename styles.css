@@ -793,14 +793,25 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   .metric-card.emphasis { background: white; border-color: var(--blue); }
   .metric-card.emphasis strong { color: var(--blue); }
   .compensation-card, .execution-panel, .execution-notes { box-shadow: none; }
+  .execution-panel .panel-heading { padding: 14px 18px 11px; }
+  .execution-list { padding: 0 18px 14px; }
   .execution-step { break-inside: avoid; page-break-inside: avoid; }
-  .execution-step-header { grid-template-columns: 36px minmax(0, 1fr) auto; }
-  .execution-step-grid { grid-template-columns: minmax(0, .8fr) minmax(0, 1.15fr) minmax(0, 1.45fr); gap: 10px; }
-  .programmed-block, .realized-block { min-width: 0; padding: 12px; }
-  .realized-times { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .execution-step { padding: 10px 0; }
+  .execution-step-header { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
+  .execution-index { width: 28px; height: 28px; }
+  .execution-step-title h3 { font-size: 13px; }
+  .step-variance { padding: 5px 7px; font-size: 8px; }
+  .execution-step-grid { grid-template-columns: minmax(0, .8fr) minmax(0, 1.15fr) minmax(0, 1.45fr); gap: 7px; }
+  .programmed-block, .realized-block { min-width: 0; padding: 8px 10px; }
+  .block-label { margin-bottom: 5px; font-size: 8px; }
+  .time-pair strong { font-size: 14px; }
+  .realized-times { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .time-entry { grid-template-columns: minmax(0, 1fr); }
-  .time-entry input { width: 100%; min-width: 0; }
-  .notes-block { min-width: 0; }
+  .time-entry label { gap: 2px; font-size: 8px; }
+  .time-entry input { width: 100%; min-width: 0; height: 30px; }
+  .realized-duration { margin-top: 4px; }
+  .notes-block { min-width: 0; grid-column: auto; }
+  .notes-block textarea { min-height: 48px; height: 48px; padding-top: 4px; font-size: 9px; line-height: 1.25; }
   textarea, input { max-width: 100%; border-color: transparent; padding-left: 0; overflow: hidden; }
   textarea { resize: none; }
   .dashboard-workspace { width:100%; padding:0; }
