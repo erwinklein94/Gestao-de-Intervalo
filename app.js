@@ -1108,7 +1108,7 @@
       $("#dashboard-progress-note").textContent = `${completed.length} de ${timeline.steps.length} etapas concluídas`;
       $("#dashboard-planned-total").textContent = plannedTotal ? formatMinutes(plannedTotal) : "—";
       $("#dashboard-actual-total").textContent = completed.length ? formatMinutes(actualTotal) : "—";
-      $("#dashboard-actual-note").textContent = completed.length ? `${completed.length} etapa${completed.length > 1 ? "s" : ""} com duração calculada` : "aguardando registros completos";
+      $("#dashboard-actual-note").textContent = completed.length ? `Soma de ${completed.length} etapa${completed.length > 1 ? "s" : ""} concluída${completed.length > 1 ? "s" : ""}` : "Somente etapas concluídas";
       $("#dashboard-variance").textContent = scheduleDeviation == null ? "—" : `${scheduleDeviation > 0 ? "+" : ""}${scheduleDeviation} min`;
       $("#dashboard-variance-label").textContent = scheduleDeviation == null || scheduleDeviation >= 0 ? "Atraso total do intervalo" : "Adiantamento total do intervalo";
       $("#dashboard-variance-note").textContent = scheduleDeviation == null
