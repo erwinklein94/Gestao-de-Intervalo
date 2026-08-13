@@ -808,7 +808,7 @@ html[data-theme="dark"] .site-footer img { filter: brightness(0) invert(1); }
   :root, html[data-theme="dark"] { --surface:#f2f5f6; --surface-2:#e5ebee; --line:#cad6dd; --ink:#123047; --muted:#627888; --white:#ffffff; --blue:#003865; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   body { background: white; font-size: 11px; }
-  .site-header, .site-footer, .execution-actions, .now-button, .step-status-button, .toast, .dashboard-hero, .dashboard-pdf-button { display: none !important; }
+  .skip-link, .site-header, .site-footer, .execution-actions, .now-button, .step-status-button, .toast, .dashboard-hero, .dashboard-pdf-button { display: none !important; }
   .status-hero { min-height: auto; padding: 22px; color: var(--blue); background: white !important; border: 2px solid var(--blue); }
   .status-clocks { width:250px; flex-basis:250px; gap:8px; }
   .status-clock { padding:12px 15px; color: var(--blue); border-color: var(--line); }

@@ -482,6 +482,15 @@
     return isStepComplete(step) || isStepSkipped(step);
   }
 
+  function hasConcurrentExecution(timeline, nowAbs = null) {
+    const intervals = timeline.steps
+      .filter((step) => step.actualStartMinutes != null && !isStepSkipped(step))
+      .map((step) => ({ start: step.actualStartMinutes, end: step.actualEndMinutes ?? nowAbs }))
+      .filter((interval) => interval.end != null)
+      .sort((a, b) => a.start - b.start);
+    return intervals.some((interval, index) => index > 0 && interval.start < Math.max(...intervals.slice(0, index).map((previous) => previous.end)));
+  }
+
   function stepScheduleDeviation(step, nowAbs = null) {
     if (isStepSkipped(step)) return null;
     if (isStepComplete(step) && step.end != null) return step.actualEndMinutes - step.end;
@@ -496,13 +505,30 @@
 
   function totalScheduleDeviation(plan, timeline) {
     const nowAbs = currentAbsolute(plan, timeline);
-    const active = timeline.steps
+    const activeSteps = timeline.steps
       .filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step))
-      .sort((a, b) => a.actualStartMinutes - b.actualStartMinutes)
-      .at(-1) || null;
-    if (active) {
-      const overdue = nowAbs != null && active.end != null && nowAbs > active.end;
-      return { value: stepScheduleDeviation(active, nowAbs), type: overdue ? "active-overdue" : "active-start", step: active };
+      .sort((a, b) => a.actualStartMinutes - b.actualStartMinutes);
+    if (activeSteps.length) {
+      const activeIds = new Set(activeSteps.map((step) => step.id));
+      const overduePending = nowAbs == null ? [] : timeline.steps.filter((step) =>
+        !activeIds.has(step.id) && !isStepResolved(step) && step.actualStartMinutes == null && step.start != null && nowAbs > step.start
+      );
+      const candidates = [...activeSteps, ...overduePending]
+        .map((step) => ({ step, value: stepScheduleDeviation(step, nowAbs) }))
+        .filter((candidate) => candidate.value != null)
+        .sort((a, b) => b.value - a.value);
+      const critical = candidates[0] || { step: activeSteps.at(-1), value: null };
+      const overdue = critical.step.actualStartMinutes == null || (nowAbs != null && critical.step.end != null && nowAbs > critical.step.end);
+      const criticalIsWaiting = critical.step.actualStartMinutes == null;
+      return {
+        value: critical.value,
+        type: activeSteps.length > 1
+          ? (overdue ? "concurrent-active-overdue" : "concurrent-active")
+          : criticalIsWaiting ? "waiting-overdue" : (overdue ? "active-overdue" : "active-start"),
+        step: critical.step,
+        activeSteps,
+        overduePending
+      };
     }
 
     const completed = timeline.steps
@@ -511,24 +537,24 @@
     const pending = timeline.steps.find((step) => !isStepResolved(step));
     if (pending && nowAbs != null) {
       if (pending.start != null && nowAbs > pending.start) {
-        return { value: stepScheduleDeviation(pending, nowAbs), type: "waiting-overdue", step: pending };
+        return { value: stepScheduleDeviation(pending, nowAbs), type: "waiting-overdue", step: pending, activeSteps: [] };
       }
       if (completed.length) {
         const last = completed.at(-1);
-        return { value: stepScheduleDeviation(last), type: "between-milestones", step: last, nextStep: pending };
+        return { value: stepScheduleDeviation(last), type: "between-milestones", step: last, nextStep: pending, activeSteps: [] };
       }
     }
 
     if (timeline.steps.length && timeline.steps.every(isStepResolved)) {
       const last = completed.at(-1);
       const plannedEnd = timeline.windowEnd ?? last?.end;
-      return { value: plannedEnd == null || !last ? null : last.actualEndMinutes - plannedEnd, type: "interval-complete", step: last || null };
+      return { value: plannedEnd == null || !last ? null : last.actualEndMinutes - plannedEnd, type: "interval-complete", step: last || null, activeSteps: [] };
     }
     if (completed.length) {
       const last = completed.at(-1);
-      return { value: stepScheduleDeviation(last), type: "completed-milestone", step: last };
+      return { value: stepScheduleDeviation(last), type: "completed-milestone", step: last, activeSteps: [] };
     }
-    return { value: null, type: "not-started", step: pending || null };
+    return { value: null, type: "not-started", step: pending || null, activeSteps: [] };
   }
 
   function validatePlan(plan) {
@@ -549,7 +575,7 @@
       if (index > 0) {
         const previous = timeline.steps[index - 1];
         if (previous.end != null && step.start != null) {
-          if (step.start < previous.end) errors.push(`há sobreposição entre as etapas ${index} e ${index + 1}`);
+          if (step.start < previous.end) warnings.push(`as etapas ${index} e ${index + 1} estão planejadas de forma concomitante`);
           else if (step.start > previous.end) warnings.push(`há ${formatMinutes(step.start - previous.end)} de folga antes da etapa ${index + 1}`);
         }
       }
@@ -983,11 +1009,10 @@
       const completed = timeline.steps.filter(isStepComplete);
       const resolved = timeline.steps.filter(isStepResolved);
       const totalDeviation = totalScheduleDeviation(plan, timeline);
-      const active = timeline.steps
+      const activeSteps = totalDeviation.activeSteps || timeline.steps
         .filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step))
-        .sort((a, b) => a.actualStartMinutes - b.actualStartMinutes)
-        .at(-1) || null;
-      return { timeline, completed, resolved, diff: totalDeviation.value, active, totalDeviation };
+        .sort((a, b) => a.actualStartMinutes - b.actualStartMinutes);
+      return { timeline, completed, resolved, diff: totalDeviation.value, active: totalDeviation.step && activeSteps.some((step) => step.id === totalDeviation.step.id) ? totalDeviation.step : activeSteps.at(-1) || null, activeSteps, totalDeviation };
     }
 
     function variancePresentation(step, timeline) {
@@ -1009,7 +1034,8 @@
 
     function renderSteps() {
       const status = getStatus();
-      const firstPending = status.active || status.timeline.steps.find((step) => !isStepResolved(step));
+      const activeIds = new Set(status.activeSteps.map((step) => step.id));
+      const firstPending = status.timeline.steps.find((step) => !isStepResolved(step) && !activeIds.has(step.id));
       root.innerHTML = status.timeline.steps.map((step, index) => {
         const variance = variancePresentation(step, status.timeline);
         const durationVariance = step.actualDuration != null && step.duration != null ? Math.round(step.actualDuration - step.duration) : null;
@@ -1020,7 +1046,7 @@
             : `Duração realizada: ${formatMinutes(step.actualDuration)}${durationVariance === 0 ? " · igual ao previsto" : ` · ${durationVariance > 0 ? "+" : "−"}${formatMinutes(durationVariance)} vs. previsto`}`;
         const stepComplete = isStepComplete(step);
         const skipped = isStepSkipped(step);
-        const stateClass = skipped ? "is-skipped" : stepComplete ? "is-complete" : firstPending?.id === step.id ? "is-active" : "";
+        const stateClass = skipped ? "is-skipped" : stepComplete ? "is-complete" : activeIds.has(step.id) || (!status.activeSteps.length && firstPending?.id === step.id) ? "is-active" : "";
         const disabled = skipped ? "disabled" : "";
         return `<article class="execution-step ${stateClass}" data-step-id="${step.id}">
           <header class="execution-step-header">
@@ -1063,12 +1089,13 @@
 
     function refreshStepIndicators() {
       const status = getStatus();
-      const firstPending = status.active || status.timeline.steps.find((step) => !isStepResolved(step));
+      const activeIds = new Set(status.activeSteps.map((step) => step.id));
+      const firstPending = status.timeline.steps.find((step) => !isStepResolved(step) && !activeIds.has(step.id));
       status.timeline.steps.forEach((step) => {
         const article = $(`[data-step-id="${step.id}"]`, root);
         if (!article) return;
         const variance = variancePresentation(step, status.timeline);
-        article.classList.toggle("is-active", !isStepSkipped(step) && !isStepComplete(step) && firstPending?.id === step.id);
+        article.classList.toggle("is-active", !isStepSkipped(step) && !isStepComplete(step) && (activeIds.has(step.id) || (!status.activeSteps.length && firstPending?.id === step.id)));
         const badge = $("[data-step-variance]", article);
         badge.className = `step-variance ${variance.className}`;
         badge.textContent = variance.text;
@@ -1078,7 +1105,7 @@
 
     function renderDashboard() {
       const status = getStatus();
-      const { timeline, completed, resolved, diff, active } = status;
+      const { timeline, completed, resolved, diff, active, activeSteps } = status;
       const rounded = diff == null ? 0 : wholeMinutes(diff);
       const hero = $("#status-hero");
       hero.className = "status-hero " + (diff == null ? "status-neutral" : rounded > 0 ? "status-delay" : rounded < 0 ? "status-ahead" : "status-on-time");
@@ -1087,15 +1114,16 @@
       $("#status-readable").hidden = diff == null;
       $("#status-readable").textContent = diff == null ? "" : `${Math.abs(rounded)} min · ${formatHoursMinutes(rounded)}`;
       const reference = status.totalDeviation.step?.name ? `“${status.totalDeviation.step.name}”` : "o marco atual";
+      const concurrencyText = activeSteps.length > 1 ? ` entre ${activeSteps.length} etapas simultâneas` : "";
       if (diff == null) {
         $("#status-label").textContent = "Aguardando início";
         $("#status-description").textContent = "Preencha o primeiro horário realizado para iniciar o acompanhamento.";
       } else if (rounded > 0) {
         $("#status-label").textContent = `Atraso total atual do intervalo: ${rounded} minutos`;
-        $("#status-description").textContent = `Diferença total entre a posição atual do intervalo e o marco planejado correspondente. Referência: ${reference}. Não é a soma dos atrasos das etapas.`;
+        $("#status-description").textContent = `Maior desvio que ameaça o cronograma${concurrencyText}. Referência crítica: ${reference}. Tempos concomitantes não são somados.`;
       } else if (rounded < 0) {
         $("#status-label").textContent = `Adiantamento total atual do intervalo: ${Math.abs(rounded)} minutos`;
-        $("#status-description").textContent = `Diferença total entre a posição atual e o marco planejado correspondente. Referência: ${reference}.`;
+        $("#status-description").textContent = `Margem consolidada pelo compromisso mais crítico${concurrencyText}. Referência: ${reference}. Tempos concomitantes não são somados.`;
       } else {
         $("#status-label").textContent = "Intervalo no horário planejado";
         $("#status-description").textContent = `A posição atual está alinhada ao marco planejado correspondente: ${reference}.`;
@@ -1106,9 +1134,12 @@
       $("#metric-duration").textContent = timeline.duration == null ? "Janela não definida" : `${formatMinutes(timeline.duration)} de janela`;
       $("#metric-progress").textContent = `${resolved.length} / ${timeline.steps.length}`;
       $("#progress-bar").style.width = timeline.steps.length ? `${(resolved.length / timeline.steps.length) * 100}%` : "0%";
-      const current = active || timeline.steps.find((step) => !isStepResolved(step));
-      $("#metric-current").textContent = current?.name || (timeline.steps.length && resolved.length === timeline.steps.length ? "Concluído" : "Aguardando");
-      $("#metric-current-time").textContent = active ? `Iniciada às ${active.actualStart}` : current ? `Programada ${current.plannedStart}–${current.plannedEnd}` : "—";
+      const activeIds = new Set(activeSteps.map((step) => step.id));
+      const current = active || timeline.steps.find((step) => !isStepResolved(step) && !activeIds.has(step.id));
+      $("#metric-current").textContent = activeSteps.length > 1 ? `${activeSteps.length} etapas simultâneas` : current?.name || (timeline.steps.length && resolved.length === timeline.steps.length ? "Concluído" : "Aguardando");
+      $("#metric-current-time").textContent = activeSteps.length
+        ? activeSteps.map((step) => `${step.name}: ${step.actualStart}`).join(" · ")
+        : current ? `Programada ${current.plannedStart}–${current.plannedEnd}` : "—";
       const forecast = timeline.windowEnd == null || diff == null ? null : timeline.windowEnd + diff;
       $("#metric-forecast").textContent = forecast == null ? "—" : absoluteToTime(Math.floor(forecast));
       $("#metric-forecast-note").textContent = diff == null ? "Aguardando primeiro marco" : `Se o desvio atual for mantido · meta ${plan.windowEnd}`;
@@ -1121,16 +1152,18 @@
             ? `${formatHoursMinutes(rounded)} antes da meta de ${plan.windowEnd}`
             : `Dentro da meta de ${plan.windowEnd}`;
 
-      $("#operational-action").textContent = active
-        ? `Acompanhe “${active.name}” e registre o término real.`
+      $("#operational-action").textContent = activeSteps.length > 1
+        ? `Acompanhe ${activeSteps.length} etapas simultâneas e registre cada término real.`
+        : active
+          ? `Acompanhe “${active.name}” e registre o término real.`
         : current
           ? `Registre o início real de “${current.name}”.`
           : "Execução encerrada: revise os registros finais.";
       $("#operational-detail").textContent = diff == null
         ? "O desvio será calculado assim que houver um primeiro marco realizado."
-        : `Situação consolidada: ${rounded > 0 ? `${rounded} min de atraso` : rounded < 0 ? `${Math.abs(rounded)} min de adiantamento` : "no horário"}; previsão ${forecast == null ? "indisponível" : absoluteToTime(Math.floor(forecast))}.`;
+        : `Situação consolidada pelo compromisso mais crítico${concurrencyText}: ${rounded > 0 ? `${rounded} min de atraso` : rounded < 0 ? `${Math.abs(rounded)} min de adiantamento` : "no horário"}; previsão ${forecast == null ? "indisponível" : absoluteToTime(Math.floor(forecast))}.`;
 
-      const futureSteps = timeline.steps.filter((step) => !isStepResolved(step) && step.id !== active?.id);
+      const futureSteps = timeline.steps.filter((step) => !isStepResolved(step) && !activeIds.has(step.id));
       const unresolved = timeline.steps.filter((step) => !isStepResolved(step));
       const card = $("#compensation-card");
       card.className = "compensation-card";
@@ -1183,14 +1216,6 @@
       if (field === "actualEnd" && value && !step.actualStart) {
         showToast("Informe o início antes de registrar o fim.");
         return false;
-      }
-      const willBecomeActive = (field === "actualStart" && value && !step.actualEnd) || (field === "actualEnd" && !value && step.actualStart);
-      if (willBecomeActive) {
-        const otherActive = plan.steps.find((item) => item.id !== step.id && item.executionStatus !== "skipped" && item.actualStart && !item.actualEnd);
-        if (otherActive) {
-          showToast(`Finalize “${otherActive.name || "a etapa em andamento"}” antes de manter outra etapa ativa.`);
-          return false;
-        }
       }
       step[field] = value;
       const timelineStep = buildTimeline(plan).steps.find((item) => item.id === step.id);
@@ -1322,6 +1347,7 @@
       const scheduleDeviation = wholeMinutes(totalDeviation.value);
       const nowAbs = currentAbsolute(plan, timeline);
       const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
+      const concurrentExecution = hasConcurrentExecution(timeline, nowAbs);
 
       $("#dashboard-title").textContent = plan.title || "Intervalo sem nome";
       $("#dashboard-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator].filter(Boolean).join(" · ") || "Plano ativo";
@@ -1329,13 +1355,17 @@
       $("#dashboard-progress-note").textContent = `${resolved.length} de ${timeline.steps.length} etapas encerradas`;
       $("#dashboard-planned-total").textContent = plannedTotal ? formatMinutes(plannedTotal) : "—";
       $("#dashboard-actual-total").textContent = completed.length ? formatMinutes(actualTotal) : "—";
-      $("#dashboard-actual-note").textContent = completed.length ? `Soma de ${completed.length} etapa${completed.length > 1 ? "s" : ""} concluída${completed.length > 1 ? "s" : ""}` : "Somente etapas concluídas";
+      $("#dashboard-actual-note").textContent = completed.length
+        ? `Soma de ${completed.length} etapa${completed.length > 1 ? "s" : ""} concluída${completed.length > 1 ? "s" : ""}${concurrentExecution ? " · inclui períodos concomitantes" : ""}`
+        : running.length > 1 ? `${running.length} etapas simultâneas em andamento` : "Somente etapas concluídas";
       $("#dashboard-variance").textContent = scheduleDeviation == null ? "—" : `${scheduleDeviation > 0 ? "+" : ""}${scheduleDeviation} min`;
       $("#dashboard-variance-label").textContent = scheduleDeviation == null || scheduleDeviation >= 0 ? "Atraso total atual do intervalo" : "Adiantamento total atual do intervalo";
       $("#dashboard-variance-note").textContent = scheduleDeviation == null
         ? "Aguardando o primeiro marco operacional"
         : totalDeviation.type === "waiting-overdue"
           ? "Próxima etapa ainda não iniciada"
+          : totalDeviation.type === "concurrent-active" || totalDeviation.type === "concurrent-active-overdue"
+            ? `Maior desvio entre ${running.length} etapas simultâneas; tempos concomitantes não são somados`
           : totalDeviation.type === "active-overdue"
             ? "Etapa atual além do fim programado"
             : totalDeviation.type === "active-start"
