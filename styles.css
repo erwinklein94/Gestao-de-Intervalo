@@ -476,6 +476,7 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .time-entry label { min-width: 0; display: grid; gap: 5px; color: var(--blue); font-size: 10px; font-weight: 700; }
 .time-entry input { min-width: 0; padding: 0 10px; background: var(--white); color: var(--ink); }
 .now-button { position: static; min-width: 48px; height: 44px; padding: 0 8px; border: 0; border-radius: 7px; background: var(--green); color: var(--white); cursor: pointer; font-size: 9px; font-weight: 700; }
+.now-button:disabled { opacity: .42; cursor: not-allowed; }
 .notes-block textarea { min-height: 96px; }
 .execution-notes { padding-bottom: 26px; }
 .execution-notes .field { margin: 20px 28px 0; }
