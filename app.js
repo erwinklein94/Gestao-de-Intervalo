@@ -420,6 +420,23 @@
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(clockSeconds).padStart(2, "0")}`;
   }
 
+  function bytesToBase64Url(bytes) {
+    let binary = "";
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+
+  async function sha256Hex(value) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  function sharedUrl(token) {
+    const url = new URL("acompanhar.html", location.href);
+    url.searchParams.set("token", token);
+    return url.href;
+  }
+
   function nearestDay(raw, target) {
     if (raw == null || target == null) return raw;
     return [raw - 1440, raw, raw + 1440, raw + 2880].sort((a, b) => Math.abs(a - target) - Math.abs(b - target))[0];
@@ -1640,6 +1657,7 @@
     if (page === "execution") executionPage();
     if (page === "dashboard") dashboardPage();
     if (page === "account") accountPage();
+    if (page === "shared") sharedPage();
   }
 
   async function initializeCloud() {
@@ -1743,6 +1761,139 @@
     });
   }
 
+  function sharedPage() {
+    const token = new URLSearchParams(location.search).get("token") || "";
+    const loading = $("#shared-loading");
+    const errorPanel = $("#shared-error");
+    const content = $("#shared-content");
+    let sharedPlan = null;
+    let refreshTimer = null;
+
+    function showError(message) {
+      loading.hidden = true;
+      content.hidden = true;
+      errorPanel.hidden = false;
+      $("#shared-error-message").textContent = message;
+    }
+
+    function sharedStepStatus(step, nowAbs) {
+      const variance = wholeMinutes(stepScheduleDeviation(step, nowAbs));
+      if (isStepSkipped(step)) return { label: "Não executada", className: "skipped", variance: null };
+      if (isStepComplete(step)) return variance > 0
+        ? { label: "Concluída com atraso", className: "delay", variance }
+        : variance < 0 ? { label: "Concluída adiantada", className: "ahead", variance } : { label: "Concluída no horário", className: "on-time", variance: 0 };
+      if (step.actualStartMinutes != null) return variance > 0
+        ? { label: "Em andamento · atrasada", className: "delay", variance }
+        : variance < 0 ? { label: "Em andamento · adiantada", className: "ahead", variance } : { label: "Em andamento", className: "running", variance: 0 };
+      if (variance > 0) return { label: "Início atrasado", className: "delay", variance };
+      return { label: "Aguardando", className: "waiting", variance: null };
+    }
+
+    function renderSharedPlan(plan, metadata) {
+      sharedPlan = plan;
+      const timeline = buildTimeline(plan);
+      const completed = timeline.steps.filter(isStepComplete);
+      const resolved = timeline.steps.filter(isStepResolved);
+      const running = timeline.steps.filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step));
+      const nowAbs = currentAbsolute(plan, timeline);
+      const deviationResult = totalScheduleDeviation(plan, timeline);
+      const deviation = wholeMinutes(deviationResult.value);
+      const rounded = deviation == null ? 0 : deviation;
+      const forecast = timeline.windowEnd == null || deviation == null ? null : timeline.windowEnd + deviation;
+      const progress = timeline.steps.length ? Math.round((resolved.length / timeline.steps.length) * 100) : 0;
+      const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
+      const actualTotal = completed.reduce((sum, step) => sum + (step.actualDuration || 0), 0);
+
+      $("#shared-title").textContent = plan.title || "Intervalo sem nome";
+      $("#shared-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Coordenação: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
+      $("#shared-updated").textContent = `Atualizado às ${new Date(metadata.fetched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+      $("#shared-expiry").textContent = `Link válido até ${new Date(metadata.share.expires_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`;
+
+      const status = $("#shared-status");
+      status.className = `shared-status ${deviation == null ? "status-neutral" : rounded > 0 ? "status-delay" : rounded < 0 ? "status-ahead" : "status-on-time"}`;
+      $("#shared-status-sign").textContent = deviation == null || rounded === 0 ? "" : rounded > 0 ? "+" : "−";
+      $("#shared-status-minutes").textContent = deviation == null ? "—" : Math.abs(rounded);
+      $("#shared-status-label").textContent = deviation == null ? "Aguardando início" : rounded > 0 ? "Atraso total atual do intervalo" : rounded < 0 ? "Adiantamento total atual do intervalo" : "Intervalo no horário planejado";
+      $("#shared-status-readable").textContent = deviation == null ? "Aguardando o primeiro marco operacional" : `${Math.abs(rounded)} min · ${formatHoursMinutes(rounded)} · tempos simultâneos não são somados`;
+      $("#shared-forecast").textContent = forecast == null ? "—" : absoluteToTime(forecast);
+      $("#shared-forecast-note").textContent = forecast == null ? "Aguardando primeiro marco" : `Meta planejada ${plan.windowEnd || "—"}`;
+
+      $("#shared-window").textContent = plan.windowStart && plan.windowEnd ? `${plan.windowStart}–${plan.windowEnd}` : "—";
+      $("#shared-window-note").textContent = timeline.duration == null ? "Janela não definida" : formatMinutes(timeline.duration);
+      $("#shared-progress").textContent = `${resolved.length} / ${timeline.steps.length}`;
+      $("#shared-progress-note").textContent = `${progress}% das etapas encerradas`;
+      $("#shared-current").textContent = running.length > 1 ? `${running.length} simultâneas` : running[0]?.name || (resolved.length === timeline.steps.length && timeline.steps.length ? "Concluído" : "Aguardando");
+      $("#shared-current-note").textContent = running.length ? running.map((step) => `Desde ${step.actualStart}`).join(" · ") : "Nenhuma etapa em andamento";
+
+      $("#shared-steps").innerHTML = timeline.steps.map((step, index) => {
+        const stepStatus = sharedStepStatus(step, nowAbs);
+        const realized = isStepSkipped(step) ? "Não executada" : step.actualStart ? `${step.actualStart}–${step.actualEnd || "em andamento"}` : "Ainda não iniciada";
+        return `<article class="shared-step ${stepStatus.className}">
+          <header><span>${String(index + 1).padStart(2, "0")}</span><div><h3>${escapeHtml(step.name || `Etapa ${index + 1}`)}</h3><small>${stepStatus.label}</small></div>${stepStatus.variance == null ? "" : `<b>${stepStatus.variance > 0 ? "+" : ""}${stepStatus.variance} min</b>`}</header>
+          <div class="shared-step-times"><p><span>Planejado</span><strong>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</strong><small>${formatMinutes(step.duration)}</small></p><p><span>Realizado</span><strong>${escapeHtml(realized)}</strong><small>${step.actualDuration == null ? "Duração em aberto" : formatMinutes(step.actualDuration)}</small></p></div>
+          ${step.actualNotes ? `<p class="shared-step-note"><span>Registro operacional</span>${escapeHtml(step.actualNotes)}</p>` : ""}
+        </article>`;
+      }).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
+
+      $("#shared-dashboard-progress").textContent = `${progress}%`;
+      $("#shared-dashboard-progress-note").textContent = `${resolved.length} de ${timeline.steps.length} etapas encerradas`;
+      $("#shared-dashboard-planned").textContent = plannedTotal ? formatMinutes(plannedTotal) : "—";
+      $("#shared-dashboard-actual").textContent = completed.length ? formatMinutes(actualTotal) : "—";
+      $("#shared-dashboard-variance").textContent = deviation == null ? "—" : `${deviation > 0 ? "+" : ""}${deviation} min`;
+      $("#shared-dashboard-variance-label").textContent = deviation == null || deviation >= 0 ? "Atraso total atual" : "Adiantamento total atual";
+      $("#shared-dashboard-variance-note").textContent = deviation == null ? "Aguardando primeiro marco" : `${formatHoursMinutes(deviation)} · referência pelo compromisso crítico`;
+      $("#shared-dashboard-variance-card").className = `dashboard-kpi featured ${deviation == null ? "variance-neutral" : deviation > 0 ? "variance-positive" : deviation < 0 ? "variance-negative" : "variance-zero"}`;
+
+      const activeTimelineEnd = (step) => step.actualEndMinutes ?? (step.actualStartMinutes != null ? nowAbs ?? step.actualStartMinutes : null);
+      const values = [timeline.windowStart, timeline.windowEnd];
+      timeline.steps.forEach((step) => values.push(step.start, step.end, step.actualStartMinutes, activeTimelineEnd(step)));
+      const valid = values.filter(Number.isFinite);
+      const comparisonStart = valid.length ? Math.min(...valid) : null;
+      const comparisonEnd = valid.length ? Math.max(...valid) : null;
+      const comparisonDuration = comparisonStart != null && comparisonEnd != null ? Math.max(1, comparisonEnd - comparisonStart) : null;
+      const position = (value) => comparisonDuration == null || value == null ? 0 : Math.max(0, Math.min(100, ((value - comparisonStart) / comparisonDuration) * 100));
+      const width = (start, end) => start == null || end == null ? 0 : Math.max(.8, position(end) - position(start));
+      $("#shared-timeline-range").textContent = comparisonDuration == null ? "Horários não definidos" : `${absoluteToTime(comparisonStart)}–${absoluteToTime(comparisonEnd)} · ${formatMinutes(comparisonDuration)}`;
+      $("#shared-timeline").innerHTML = comparisonDuration == null ? `<div class="chart-empty">Linha do tempo indisponível.</div>` : `${timeline.steps.map((step, index) => {
+        const actualEnd = activeTimelineEnd(step);
+        const isRunning = step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step);
+        const actualText = isStepSkipped(step) ? "Não executada" : step.actualStartMinutes == null ? "Aguardando" : `${absoluteToTime(step.actualStartMinutes)}–${isRunning ? "agora" : absoluteToTime(step.actualEndMinutes)}`;
+        return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="timeline-compare-track"><div class="timeline-lane timeline-planned-lane"><i style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${actualText}</span></div></div>`;
+      }).join("")}<div class="timeline-axis"><span>${absoluteToTime(comparisonStart)}</span><span>${absoluteToTime(comparisonStart + comparisonDuration / 2)}</span><span>${absoluteToTime(comparisonEnd)}</span></div>`;
+
+      const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
+      $("#shared-duration-chart").innerHTML = timeline.steps.map((step, index) => `<div class="duration-row"><div class="duration-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="duration-bars"><div class="chart-bar-line"><i class="planned" style="width:${Math.max(2, ((step.duration || 0) / maxDuration) * 100)}%"></i><b>${formatMinutes(step.duration)}</b></div><div class="chart-bar-line"><i class="actual" style="width:${step.actualDuration == null ? 0 : Math.max(2, (step.actualDuration / maxDuration) * 100)}%"></i><b>${step.actualDuration == null ? "—" : formatMinutes(step.actualDuration)}</b></div></div></div>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
+
+      loading.hidden = true;
+      errorPanel.hidden = true;
+      content.hidden = false;
+    }
+
+    async function loadSharedPlan(showLoading = false) {
+      if (showLoading) { loading.hidden = false; errorPanel.hidden = true; content.hidden = true; }
+      if (!/^[A-Za-z0-9_-]{43,128}$/.test(token)) { showError("O endereço está incompleto ou não contém um código de acesso válido."); return; }
+      try {
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/interval-share`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }), cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { showError(payload.error || "O link expirou, foi revogado ou não existe."); clearInterval(refreshTimer); return; }
+        renderSharedPlan(databaseToPlan(payload.plan), payload);
+      } catch (error) {
+        console.warn("Falha ao atualizar acompanhamento.", error);
+        if (!sharedPlan) showError("Não foi possível conectar ao acompanhamento. Verifique sua internet e tente novamente.");
+        else $("#shared-updated").textContent = "Sem conexão · tentando novamente";
+      }
+    }
+
+    $$('[data-shared-tab]').forEach((button) => button.addEventListener("click", () => {
+      const tab = button.dataset.sharedTab;
+      $$('[data-shared-tab]').forEach((item) => { item.classList.toggle("active", item === button); item.setAttribute("aria-selected", String(item === button)); });
+      $$('[data-shared-view]').forEach((view) => { view.hidden = view.dataset.sharedView !== tab; });
+    }));
+    $("#shared-retry").addEventListener("click", () => loadSharedPlan(true));
+    loadSharedPlan(true);
+    refreshTimer = setInterval(() => loadSharedPlan(false), 10000);
+  }
+
   async function accountPage() {
     const gate = $("#account-gate");
     const content = $("#account-content");
@@ -1757,11 +1908,111 @@
     $("#account-name").textContent = currentProfile.full_name || "Usuário";
     $("#account-email").textContent = currentProfile.email;
     $("#account-role").textContent = currentProfile.role === "editor" ? "Editor" : "Coordenador";
+    const databasePlanIds = store.plans.map((plan) => plan.databaseId).filter(Boolean);
+    const { data: shareRows, error: shareRowsError } = databasePlanIds.length
+      ? await cloudClient.from("interval_share_links").select("id,plan_id,expires_at,revoked_at,token_hint").in("plan_id", databasePlanIds)
+      : { data: [], error: null };
+    if (shareRowsError) console.warn("Não foi possível consultar os links de acompanhamento.", shareRowsError);
+    const shareByPlan = new Map((shareRows || []).map((share) => [share.plan_id, share]));
+    const now = Date.now();
     $("#account-history").innerHTML = store.plans.length ? [...store.plans].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map((plan) => {
       const timeline = buildTimeline(plan);
       const resolved = timeline.steps.filter(isStepResolved).length;
-      return `<article class="history-item"><div><strong>${escapeHtml(plan.title || "Plano sem nome")}</strong><span>${plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Sem data"} · ${escapeHtml(plan.serviceType || "Serviço não informado")}</span></div><div><b>${resolved}/${plan.steps.length}</b><small>etapas encerradas</small></div><a class="button button-ghost" href="dashboard.html?plan=${encodeURIComponent(plan.id)}">Ver dashboard</a></article>`;
+      const share = shareByPlan.get(plan.databaseId);
+      const activeShare = share && !share.revoked_at && new Date(share.expires_at).getTime() > now;
+      const savedToken = activeShare ? sessionStorage.getItem(`intervalShareToken.${share.id}`) : "";
+      const shareState = activeShare
+        ? `<span class="share-state active"><i></i>Link ativo até ${new Date(share.expires_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>`
+        : `<span class="share-state">Nenhum link ativo</span>`;
+      return `<article class="history-item" data-plan-id="${escapeHtml(plan.id)}" data-database-id="${escapeHtml(plan.databaseId || "")}">
+        <div class="history-main"><strong>${escapeHtml(plan.title || "Plano sem nome")}</strong><span>${plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Sem data"} · ${escapeHtml(plan.serviceType || "Serviço não informado")}</span>${shareState}</div>
+        <div class="history-progress"><b>${resolved}/${plan.steps.length}</b><small>etapas encerradas</small></div>
+        <div class="history-actions"><a class="button button-ghost" href="dashboard.html?plan=${encodeURIComponent(plan.id)}">Ver dashboard</a><button class="button ${activeShare ? "button-share-active" : "button-secondary"}" type="button" data-share-action="${activeShare && savedToken ? "copy" : "manage"}" data-share-id="${share?.id || ""}" data-token="${escapeHtml(savedToken)}">${activeShare && savedToken ? "Copiar link" : activeShare ? "Gerenciar link" : "Compartilhar"}</button></div>
+      </article>`;
     }).join("") : `<div class="chart-empty">Nenhum intervalo registrado nesta conta.</div>`;
+
+    $("#account-history").addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-share-action]");
+      if (!button) return;
+      const item = button.closest(".history-item");
+      const plan = store.plans.find((candidate) => candidate.id === item.dataset.planId);
+      if (!plan?.databaseId) {
+        showToast("Aguarde o intervalo terminar de salvar na nuvem.");
+        return;
+      }
+      if (button.dataset.shareAction === "copy" && button.dataset.token) {
+        await navigator.clipboard.writeText(sharedUrl(button.dataset.token));
+        showToast("Link de acompanhamento copiado.");
+        return;
+      }
+      openShareDialog(plan, shareByPlan.get(plan.databaseId) || null);
+    });
+
+    function openShareDialog(plan, existingShare) {
+      const activeShare = existingShare && !existingShare.revoked_at && new Date(existingShare.expires_at).getTime() > Date.now();
+      const savedToken = activeShare ? sessionStorage.getItem(`intervalShareToken.${existingShare.id}`) : "";
+      const dialog = createDialog("share-dialog", `<div class="cloud-dialog-content share-dialog-content">
+        <button class="dialog-close" type="button" aria-label="Fechar">×</button>
+        <p class="section-kicker">Acompanhamento externo</p>
+        <h2>${activeShare ? "Gerenciar link" : "Compartilhar intervalo"}</h2>
+        <p>Quem receber o link poderá consultar a execução e o dashboard, mas não poderá alterar nenhuma informação.</p>
+        ${activeShare ? `<div class="share-active-card"><strong>Link ativo</strong><span>Válido até ${new Date(existingShare.expires_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span></div>` : `<label class="field"><span>Validade do link</span><select id="share-validity"><option value="24">24 horas</option><option value="72" selected>3 dias</option><option value="168">7 dias</option><option value="720">30 dias</option></select></label>`}
+        <p class="auth-feedback" id="share-feedback"></p>
+        <div class="cloud-dialog-actions share-dialog-actions">
+          ${activeShare ? `<button class="button button-ghost" type="button" data-revoke-share>Revogar link</button><button class="button button-secondary" type="button" data-copy-share ${savedToken ? "" : "disabled"}>${savedToken ? "Copiar link" : "Link criado em outro dispositivo"}</button><button class="button button-share-active" type="button" data-regenerate-share>Gerar novo link</button>` : `<button class="button button-secondary" type="button" data-create-share>Gerar e copiar link</button>`}
+        </div>
+      </div>`);
+      $(".dialog-close", dialog).addEventListener("click", () => dialog.close());
+      const feedback = $("#share-feedback", dialog);
+
+      async function createShare() {
+        const actionButton = $("[data-create-share], [data-regenerate-share]", dialog);
+        actionButton.disabled = true;
+        feedback.textContent = "Gerando link seguro…";
+        const token = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+        const tokenHash = await sha256Hex(token);
+        const validity = Number($("#share-validity", dialog)?.value || 72);
+        const expiresAt = new Date(Date.now() + validity * 60 * 60 * 1000).toISOString();
+        const { data, error } = await cloudClient.from("interval_share_links").upsert({
+          plan_id: plan.databaseId,
+          owner_id: currentUser.id,
+          token_hash: tokenHash,
+          token_hint: token.slice(-6),
+          expires_at: expiresAt,
+          revoked_at: null,
+          last_accessed_at: null,
+        }, { onConflict: "plan_id" }).select("id").single();
+        if (error) {
+          feedback.textContent = "Não foi possível gerar o link. Tente novamente.";
+          actionButton.disabled = false;
+          console.error("Falha ao gerar link.", error);
+          return;
+        }
+        sessionStorage.setItem(`intervalShareToken.${data.id}`, token);
+        await navigator.clipboard.writeText(sharedUrl(token));
+        showToast("Link seguro gerado e copiado.");
+        dialog.close();
+        location.reload();
+      }
+
+      $("[data-create-share]", dialog)?.addEventListener("click", createShare);
+      $("[data-regenerate-share]", dialog)?.addEventListener("click", createShare);
+      $("[data-copy-share]", dialog)?.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(sharedUrl(savedToken));
+        showToast("Link de acompanhamento copiado.");
+      });
+      $("[data-revoke-share]", dialog)?.addEventListener("click", async () => {
+        const revokeButton = $("[data-revoke-share]", dialog);
+        revokeButton.disabled = true;
+        feedback.textContent = "Revogando acesso…";
+        const { error } = await cloudClient.from("interval_share_links").update({ revoked_at: new Date().toISOString() }).eq("id", existingShare.id);
+        if (error) { feedback.textContent = "Não foi possível revogar o link."; revokeButton.disabled = false; return; }
+        sessionStorage.removeItem(`intervalShareToken.${existingShare.id}`);
+        showToast("Acesso ao intervalo revogado.");
+        dialog.close();
+        location.reload();
+      });
+    }
 
     if (currentProfile.role !== "editor") return;
     $("#editor-panel").hidden = false;
@@ -1815,5 +2066,6 @@
     clearTimeout(saveTimer);
     if (store.pendingSync) scheduleCloudSync(true);
   });
-  initializeCloud();
+  if (page === "shared") initializeCurrentPage();
+  else initializeCloud();
 })();

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="theme-color" content="#003865">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Acompanhamento do intervalo | Gestão de Intervalo</title>
+  <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body data-page="shared">
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+  <header class="shared-header">
+    <a class="brand" href="acompanhar.html" aria-label="Gestão de Intervalo"><img src="assets/rumo-logo-white.png" alt="Rumo"><span>Gestão de Intervalo</span></a>
+    <span class="read-only-badge">Somente leitura</span>
+    <button class="theme-toggle" type="button" data-theme-toggle><span>☾</span><b>Tema escuro</b></button>
+  </header>
+
+  <main id="conteudo" class="shared-page">
+    <section class="shared-loading" id="shared-loading" aria-live="polite">
+      <span class="shared-loader" aria-hidden="true"></span>
+      <h1>Carregando acompanhamento…</h1>
+      <p>Buscando as informações mais recentes do intervalo.</p>
+    </section>
+
+    <section class="shared-error" id="shared-error" hidden>
+      <span aria-hidden="true">!</span>
+      <h1>Não foi possível abrir este acompanhamento</h1>
+      <p id="shared-error-message">Confira se o link está completo e ainda é válido.</p>
+      <button class="button button-ghost" id="shared-retry" type="button">Tentar novamente</button>
+    </section>
+
+    <div id="shared-content" hidden>
+      <section class="shared-hero">
+        <div>
+          <p class="eyebrow">Acompanhamento ao vivo</p>
+          <h1 id="shared-title">Intervalo</h1>
+          <p id="shared-subtitle">—</p>
+        </div>
+        <div class="shared-live-state">
+          <i aria-hidden="true"></i>
+          <div><strong>Atualização automática</strong><span id="shared-updated">Consultando…</span></div>
+        </div>
+      </section>
+
+      <nav class="shared-tabs" aria-label="Visualização do acompanhamento">
+        <button class="active" type="button" data-shared-tab="execution" aria-selected="true">Execução</button>
+        <button type="button" data-shared-tab="dashboard" aria-selected="false">Dashboard</button>
+      </nav>
+
+      <section class="shared-view" id="shared-execution" data-shared-view="execution">
+        <section class="shared-status" id="shared-status">
+          <div>
+            <p class="section-kicker" id="shared-status-label">Situação atual</p>
+            <div class="shared-delay-value"><span id="shared-status-sign"></span><strong id="shared-status-minutes">—</strong><b>min</b></div>
+            <p id="shared-status-readable">Aguardando o primeiro marco operacional</p>
+          </div>
+          <article class="shared-forecast"><span>Término previsto</span><strong id="shared-forecast">—</strong><small id="shared-forecast-note">Meta —</small></article>
+        </section>
+
+        <section class="shared-kpis" aria-label="Resumo operacional">
+          <article><span>Janela programada</span><strong id="shared-window">—</strong><small id="shared-window-note">—</small></article>
+          <article><span>Progresso</span><strong id="shared-progress">—</strong><small id="shared-progress-note">—</small></article>
+          <article><span>Em andamento</span><strong id="shared-current">—</strong><small id="shared-current-note">—</small></article>
+        </section>
+
+        <section class="shared-section-heading"><div><p class="section-kicker">Leitura operacional</p><h2>Etapas do intervalo</h2></div><p>Horários planejados e realizados, sem possibilidade de edição.</p></section>
+        <div class="shared-steps" id="shared-steps"></div>
+      </section>
+
+      <section class="shared-view" id="shared-dashboard" data-shared-view="dashboard" hidden>
+        <section class="dashboard-kpis shared-dashboard-kpis" aria-label="Indicadores do intervalo">
+          <article class="dashboard-kpi"><span>Progresso</span><strong id="shared-dashboard-progress">—</strong><small id="shared-dashboard-progress-note">—</small></article>
+          <article class="dashboard-kpi"><span>Tempo programado</span><strong id="shared-dashboard-planned">—</strong><small>Somatório das etapas</small></article>
+          <article class="dashboard-kpi"><span>Soma realizada</span><strong id="shared-dashboard-actual">—</strong><small>Etapas concluídas</small></article>
+          <article class="dashboard-kpi featured" id="shared-dashboard-variance-card"><span id="shared-dashboard-variance-label">Situação atual</span><strong id="shared-dashboard-variance">—</strong><small id="shared-dashboard-variance-note">—</small></article>
+        </section>
+
+        <article class="chart-card chart-card-wide timeline-comparison-card">
+          <header class="chart-heading">
+            <div><p class="section-kicker">Linha do tempo do intervalo</p><h2>Planejado x execução</h2><small id="shared-timeline-range">—</small></div>
+            <div class="chart-legend timeline-legend"><span><i class="timeline-planned-key"></i>Planejado</span><span><i class="timeline-realized-key"></i>Executado</span><span><i class="timeline-running-key"></i>Em andamento</span></div>
+          </header>
+          <p class="timeline-help">Cada atividade mostra o período planejado e, abaixo, o período realizado.</p>
+          <div class="timeline-comparison" id="shared-timeline"></div>
+        </article>
+
+        <article class="chart-card chart-card-wide shared-duration-card">
+          <header class="chart-heading"><div><p class="section-kicker">Duração por atividade</p><h2>Programado x realizado</h2></div><div class="chart-legend"><span><i class="planned"></i>Programado</span><span><i class="actual"></i>Realizado</span></div></header>
+          <div class="duration-chart" id="shared-duration-chart"></div>
+        </article>
+      </section>
+
+      <aside class="shared-security-note"><strong>Acesso somente para consulta</strong><span>Este link não permite alterar planejamento, horários ou registros. Solicite ao coordenador um novo link caso este expire.</span><small id="shared-expiry"></small></aside>
+    </div>
+  </main>
+</body>
+</html>
