@@ -2484,7 +2484,6 @@
     function renderSharedPlan(plan, metadata) {
       sharedPlan = plan;
       const timeline = buildTimeline(plan);
-      const completed = timeline.steps.filter(isStepComplete);
       const resolved = timeline.steps.filter(isStepResolved);
       const running = timeline.steps.filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step));
       const execution = executionStatus(plan, timeline);
@@ -2501,7 +2500,7 @@
       const overDeadline = execution.deadlineForecast == null ? null : wholeMinutes(execution.deadlineForecast);
       const progress = timeline.steps.length ? Math.round((resolved.length / timeline.steps.length) * 100) : 0;
       const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
-      const actualTotal = completed.reduce((sum, step) => sum + (step.actualDuration || 0), 0);
+      const elapsedInterval = intervalElapsedTime(timeline, nowAbs);
       const adjustedDeadlineValue = adjustedDeadline(timeline.windowEnd, showDeviation ? deviation : null);
 
       $("#shared-title").textContent = plan.title || "Intervalo sem nome";
@@ -2599,7 +2598,14 @@
       $("#shared-dashboard-progress").textContent = `${progress}%`;
       $("#shared-dashboard-progress-note").textContent = `${resolved.length} de ${timeline.steps.length} etapas encerradas`;
       $("#shared-dashboard-planned").textContent = plannedTotal ? formatMinutes(plannedTotal) : "—";
-      $("#shared-dashboard-actual").textContent = completed.length ? formatMinutes(actualTotal) : "—";
+      $("#shared-dashboard-actual").textContent = elapsedInterval.minutes == null ? "—" : formatMinutes(elapsedInterval.minutes);
+      $("#shared-dashboard-actual-note").textContent = elapsedInterval.start == null
+        ? "Aguardando o primeiro início realizado"
+        : elapsedInterval.finished
+          ? `${absoluteToTime(elapsedInterval.start)}–${absoluteToTime(elapsedInterval.end)} · intervalo encerrado`
+          : elapsedInterval.end == null
+            ? "Horário atual indisponível para a data deste plano"
+            : `Desde ${absoluteToTime(elapsedInterval.start)} até agora · períodos concomitantes contam uma vez`;
       $("#shared-dashboard-variance").textContent = deviation == null
         ? "—"
         : deviation > 0 ? `Atrasado ${deviation} min`
