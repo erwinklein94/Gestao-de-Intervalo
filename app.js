@@ -1722,50 +1722,6 @@
         : delayRounded < 0 ? `Execução adiantada em ${Math.abs(delayRounded)} minutos em relação ao planejado.`
         : "Execução no horário planejado.";
 
-      // ---------- selos de leitura rápida ----------
-      const chips = [];
-      if (live && delayRounded != null) {
-        chips.push({
-          tone: totals.late > 0 ? "chip-alert" : "chip-ok",
-          label: "Tempo em atraso",
-          value: totals.late > 0 ? `+${totals.late} min em ${pluralize(totals.lateCount, "etapa", "etapas")}` : "nenhum"
-        });
-        chips.push({
-          tone: "chip-ok",
-          label: "Tempo de adiantamento",
-          value: totals.ahead > 0 ? `−${totals.ahead} min em ${pluralize(totals.aheadCount, "etapa", "etapas")}` : "nenhum"
-        });
-      }
-      if (live && started && !finished) {
-        chips.push({
-          tone: lateNow.length ? "chip-alert" : "chip-ok",
-          label: "Etapas em atraso agora",
-          value: lateNow.length ? `${lateNow.length} de ${steps.length - skipped.length}` : "nenhuma"
-        });
-      }
-      if (startOverdue.length) {
-        chips.push({ tone: "chip-warn", label: "Ainda não iniciadas e já vencidas no início", value: String(startOverdue.length) });
-      }
-      if (active.length) {
-        chips.push({ tone: "chip-info", label: "Em andamento", value: active.length > 1 ? `${active.length} simultâneas` : stepLabel(active[0]) });
-      }
-      if (lateFinished.length) chips.push({ tone: "chip-warn", label: "Concluídas com atraso", value: String(lateFinished.length) });
-      if (skipped.length) chips.push({ tone: "chip-info", label: "Não executadas", value: String(skipped.length) });
-      if (timeline.windowEnd != null) {
-        chips.push(deadlineExceeded > 0
-          ? { tone: "chip-alert", label: "Prazo final", value: `estourado em ${formatMinutes(deadlineExceeded)}` }
-          : {
-              tone: overDeadline != null && overDeadline > 0 ? "chip-warn" : "chip-ok",
-              label: `Prazo final ${plan.windowEnd}`,
-              value: overDeadline != null && overDeadline > 0
-                ? `projeção ultrapassa em ${formatMinutes(overDeadline)}`
-                : remainingToDeadline == null ? "—" : `restam ${formatMinutes(remainingToDeadline)}`
-            });
-      }
-      $("#status-chips").innerHTML = chips
-        .map((chip) => `<li class="${chip.tone}"><span>${escapeHtml(chip.label)}</span><strong>${escapeHtml(String(chip.value))}</strong></li>`)
-        .join("");
-
       // ---------- relógios ----------
       $("#live-forecast").textContent = absoluteToClock(projectedEnd);
       $("#live-forecast-note").textContent = projectedEnd == null
@@ -2541,25 +2497,6 @@
                   ? ` · projeção ultrapassa o prazo final ${plan.windowEnd} em ${formatMinutes(overDeadline)}`
                   : remainingToDeadline == null ? "" : ` · restam ${formatMinutes(remainingToDeadline)} até ${plan.windowEnd}`
             }`;
-
-      const sharedChips = [];
-      if (execution.live && deviation != null) {
-        sharedChips.push({ tone: execution.totals.late > 0 ? "chip-alert" : "chip-ok", label: "Tempo em atraso", value: execution.totals.late > 0 ? `+${execution.totals.late} min em ${pluralize(execution.totals.lateCount, "etapa", "etapas")}` : "nenhum" });
-        sharedChips.push({ tone: "chip-ok", label: "Tempo de adiantamento", value: execution.totals.ahead > 0 ? `−${execution.totals.ahead} min em ${pluralize(execution.totals.aheadCount, "etapa", "etapas")}` : "nenhum" });
-      }
-      if (execution.live && execution.started && !execution.finished) {
-        sharedChips.push({ tone: execution.lateNow.length ? "chip-alert" : "chip-ok", label: "Etapas em atraso agora", value: execution.lateNow.length ? `${execution.lateNow.length} de ${timeline.steps.length - execution.skipped.length}` : "nenhuma" });
-      }
-      if (running.length) sharedChips.push({ tone: "chip-info", label: "Em andamento", value: running.length > 1 ? `${running.length} simultâneas` : running[0].name });
-      if (execution.lateFinished.length) sharedChips.push({ tone: "chip-warn", label: "Concluídas com atraso", value: String(execution.lateFinished.length) });
-      if (timeline.windowEnd != null) {
-        sharedChips.push({
-          tone: deadlineRounded > 0 ? "chip-alert" : overDeadline != null && overDeadline > 0 ? "chip-warn" : "chip-ok",
-          label: `Prazo final planejado ${absoluteToTime(timeline.windowEnd)}`,
-          value: !showDeviation ? "aguardando projeção" : deviation > 0 ? `+${formatMinutes(deviation)} previsto` : deviation < 0 ? `−${formatMinutes(Math.abs(deviation))} previsto` : "sem desvio previsto"
-        });
-      }
-      $("#shared-status-chips").innerHTML = sharedChips.map((chip) => `<li class="${chip.tone}"><span>${escapeHtml(chip.label)}</span><strong>${escapeHtml(String(chip.value))}</strong></li>`).join("");
 
       renderSharedClock();
       $("#shared-forecast").textContent = absoluteToClock(forecast);
