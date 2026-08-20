@@ -516,9 +516,10 @@
     if (isStepSkipped(step)) return null;
     if (isStepComplete(step) && step.end != null) return step.actualEndMinutes - step.end;
     if (step.actualStartMinutes != null && step.start != null) {
-      const startDeviation = step.actualStartMinutes - step.start;
-      if (nowAbs != null && step.end != null) return Math.max(startDeviation, nowAbs - step.end);
-      return startDeviation;
+      // Enquanto a etapa estiver em andamento, o único marco confirmado é o
+      // início. Ultrapassar o fim planejado indica atenção na etapa, mas não
+      // prova atraso do intervalo: etapas seguintes podem ser concomitantes.
+      return step.actualStartMinutes - step.start;
     }
     if (nowAbs != null && step.start != null && nowAbs > step.start) return nowAbs - step.start;
     return null;
@@ -528,52 +529,37 @@
     const nowAbs = currentAbsolute(plan, timeline);
     const activeSteps = timeline.steps
       .filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step))
-      .sort((a, b) => a.actualStartMinutes - b.actualStartMinutes);
-    if (activeSteps.length) {
-      const activeIds = new Set(activeSteps.map((step) => step.id));
-      const overduePending = nowAbs == null ? [] : timeline.steps.filter((step) =>
-        !activeIds.has(step.id) && !isStepResolved(step) && step.actualStartMinutes == null && step.start != null && nowAbs > step.start
-      );
-      const candidates = [...activeSteps, ...overduePending]
-        .map((step) => ({ step, value: stepScheduleDeviation(step, nowAbs) }))
-        .filter((candidate) => candidate.value != null)
-        .sort((a, b) => b.value - a.value);
-      const critical = candidates[0] || { step: activeSteps.at(-1), value: null };
-      const overdue = critical.step.actualStartMinutes == null || (nowAbs != null && critical.step.end != null && nowAbs > critical.step.end);
-      const criticalIsWaiting = critical.step.actualStartMinutes == null;
-      return {
-        value: critical.value,
-        type: activeSteps.length > 1
-          ? (overdue ? "concurrent-active-overdue" : "concurrent-active")
-          : criticalIsWaiting ? "waiting-overdue" : (overdue ? "active-overdue" : "active-start"),
-        step: critical.step,
-        activeSteps,
-        overduePending
-      };
-    }
+      .sort((a, b) => a.index - b.index);
 
     const completed = timeline.steps
       .filter(isStepComplete)
       .sort((a, b) => a.actualEndMinutes - b.actualEndMinutes);
-    const pending = timeline.steps.find((step) => !isStepResolved(step));
-    if (pending && nowAbs != null) {
-      if (pending.start != null && nowAbs > pending.start) {
-        return { value: stepScheduleDeviation(pending, nowAbs), type: "waiting-overdue", step: pending, activeSteps: [] };
-      }
-      if (completed.length) {
-        const last = completed.at(-1);
-        return { value: stepScheduleDeviation(last), type: "between-milestones", step: last, nextStep: pending, activeSteps: [] };
-      }
-    }
 
     if (timeline.steps.length && timeline.steps.every(isStepResolved)) {
-      const last = completed.at(-1);
+      const last = completed.at(-1) || null;
       const plannedEnd = timeline.windowEnd ?? last?.end;
       return { value: plannedEnd == null || !last ? null : last.actualEndMinutes - plannedEnd, type: "interval-complete", step: last || null, activeSteps: [] };
     }
-    if (completed.length) {
-      const last = completed.at(-1);
-      return { value: stepScheduleDeviation(last), type: "completed-milestone", step: last, activeSteps: [] };
+
+    // A sequência indica o avanço operacional, mas não cria dependências de
+    // término. O marco mais avançado que já começou governa a leitura geral;
+    // etapas pendentes posteriores não geram atrasos em cascata.
+    const reached = timeline.steps
+      .filter((step) => !isStepSkipped(step) && step.actualStartMinutes != null)
+      .sort((a, b) => a.index - b.index);
+    const frontier = reached.at(-1) || null;
+    if (frontier) {
+      return {
+        value: stepScheduleDeviation(frontier, nowAbs),
+        type: activeSteps.length > 1 ? "concurrent-active" : isStepComplete(frontier) ? "completed-milestone" : "active-start",
+        step: frontier,
+        activeSteps
+      };
+    }
+
+    const pending = timeline.steps.find((step) => !isStepResolved(step));
+    if (pending && nowAbs != null && pending.start != null && nowAbs > pending.start) {
+      return { value: nowAbs - pending.start, type: "waiting-overdue", step: pending, activeSteps: [] };
     }
     return { value: null, type: "not-started", step: pending || null, activeSteps: [] };
   }
@@ -765,7 +751,7 @@
         const timelineStep = buildTimeline(plan).steps[index];
         return `
           <tr data-step-id="${step.id}">
-            <td>${String(index + 1).padStart(2, "0")}</td>
+            <td><select class="sequence-select" data-field="executionOrder" aria-label="Ordem de início da etapa ${index + 1}" ${plan.locked ? "disabled" : ""}>${plan.steps.map((_, orderIndex) => `<option value="${orderIndex}" ${orderIndex === index ? "selected" : ""}>${String(orderIndex + 1).padStart(2, "0")}</option>`).join("")}</select></td>
             <td><input data-field="name" type="text" maxlength="140" aria-label="Nome da etapa ${index + 1}" value="${escapeHtml(step.name)}" placeholder="Descreva a atividade" ${plan.locked ? "disabled" : ""}></td>
             <td><input data-field="plannedStart" type="time" aria-label="Início programado da etapa ${index + 1}" value="${escapeHtml(step.plannedStart)}" ${plan.locked ? "disabled" : ""}></td>
             <td><input data-field="plannedEnd" type="time" aria-label="Fim programado da etapa ${index + 1}" value="${escapeHtml(step.plannedEnd)}" ${plan.locked ? "disabled" : ""}></td>
@@ -852,6 +838,19 @@
       const row = event.target.closest("tr");
       const step = plan.steps.find((item) => item.id === row?.dataset.stepId);
       if (!step) return;
+      if (event.target.dataset.field === "executionOrder") {
+        const fromIndex = plan.steps.findIndex((item) => item.id === step.id);
+        const toIndex = Math.max(0, Math.min(plan.steps.length - 1, Number(event.target.value)));
+        if (fromIndex !== toIndex) {
+          plan.steps.splice(fromIndex, 1);
+          plan.steps.splice(toIndex, 0, step);
+          plan.structureDirty = true;
+          persist();
+          renderForm();
+          showToast(`Etapa movida para a posição ${toIndex + 1} da sequência.`);
+        }
+        return;
+      }
       step[event.target.dataset.field] = event.target.value;
       persist();
       const timelineStep = buildTimeline(plan).steps.find((item) => item.id === step.id);
@@ -1217,7 +1216,7 @@
           : "Execução encerrada: revise os registros finais.";
       $("#operational-detail").textContent = diff == null
         ? "O desvio será calculado assim que houver um primeiro marco realizado."
-        : `Situação consolidada pelo compromisso mais crítico${concurrencyText}: ${rounded > 0 ? `${rounded} min de atraso` : rounded < 0 ? `${Math.abs(rounded)} min de adiantamento` : "no horário"}; previsão ${forecast == null ? "indisponível" : absoluteToTime(Math.floor(forecast))}.`;
+        : `Situação consolidada pelo marco mais avançado da sequência${concurrencyText}: ${rounded > 0 ? `${rounded} min de atraso` : rounded < 0 ? `${Math.abs(rounded)} min de adiantamento` : "no horário"}; previsão ${forecast == null ? "indisponível" : absoluteToTime(Math.floor(forecast))}.`;
 
       const futureSteps = timeline.steps.filter((step) => !isStepResolved(step) && !activeIds.has(step.id));
       const unresolved = timeline.steps.filter((step) => !isStepResolved(step));
@@ -1416,18 +1415,16 @@
       $("#dashboard-actual-note").textContent = completed.length
         ? `Soma de ${completed.length} etapa${completed.length > 1 ? "s" : ""} concluída${completed.length > 1 ? "s" : ""}${concurrentExecution ? " · inclui períodos concomitantes" : ""}`
         : running.length > 1 ? `${running.length} etapas simultâneas em andamento` : "Somente etapas concluídas";
-      $("#dashboard-variance").textContent = scheduleDeviation == null ? "—" : `${scheduleDeviation > 0 ? "+" : ""}${scheduleDeviation} min`;
-      $("#dashboard-variance-label").textContent = scheduleDeviation == null || scheduleDeviation >= 0 ? "Atraso total atual do intervalo" : "Adiantamento total atual do intervalo";
+      $("#dashboard-variance").textContent = scheduleDeviation == null ? "—" : scheduleDeviation > 0 ? `Atrasado ${scheduleDeviation} min` : scheduleDeviation < 0 ? `Adiantado ${Math.abs(scheduleDeviation)} min` : "Dentro do prazo";
+      $("#dashboard-variance-label").textContent = "Situação do cronograma em execução";
       $("#dashboard-variance-note").textContent = scheduleDeviation == null
         ? "Aguardando o primeiro marco operacional"
         : totalDeviation.type === "waiting-overdue"
           ? "Próxima etapa ainda não iniciada"
-          : totalDeviation.type === "concurrent-active" || totalDeviation.type === "concurrent-active-overdue"
-            ? `Maior desvio entre ${running.length} etapas simultâneas; tempos concomitantes não são somados`
-          : totalDeviation.type === "active-overdue"
-            ? "Etapa atual além do fim programado"
+          : totalDeviation.type === "concurrent-active"
+            ? `Marco mais avançado na sequência; ${running.length} etapas simultâneas não são somadas`
             : totalDeviation.type === "active-start"
-              ? "Posição calculada pelo início da etapa atual"
+              ? "Posição calculada pelo início real do marco atual"
               : totalDeviation.type === "interval-complete"
                 ? "Diferença entre o encerramento real e a meta"
                 : `Posição pelo último término registrado · ${formatHoursMinutes(scheduleDeviation)}`;
@@ -1881,9 +1878,9 @@
       $("#shared-dashboard-progress-note").textContent = `${resolved.length} de ${timeline.steps.length} etapas encerradas`;
       $("#shared-dashboard-planned").textContent = plannedTotal ? formatMinutes(plannedTotal) : "—";
       $("#shared-dashboard-actual").textContent = completed.length ? formatMinutes(actualTotal) : "—";
-      $("#shared-dashboard-variance").textContent = deviation == null ? "—" : `${deviation > 0 ? "+" : ""}${deviation} min`;
-      $("#shared-dashboard-variance-label").textContent = deviation == null || deviation >= 0 ? "Atraso total atual" : "Adiantamento total atual";
-      $("#shared-dashboard-variance-note").textContent = deviation == null ? "Aguardando primeiro marco" : `${formatHoursMinutes(deviation)} · referência pelo compromisso crítico`;
+      $("#shared-dashboard-variance").textContent = deviation == null ? "—" : deviation > 0 ? `Atrasado ${deviation} min` : deviation < 0 ? `Adiantado ${Math.abs(deviation)} min` : "Dentro do prazo";
+      $("#shared-dashboard-variance-label").textContent = "Situação do cronograma em execução";
+      $("#shared-dashboard-variance-note").textContent = deviation == null ? "Aguardando primeiro marco" : `${formatHoursMinutes(deviation)} · marco mais avançado da sequência`;
       $("#shared-dashboard-variance-card").className = `dashboard-kpi featured ${deviation == null ? "variance-neutral" : deviation > 0 ? "variance-positive" : deviation < 0 ? "variance-negative" : "variance-zero"}`;
 
       const activeTimelineEnd = (step) => step.actualEndMinutes ?? (step.actualStartMinutes != null ? nowAbs ?? step.actualStartMinutes : null);
@@ -2080,6 +2077,17 @@
       }));
     }
     await renderUsers();
+  }
+
+  if (window.__GESTAO_TEST_MODE__) {
+    window.__GESTAO_TEST_API__ = {
+      buildTimeline,
+      finalDeadlineStatus,
+      stepScheduleDeviation,
+      totalScheduleDeviation,
+      wholeMinutes
+    };
+    return;
   }
 
   initializeTheme();
