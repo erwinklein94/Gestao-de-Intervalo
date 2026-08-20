@@ -539,25 +539,54 @@
       && step.start != null && nowAbs > step.start;
   }
 
-  // Soma dos atrasos e dos adiantamentos, etapa a etapa. Usa os valores já
-  // arredondados para que o total bata exatamente com os selos das etapas.
-  // Atenção: etapas simultâneas somam separadamente, então o saldo mede o
-  // desvio acumulado por etapa, não minutos de relógio do intervalo.
+  // Comprimento total coberto por um conjunto de intervalos, unindo os que se
+  // sobrepõem. É o que impede que duas etapas simultâneas na mesma situação
+  // contem o mesmo minuto de relógio duas vezes.
+  function mergedSpan(intervals) {
+    const sorted = intervals
+      .filter((item) => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start)
+      .sort((a, b) => a.start - b.start);
+    let total = 0;
+    let openStart = null;
+    let openEnd = null;
+    sorted.forEach((item) => {
+      if (openStart == null) { openStart = item.start; openEnd = item.end; return; }
+      if (item.start > openEnd) { total += openEnd - openStart; openStart = item.start; openEnd = item.end; return; }
+      openEnd = Math.max(openEnd, item.end);
+    });
+    if (openStart != null) total += openEnd - openStart;
+    return total;
+  }
+
+  // Total de atraso e de adiantamento do intervalo, medido etapa a etapa
+  // contra o prazo final de cada uma, mas contado em tempo de relógio:
+  //
+  //   etapa atrasada    ocupa a janela [prazo final, prazo final + atraso]
+  //   etapa adiantada   ocupa a janela [prazo final − adiantamento, prazo final]
+  //
+  // Etapas sequenciais têm janelas disjuntas e portanto se somam normalmente.
+  // Etapas simultâneas se sobrepõem e o trecho comum é contado uma vez só.
   function deviationTotals(timeline, nowAbs) {
-    let late = 0;
-    let ahead = 0;
+    const lateWindows = [];
+    const aheadWindows = [];
     let lateCount = 0;
     let aheadCount = 0;
     let counted = 0;
+    let overlapped = false;
     timeline.steps.forEach((step) => {
       const deviation = stepScheduleDeviation(step, nowAbs);
       if (deviation == null) return;
       const rounded = wholeMinutes(deviation);
       counted += 1;
-      if (rounded > 0) { late += rounded; lateCount += 1; }
-      else if (rounded < 0) { ahead += -rounded; aheadCount += 1; }
+      if (rounded > 0) { lateCount += 1; lateWindows.push({ start: step.end, end: step.end + rounded }); }
+      else if (rounded < 0) { aheadCount += 1; aheadWindows.push({ start: step.end + rounded, end: step.end }); }
     });
-    return { late, ahead, net: late - ahead, lateCount, aheadCount, counted };
+    const late = mergedSpan(lateWindows);
+    const ahead = mergedSpan(aheadWindows);
+    const rawLate = lateWindows.reduce((sum, item) => sum + (item.end - item.start), 0);
+    const rawAhead = aheadWindows.reduce((sum, item) => sum + (item.end - item.start), 0);
+    overlapped = rawLate > late || rawAhead > ahead;
+    return { late, ahead, net: late - ahead, lateCount, aheadCount, counted, overlapped };
   }
 
   // Quanto da duração planejada uma etapa em andamento já consumiu.
@@ -1524,7 +1553,7 @@
       const delayRounded = delay == null ? null : wholeMinutes(delay);
       const composition = `${totals.late} min de atraso ${totals.late > 0 ? `em ${pluralize(totals.lateCount, "etapa", "etapas")}` : ""} contra ${totals.ahead} min de adiantamento${
         totals.ahead > 0 ? ` em ${pluralize(totals.aheadCount, "etapa", "etapas")}` : ""
-      }`.replace(/\s+/g, " ");
+      }${totals.overlapped ? ", já descontados os períodos simultâneos" : ""}`.replace(/\s+/g, " ");
       const slippage = currentSlippage == null ? null : wholeMinutes(currentSlippage);
       const remainingToDeadline = deadline.remaining == null ? null : Math.ceil(deadline.remaining);
       const deadlineExceeded = deadline.value == null ? null : wholeMinutes(deadline.value);
@@ -1570,19 +1599,19 @@
         }`;
       } else if (delayRounded > 0) {
         $("#status-label").textContent = "Execução atrasada em relação ao planejado";
-        $("#status-description").textContent = `Somando etapa a etapa contra o prazo final de cada uma: ${composition}.${
+        $("#status-description").textContent = `Etapa a etapa, contra o prazo final de cada uma: ${composition}.${
           criticalLate ? ` Maior atraso: “${stepLabel(criticalLate.step)}”, ${wholeMinutes(criticalLate.deviation)} min.` : ""
         } Previsão de término do intervalo: ${forecastText}.`;
       } else if (delayRounded < 0) {
         $("#status-label").textContent = "Execução adiantada em relação ao planejado";
-        $("#status-description").textContent = `Somando etapa a etapa contra o prazo final de cada uma: ${composition}.${
+        $("#status-description").textContent = `Etapa a etapa, contra o prazo final de cada uma: ${composition}.${
           lateNow.length
             ? ` Mesmo com o saldo positivo, ${pluralize(lateNow.length, "etapa está atrasada", "etapas estão atrasadas")} agora.`
             : ""
         } Previsão de término do intervalo: ${forecastText}.`;
       } else if (hasLate) {
         $("#status-label").textContent = "Saldo zerado, com desvios que se compensam";
-        $("#status-description").textContent = `Somando etapa a etapa: ${composition}. Os desvios se anulam, mas ${
+        $("#status-description").textContent = `Etapa a etapa: ${composition}. Os desvios se anulam, mas ${
           lateNow.length
             ? `${pluralize(lateNow.length, "etapa está atrasada", "etapas estão atrasadas")} agora`
             : pluralize(lateFinished.length, "etapa fechou com atraso", "etapas fecharam com atraso")
@@ -1604,12 +1633,12 @@
       if (live && delayRounded != null) {
         chips.push({
           tone: totals.late > 0 ? "chip-alert" : "chip-ok",
-          label: "Soma dos atrasos",
+          label: "Tempo em atraso",
           value: totals.late > 0 ? `+${totals.late} min em ${pluralize(totals.lateCount, "etapa", "etapas")}` : "nenhum"
         });
         chips.push({
           tone: "chip-ok",
-          label: "Soma dos adiantamentos",
+          label: "Tempo de adiantamento",
           value: totals.ahead > 0 ? `−${totals.ahead} min em ${pluralize(totals.aheadCount, "etapa", "etapas")}` : "nenhum"
         });
       }
@@ -1935,9 +1964,9 @@
         ? "Acompanhamento ao vivo indisponível para esta data"
         : scheduleDeviation == null
           ? "Aguardando o primeiro prazo ou marco a comparar"
-          : `Soma etapa a etapa: +${status.totals.late} min de atraso e −${status.totals.ahead} min de adiantamento · previsão de término ${absoluteToTime(Math.floor(status.projectedEnd))}${
+          : `Etapa a etapa: +${status.totals.late} min de atraso e −${status.totals.ahead} min de adiantamento · previsão de término ${absoluteToTime(Math.floor(status.projectedEnd))}${
               status.lateNow.length ? ` · ${pluralize(status.lateNow.length, "etapa em atraso agora", "etapas em atraso agora")}` : ""
-            }${concurrentExecution ? " · etapas concomitantes somam desvios separadamente" : ""}`;
+            }${concurrentExecution ? " · períodos simultâneos contados uma vez só" : ""}`;
       $("#dashboard-variance-card").className = `dashboard-kpi featured ${scheduleDeviation == null ? "variance-neutral" : scheduleDeviation > 0 ? "variance-positive" : scheduleDeviation < 0 ? "variance-negative" : "variance-zero"}`;
 
       const activeTimelineEnd = (step) => step.actualEndMinutes ?? (step.actualStartMinutes != null ? nowAbs ?? step.actualStartMinutes : null);
@@ -2396,7 +2425,7 @@
         ? "A data do intervalo não corresponde ao momento atual."
         : waitingStart
           ? `Nenhum marco registrado · término planejado ${baselineText}`
-          : `Soma etapa a etapa: +${execution.totals.late} min de atraso e −${execution.totals.ahead} min de adiantamento${
+          : `Etapa a etapa: +${execution.totals.late} min de atraso e −${execution.totals.ahead} min de adiantamento${
               execution.lateNow.length ? ` · ${pluralize(execution.lateNow.length, "etapa em atraso agora", "etapas em atraso agora")}` : ""
             }${
               deadlineRounded > 0

@@ -12,7 +12,7 @@ Aplicação web estática para planejar e acompanhar intervalos de manutenção 
 
 ## Como o atraso é calculado
 
-O indicador principal da execução, do dashboard e do acompanhamento compartilhado é o **saldo entre a soma dos atrasos e a soma dos adiantamentos**, medidos etapa a etapa contra o **prazo final de cada etapa**.
+O indicador principal da execução, do dashboard e do acompanhamento compartilhado é o **saldo entre o tempo em atraso e o tempo de adiantamento**, medidos etapa a etapa contra o **prazo final de cada etapa**.
 
 Regra por etapa:
 
@@ -26,9 +26,16 @@ Uma etapa que começou muito antes do planejado continua **dentro do prazo** enq
 
 Etapa que ainda não começou e já passou do horário planejado de **início** não entra no saldo (a régua é o prazo final), mas aparece como aviso próprio no painel e no cartão da etapa.
 
-No fim, os atrasos são somados de um lado, os adiantamentos do outro, e o saldo vai para o indicador principal, junto com as duas parcelas.
+### Totalização sem contar o mesmo minuto duas vezes
 
-> **Etapas simultâneas somam separadamente.** Duas frentes 30 min além do próprio prazo dão 60 min de atraso no saldo, embora só 30 minutos de relógio tenham passado. O saldo mede desvio acumulado por etapa, não minutos de relógio do intervalo — para isso existe a **previsão de término**, exibida ao lado.
+Os totais não são uma soma aritmética dos desvios: cada etapa ocupa uma **janela de relógio**, e o total é a união dessas janelas.
+
+- Etapa atrasada ocupa `[prazo final, prazo final + atraso]`.
+- Etapa adiantada ocupa `[prazo final − adiantamento, prazo final]`.
+
+Etapas **sequenciais** têm janelas disjuntas e portanto se somam normalmente. Etapas **simultâneas** se sobrepõem, e o trecho comum é contado uma vez só. Duas frentes 30 min além do próprio prazo dão **30 min** de atraso no total, não 60 — porque só 30 minutos de relógio se passaram. Quando há sobreposição, o painel avisa: *"já descontados os períodos simultâneos"*.
+
+O saldo (`tempo em atraso − tempo de adiantamento`) vai para o indicador principal, com as duas parcelas ao lado.
 
 ## Projeção de término
 
