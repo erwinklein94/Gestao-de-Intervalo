@@ -24,7 +24,7 @@ sandbox.window.window = sandbox.window;
 
 const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 vm.runInNewContext(source, sandbox, { filename: "app.js" });
-const { adjustedDeadline, buildTimeline, executionStatus, intervalElapsedTime } = sandbox.window.__GESTAO_TEST_API__;
+const { buildTimeline, executionStatus, intervalElapsedTime } = sandbox.window.__GESTAO_TEST_API__;
 
 function plan(steps, overrides = {}) {
   return {
@@ -132,11 +132,3 @@ console.log("schedule-status: 5 cenários aprovados");
 }
 
 console.log("interval-elapsed: 3 cenários aprovados");
-
-{
-  assert.equal(adjustedDeadline(18 * 60 + 31, -18), 18 * 60 + 13, "prazo final deve incorporar o adiantamento previsto");
-  assert.equal(adjustedDeadline(18 * 60 + 31, 12), 18 * 60 + 43, "prazo final deve incorporar o atraso previsto");
-  assert.equal(adjustedDeadline(18 * 60 + 31, null), 18 * 60 + 31, "sem projeção deve manter o prazo planejado");
-}
-
-console.log("adjusted-deadline: 3 cenários aprovados");
