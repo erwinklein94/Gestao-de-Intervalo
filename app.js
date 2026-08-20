@@ -1347,17 +1347,31 @@
       }
       const burn = stepDurationBurn(step, nowAbs);
       if (!burn) return "Duração calculada ao informar início e fim";
-      if (burn.planned == null) return `Em execução há ${formatMinutes(burn.elapsed)}`;
-      return `Em execução há ${formatMinutes(burn.elapsed)} de ${formatMinutes(burn.planned)} previstos · ${
-        wholeMinutes(burn.over) > 0
-          ? `${formatMinutes(burn.over)} além da duração`
-          : wholeMinutes(burn.over) === 0 ? "no limite da duração" : `restam ${formatMinutes(-burn.over)}`
-      }`;
+      const head = burn.planned == null
+        ? `Em execução há ${formatMinutes(burn.elapsed)}`
+        : `Em execução há ${formatMinutes(burn.elapsed)} de ${formatMinutes(burn.planned)} previstos`;
+      const remaining = step.end == null ? null : step.end - nowAbs;
+      const over = burn.over == null ? null : wholeMinutes(burn.over);
+      // Passar da duração prevista só é problema se a etapa também já tiver
+      // passado do fim programado. Uma etapa que começou bem antes do previsto
+      // pode consumir mais tempo e ainda assim entregar com folga.
+      if (remaining != null && wholeMinutes(remaining) < 0) {
+        return `${head} · ${over > 0 ? `${formatMinutes(burn.over)} a mais que o previsto e ` : ""}${formatMinutes(-remaining)} além do fim programado`;
+      }
+      if (over != null && over > 0) {
+        return `${head} · ${formatMinutes(burn.over)} a mais que o previsto${
+          remaining == null ? "" : `, ainda ${formatMinutes(remaining)} antes do fim programado`
+        }`;
+      }
+      if (burn.planned == null) return head;
+      return `${head} · restam ${formatMinutes(-burn.over)} de duração`;
     }
 
+    // Vermelho apenas quando a etapa já passou do próprio fim programado.
     function durationOverClass(step, nowAbs) {
-      const burn = stepDurationBurn(step, nowAbs);
-      return burn && burn.over != null && wholeMinutes(burn.over) > 0 ? " is-over" : "";
+      if (nowAbs == null || step.end == null || isStepSkipped(step)) return "";
+      if (step.actualStartMinutes == null || step.actualEndMinutes != null) return "";
+      return wholeMinutes(step.end - nowAbs) < 0 ? " is-over" : "";
     }
 
     // Linha de previsão exibida dentro de cada etapa aberta.
@@ -1895,7 +1909,7 @@
             actualText,
             actualDurationText: step.actualDuration != null
               ? formatMinutes(step.actualDuration)
-              : elapsed != null ? `${formatMinutes(elapsed)} até agora${step.duration != null && wholeMinutes(elapsed - step.duration) > 0 ? ` · ${formatMinutes(elapsed - step.duration)} além da duração` : ""}` : "",
+              : elapsed != null ? `${formatMinutes(elapsed)} até agora${step.duration != null && wholeMinutes(elapsed - step.duration) > 0 ? ` · ${formatMinutes(elapsed - step.duration)} a mais que o previsto` : ""}` : "",
             statusLabel: stepStatus.label,
             deviationText: stepStatus.variance == null ? "" : `${stepStatus.variance > 0 ? "+" : ""}${stepStatus.variance} min`,
             deviationTone: stepStatus.variance == null ? "" : stepStatus.variance > 0 ? "delay" : stepStatus.variance < 0 ? "ahead" : "on-time",
@@ -2345,7 +2359,7 @@
             const burn = stepDurationBurn(step, nowAbs);
             if (!burn) return "Duração em aberto";
             if (burn.planned == null) return `${formatMinutes(burn.elapsed)} em curso`;
-            return `${formatMinutes(burn.elapsed)} de ${formatMinutes(burn.planned)}${wholeMinutes(burn.over) > 0 ? ` · ${formatMinutes(burn.over)} além` : ""}`;
+            return `${formatMinutes(burn.elapsed)} de ${formatMinutes(burn.planned)}${wholeMinutes(burn.over) > 0 ? ` · ${formatMinutes(burn.over)} a mais` : ""}`;
           })()}</small></p></div>
           ${step.actualNotes ? `<p class="shared-step-note"><span>Registro operacional</span>${escapeHtml(step.actualNotes)}</p>` : ""}
         </article>`;
@@ -2390,7 +2404,7 @@
           actualText,
           actualDurationText: step.actualDuration != null
             ? formatMinutes(step.actualDuration)
-            : elapsed != null ? `${formatMinutes(elapsed)} até agora${step.duration != null && wholeMinutes(elapsed - step.duration) > 0 ? ` · ${formatMinutes(elapsed - step.duration)} além da duração` : ""}` : "",
+            : elapsed != null ? `${formatMinutes(elapsed)} até agora${step.duration != null && wholeMinutes(elapsed - step.duration) > 0 ? ` · ${formatMinutes(elapsed - step.duration)} a mais que o previsto` : ""}` : "",
           statusLabel: stepStatus.label,
           deviationText: stepStatus.variance == null ? "" : `${stepStatus.variance > 0 ? "+" : ""}${stepStatus.variance} min`,
           deviationTone: stepStatus.variance == null ? "" : stepStatus.variance > 0 ? "delay" : stepStatus.variance < 0 ? "ahead" : "on-time",

@@ -30,9 +30,17 @@ Três leituras complementares aparecem juntas: o **atraso já acumulado** (o que
 Cada etapa aberta traz duas leituras diferentes, que respondem a perguntas diferentes:
 
 - **Posição no cronograma** (o selo de desvio): enquanto a etapa couber na própria duração planejada, o desvio é o do início. Assim que ela ultrapassa essa duração, passa a empurrar o término minuto a minuto — mesmo que tenha começado adiantada e o fim programado ainda esteja no futuro.
-- **Consumo da duração**: o tempo já em execução contra o previsto (`1h 40min de 1h 20min previstos · 20 min além da duração`), destacado em vermelho quando estoura.
+- **Consumo da duração**: o tempo já em execução contra o previsto, sempre comparado ao fim programado da própria etapa.
 
-As duas são necessárias: uma etapa pode estar adiantada no cronograma (porque começou muito antes do previsto) e ao mesmo tempo já ter estourado a duração planejada. Somente o selo esconderia esse segundo fato.
+As duas são necessárias: uma etapa pode estar adiantada no cronograma (porque começou muito antes do previsto) e ao mesmo tempo já ter consumido mais tempo do que o estimado. Somente o selo esconderia esse segundo fato.
+
+Consumir mais tempo que o previsto **não é, por si só, um problema**. Uma etapa que começou bem antes do horário planejado pode gastar mais e ainda entregar com folga, e nesse caso a leitura é informativa, sem alarme:
+
+> Em execução há 1h 40min de 1h 20min previstos · 20 min a mais que o previsto, **ainda 1h 00min antes do fim programado**
+
+O destaque em vermelho aparece apenas quando a etapa passa do próprio fim programado:
+
+> Em execução há 2h 00min de 1h 45min previstos · 15 min a mais que o previsto e **15 min além do fim programado**
 
 Os dados são mantidos localmente enquanto o usuário não está conectado. Ao entrar com e-mail e senha, planos e etapas são sincronizados com o Supabase, com acesso protegido por usuário e uma cópia local para continuidade em caso de falha temporária de conexão. A tela de planejamento também exporta um relatório Excel `.xlsx` com Programado x Realizado.
 
