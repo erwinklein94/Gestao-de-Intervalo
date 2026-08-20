@@ -8,7 +8,22 @@ Aplicação web estática para planejar e acompanhar intervalos de manutenção 
 2. Revise a linha do tempo e trave o cronograma.
 3. Abra `executar.html` durante o intervalo e preencha somente os horários e registros realizados.
 4. Consulte `dashboard.html` para comparar o planejado com o realizado e analisar progresso, duração e desvios por etapa.
-4. Acompanhe o indicador superior de atraso/adiantamento e a necessidade de compensação nas etapas seguintes.
+5. Acompanhe o indicador superior de atraso/adiantamento e a necessidade de compensação nas etapas seguintes.
+
+## Como o atraso é calculado
+
+O número principal de `executar.html`, do dashboard e do acompanhamento compartilhado responde a uma única pergunta: **quanto o intervalo inteiro está atrasado em relação ao planejado, agora**.
+
+Ele é a diferença entre o **término projetado de todas as atividades** e o **término planejado das atividades** (o maior fim programado entre as etapas que continuam no escopo). A projeção é montada etapa a etapa:
+
+- Etapa concluída: usa o horário real de término.
+- Etapa em andamento: assume, no mínimo, a duração planejada contada a partir do início real, e nunca termina antes de agora.
+- Etapa ainda não iniciada: não pode começar antes de agora nem antes do fim projetado das etapas que o plano colocou à sua frente; etapas planejadas em paralelo continuam em paralelo.
+- Etapa marcada como não executada: sai dos dois lados da conta, para que retirar escopo não vire adiantamento.
+
+Com isso o coordenador enxerga o atraso assim que ele acontece, e não apenas quando a janela é estourada. Etapas simultâneas nunca têm seus tempos somados: o atraso vem do caminho mais longo, e o painel indica qual etapa é o **ofensor principal**.
+
+Três leituras complementares aparecem juntas: o **atraso já acumulado** (o que já ocorreu), o número de **etapas em atraso agora**, e o **prazo final** da janela, com aviso quando a projeção ameaça ultrapassá-lo. Quando a projeção fecha no horário mas existem etapas atrasadas, o painel fica em estado de atenção em vez de verde, sinalizando que a folga do cronograma está sendo consumida.
 
 Os dados são mantidos localmente enquanto o usuário não está conectado. Ao entrar com e-mail e senha, planos e etapas são sincronizados com o Supabase, com acesso protegido por usuário e uma cópia local para continuidade em caso de falha temporária de conexão. A tela de planejamento também exporta um relatório Excel `.xlsx` com Programado x Realizado.
 

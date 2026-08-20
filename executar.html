@@ -42,6 +42,7 @@
           <div class="status-value"><span id="status-sign"></span><strong id="status-minutes">00</strong><span>min</span></div>
           <p class="status-readable" id="status-readable" hidden>Equivale a 0h 00min</p>
           <p id="status-description">Preencha o primeiro horário realizado para iniciar o acompanhamento.</p>
+          <ul class="status-chips" id="status-chips" aria-label="Leitura rápida da execução"></ul>
         </div>
         <div class="status-clocks">
           <div class="status-clock">
@@ -53,6 +54,11 @@
             <span>Término previsto</span>
             <strong id="live-forecast">--:--:--</strong>
             <small id="live-forecast-note">Aguardando o primeiro marco</small>
+          </div>
+          <div class="status-clock">
+            <span>Prazo final</span>
+            <strong id="live-deadline">--:--</strong>
+            <small id="live-deadline-note">—</small>
           </div>
         </div>
       </section>
@@ -101,6 +107,11 @@
               <span>Etapas em andamento</span>
               <strong id="metric-current">Aguardando</strong>
               <small id="metric-current-time">—</small>
+            </article>
+            <article class="metric-card">
+              <span>Etapas em atraso agora</span>
+              <strong id="metric-late">—</strong>
+              <small id="metric-late-note">Aguardando o primeiro marco</small>
             </article>
             <article class="metric-card emphasis">
               <span>Previsão de encerramento</span>
