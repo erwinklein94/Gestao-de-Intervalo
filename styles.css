@@ -588,6 +588,7 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .timeline-axis-scale span:last-child::before { left: auto; right: 0; }
 
 .chart-tooltip { position: fixed; z-index: 90; max-width: 290px; padding: 11px 13px; display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--white); box-shadow: 0 12px 30px rgba(0,32,58,.22); color: var(--ink); font-size: 11px; pointer-events: none; }
+.chart-tooltip.is-pinned { border-color: var(--sky); box-shadow: 0 16px 38px rgba(0,32,58,.3); pointer-events: auto; }
 .chart-tooltip[hidden] { display: none; }
 .chart-tooltip .tip-head { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 3px; padding-bottom: 6px; border-bottom: 1px solid var(--surface-2); }
 .chart-tooltip .tip-head b { flex: 0 0 auto; width: 21px; height: 21px; display: grid; place-items: center; border-radius: 50%; background: var(--surface); color: var(--blue); font-size: 9px; }
@@ -600,6 +601,7 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .chart-tooltip .tip-ahead { color: #13735d; }
 .chart-tooltip .tip-on-time { color: var(--blue); }
 .chart-tooltip .tip-cursor { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--surface-2); color: var(--muted); font-size: 9px; }
+.chart-tooltip .tip-pinned-hint { margin-top: 4px; padding-top: 6px; border-top: 1px dashed var(--line); color: var(--blue); font-size: 9px; font-weight: 700; text-align: center; }
 .duration-chart { display: grid; gap: 14px; }
 .duration-row { display: grid; grid-template-columns: minmax(180px, 28%) 1fr; gap: 18px; align-items: center; }
 .duration-label { min-width: 0; display: flex; align-items: center; gap: 10px; }

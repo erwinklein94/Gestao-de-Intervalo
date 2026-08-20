@@ -863,6 +863,7 @@
   // ---------------------------------------------------------------------------
   function timelineTipData(step, index, extra = {}) {
     const attrs = {
+      "tip-key": `${step.id}:${extra.kind || "linha"}`,
       "tip-index": String(index + 1).padStart(2, "0"),
       "tip-name": step.name || `Etapa ${index + 1}`,
       "tip-planned": `${step.plannedStart || "—"} – ${step.plannedEnd || "—"}`,
@@ -891,83 +892,115 @@
       tip.setAttribute("role", "tooltip");
       tip.hidden = true;
       document.body.appendChild(tip);
+      document.addEventListener("click", (event) => {
+        if (!pinnedChartTooltip) return;
+        const clickedElement = event.target instanceof Element ? event.target : null;
+        if (clickedElement?.closest("#chart-tooltip") || clickedElement?.closest("[data-tip-name]")) return;
+        hideChartTooltip(true);
+      });
     }
     return tip;
   }
 
-  function hideChartTooltip() {
+  let pinnedChartTooltip = null;
+
+  function hideChartTooltip(force = false) {
+    if (pinnedChartTooltip && !force) return;
     const tip = document.getElementById("chart-tooltip");
-    if (tip) tip.hidden = true;
+    if (tip) {
+      tip.hidden = true;
+      tip.classList.remove("is-pinned");
+      tip.setAttribute("role", "tooltip");
+    }
+    if (force) pinnedChartTooltip = null;
+  }
+
+  function cursorTimeForTooltip(target, clientX) {
+    const track = target.closest("[data-track-start]");
+    if (!track) return "";
+    const rect = track.getBoundingClientRect();
+    if (!rect.width) return "";
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const start = Number(track.dataset.trackStart);
+    const span = Number(track.dataset.trackSpan);
+    if (!Number.isFinite(start) || !Number.isFinite(span)) return "";
+    return absoluteToTime(start + ratio * span);
+  }
+
+  function paintChartTooltip(target, clientX, clientY, pinned = false) {
+    const tip = chartTooltipElement();
+    const data = target.dataset;
+    const row = (label, value, tone) => value
+      ? `<div class="tip-row"><span>${label}</span><strong${tone ? ` class="tip-${tone}"` : ""}>${escapeHtml(value)}</strong></div>`
+      : "";
+    tip.innerHTML = `<div class="tip-head"><b>${escapeHtml(data.tipIndex || "")}</b><span>${escapeHtml(data.tipName || "")}</span>${
+      data.tipKind ? `<i>${escapeHtml(data.tipKind)}</i>` : ""
+    }</div>
+      ${row("Programado", data.tipPlanned)}
+      ${row("Duração programada", data.tipPlannedDuration)}
+      ${row("Realizado", data.tipActual)}
+      ${row("Duração realizada", data.tipActualDuration)}
+      ${row("Situação", data.tipStatus)}
+      ${row("Desvio", data.tipDeviation, data.tipDeviationTone)}
+      ${row("Previsão de término", data.tipForecast)}
+      ${row("Registro", data.tipNote)}
+      ${(() => { const time = cursorTimeForTooltip(target, clientX); return time ? `<div class="tip-cursor">Cursor em ${escapeHtml(time)}</div>` : ""; })()}
+      ${pinned ? '<div class="tip-pinned-hint">Fixado · clique fora para fechar</div>' : ""}`;
+    tip.hidden = false;
+    tip.classList.toggle("is-pinned", pinned);
+    tip.setAttribute("role", pinned ? "dialog" : "tooltip");
+
+    const rect = tip.getBoundingClientRect();
+    const gap = 16;
+    let left = clientX + gap;
+    let top = clientY + gap;
+    if (left + rect.width > window.innerWidth - 8) left = clientX - rect.width - gap;
+    if (top + rect.height > window.innerHeight - 8) top = clientY - rect.height - gap;
+    tip.style.left = `${Math.max(8, left)}px`;
+    tip.style.top = `${Math.max(8, top)}px`;
+  }
+
+  function restorePinnedChartTooltip(container) {
+    if (!pinnedChartTooltip || !container) return;
+    const target = Array.from(container.querySelectorAll("[data-tip-key]"))
+      .find((candidate) => candidate.dataset.tipKey === pinnedChartTooltip.key);
+    if (!target) {
+      hideChartTooltip(true);
+      return;
+    }
+    const rect = target.getBoundingClientRect();
+    paintChartTooltip(target, rect.left + rect.width / 2, rect.top, true);
   }
 
   function bindTimelineTooltip(container) {
     if (!container || container.dataset.tooltipBound === "1") return;
     container.dataset.tooltipBound = "1";
-    const tip = chartTooltipElement();
-
-    function cursorTimeFor(target, clientX) {
-      const track = target.closest("[data-track-start]");
-      if (!track) return "";
-      const rect = track.getBoundingClientRect();
-      if (!rect.width) return "";
-      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-      const start = Number(track.dataset.trackStart);
-      const span = Number(track.dataset.trackSpan);
-      if (!Number.isFinite(start) || !Number.isFinite(span)) return "";
-      return absoluteToTime(start + ratio * span);
-    }
-
-    function paint(target, clientX, clientY) {
-      const data = target.dataset;
-      const row = (label, value, tone) => value
-        ? `<div class="tip-row"><span>${label}</span><strong${tone ? ` class="tip-${tone}"` : ""}>${escapeHtml(value)}</strong></div>`
-        : "";
-      tip.innerHTML = `<div class="tip-head"><b>${escapeHtml(data.tipIndex || "")}</b><span>${escapeHtml(data.tipName || "")}</span>${
-        data.tipKind ? `<i>${escapeHtml(data.tipKind)}</i>` : ""
-      }</div>
-        ${row("Programado", data.tipPlanned)}
-        ${row("Duração programada", data.tipPlannedDuration)}
-        ${row("Realizado", data.tipActual)}
-        ${row("Duração realizada", data.tipActualDuration)}
-        ${row("Situação", data.tipStatus)}
-        ${row("Desvio", data.tipDeviation, data.tipDeviationTone)}
-        ${row("Previsão de término", data.tipForecast)}
-        ${row("Registro", data.tipNote)}
-        ${(() => { const time = cursorTimeFor(target, clientX); return time ? `<div class="tip-cursor">Cursor em ${escapeHtml(time)}</div>` : ""; })()}`;
-      tip.hidden = false;
-
-      const rect = tip.getBoundingClientRect();
-      const gap = 16;
-      let left = clientX + gap;
-      let top = clientY + gap;
-      if (left + rect.width > window.innerWidth - 8) left = clientX - rect.width - gap;
-      if (top + rect.height > window.innerHeight - 8) top = clientY - rect.height - gap;
-      tip.style.left = `${Math.max(8, left)}px`;
-      tip.style.top = `${Math.max(8, top)}px`;
-    }
+    chartTooltipElement();
 
     function handleMove(event) {
+      if (pinnedChartTooltip) return;
       const target = event.target.closest("[data-tip-name]");
-      if (!target) { tip.hidden = true; return; }
-      paint(target, event.clientX, event.clientY);
+      if (!target) { hideChartTooltip(); return; }
+      paintChartTooltip(target, event.clientX, event.clientY);
     }
 
     container.addEventListener("mousemove", handleMove);
-    container.addEventListener("mouseleave", () => { tip.hidden = true; });
-    // Toque: mantém o mesmo conteúdo ao tocar na barra.
+    container.addEventListener("mouseleave", () => hideChartTooltip());
     container.addEventListener("click", (event) => {
       const target = event.target.closest("[data-tip-name]");
-      if (!target) { tip.hidden = true; return; }
+      if (!target) { hideChartTooltip(true); return; }
       const rect = target.getBoundingClientRect();
-      paint(target, rect.left + rect.width / 2, rect.top);
+      pinnedChartTooltip = { key: target.dataset.tipKey };
+      paintChartTooltip(target, rect.left + rect.width / 2, rect.top, true);
     });
     container.addEventListener("focusin", (event) => {
+      if (pinnedChartTooltip) return;
       const target = event.target.closest("[data-tip-name]");
       if (!target) return;
       const rect = target.getBoundingClientRect();
-      paint(target, rect.left + rect.width / 2, rect.bottom);
+      paintChartTooltip(target, rect.left + rect.width / 2, rect.bottom);
     });
-    container.addEventListener("focusout", () => { tip.hidden = true; });
+    container.addEventListener("focusout", () => hideChartTooltip());
   }
   function stepLabel(step, fallbackIndex) {
     if (!step) return "Etapa";
@@ -2085,6 +2118,7 @@
           </div>`;
         }).join("")}${timelineAxisHtml(timelineScaleInfo.ticks, comparisonStart, comparisonDuration)}`;
       bindTimelineTooltip(timelineHost);
+      restorePinnedChartTooltip(timelineHost);
 
       $("#duration-chart").innerHTML = timeline.steps.length ? timeline.steps.map((step, index) => `
         <div class="duration-row">
@@ -2575,6 +2609,7 @@
         return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${sharedGrid}"><div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div></div>`;
       }).join("")}${timelineAxisHtml(sharedScale.ticks, comparisonStart, comparisonDuration)}`;
       bindTimelineTooltip(sharedTimelineHost);
+      restorePinnedChartTooltip(sharedTimelineHost);
 
       const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
       $("#shared-duration-chart").innerHTML = timeline.steps.map((step, index) => `<div class="duration-row"><div class="duration-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="duration-bars"><div class="chart-bar-line"><i class="planned" style="width:${Math.max(2, ((step.duration || 0) / maxDuration) * 100)}%"></i><b>${formatMinutes(step.duration)}</b></div><div class="chart-bar-line"><i class="actual" style="width:${step.actualDuration == null ? 0 : Math.max(2, (step.actualDuration / maxDuration) * 100)}%"></i><b>${step.actualDuration == null ? "—" : formatMinutes(step.actualDuration)}</b></div></div></div>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
