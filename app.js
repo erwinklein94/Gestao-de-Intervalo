@@ -1651,7 +1651,7 @@
       const {
         timeline, steps, active, pending, resolved, skipped,
         lateNow, lateFinished, critical, currentSlippage, startOverdue, totals,
-        baseline, projectedEnd, delay, started, finished, deadline, deadlineForecast, live
+        baseline, projectedEnd, delay, started, finished, live
       } = status;
 
       const delayRounded = delay == null ? null : wholeMinutes(delay);
@@ -1659,13 +1659,10 @@
         totals.ahead > 0 ? ` em ${pluralize(totals.aheadCount, "etapa", "etapas")}` : ""
       }${totals.overlapped ? ", já descontados os períodos simultâneos" : ""}`.replace(/\s+/g, " ");
       const slippage = currentSlippage == null ? null : wholeMinutes(currentSlippage);
-      const remainingToDeadline = deadline.remaining == null ? null : Math.ceil(deadline.remaining);
-      const deadlineExceeded = deadline.value == null ? null : wholeMinutes(deadline.value);
       const waiting = !started && (delayRounded == null || delayRounded <= 0);
       const hasLate = lateNow.length > 0 || lateFinished.length > 0;
       const baselineText = baseline == null ? "—" : absoluteToTime(baseline);
       const forecastText = projectedEnd == null ? "—" : absoluteToTime(Math.floor(projectedEnd));
-      const overDeadline = deadlineForecast == null ? null : wholeMinutes(deadlineForecast);
       const criticalLate = critical && wholeMinutes(critical.deviation) > 0 ? critical : null;
 
       // ---------- indicador principal: atraso da EXECUÇÃO INTEIRA vs. planejado ----------
@@ -1686,33 +1683,20 @@
 
       if (!live) {
         $("#status-label").textContent = "Acompanhamento ao vivo indisponível";
-        $("#status-description").textContent = plan.date
-          ? `A data do plano (${new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR")}) não corresponde ao momento atual, então o atraso ao vivo não pode ser calculado. Ajuste a data no planejamento para retomar o acompanhamento.`
-          : "Informe a data do intervalo no planejamento para calcular o atraso ao vivo.";
       } else if (waiting) {
         $("#status-label").textContent = "Aguardando início da execução";
-        $("#status-description").textContent = `Nenhum horário realizado foi registrado. O acompanhamento começa no primeiro marco. Término planejado das atividades: ${baselineText}.`;
       } else if (finished) {
         $("#status-label").textContent = delayRounded > 0
           ? "Intervalo encerrado com atraso"
           : delayRounded < 0 ? "Intervalo encerrado adiantado" : "Intervalo encerrado no horário";
-        $("#status-description").textContent = `Encerramento real às ${forecastText} contra ${baselineText} planejado.${
-          deadlineExceeded > 0
-            ? ` O prazo final de ${plan.windowEnd} foi ultrapassado em ${formatHoursMinutes(deadlineExceeded)}.`
-            : ` Dentro do prazo final de ${plan.windowEnd}.`
-        }`;
       } else if (delayRounded > 0) {
         $("#status-label").textContent = "Execução atrasada em relação ao planejado";
-        $("#status-description").textContent = `O marco mais avançado da sequência está ${formatMinutes(delayRounded)} atrás do horário planejado. Previsão de término do intervalo: ${forecastText}.`;
       } else if (delayRounded < 0) {
         $("#status-label").textContent = "Execução adiantada em relação ao planejado";
-        $("#status-description").textContent = `O marco mais avançado da sequência está ${formatMinutes(Math.abs(delayRounded))} adiantado. Etapas concomitantes permanecem independentes. Previsão de término: ${forecastText}.`;
       } else if (hasLate) {
         $("#status-label").textContent = "Execução dentro do prazo da sequência";
-        $("#status-description").textContent = `O marco mais avançado está no horário. Há desvios individuais para acompanhamento, sem atraso consolidado do intervalo. Previsão de término: ${forecastText}.`;
       } else {
         $("#status-label").textContent = "Execução no horário planejado";
-        $("#status-description").textContent = `Nenhuma etapa passou do próprio prazo final. Previsão de término do intervalo: ${forecastText} (planejado ${baselineText}).`;
       }
 
       $("#status-announcement").textContent = !live
@@ -2445,15 +2429,11 @@
       const execution = executionStatus(plan, timeline);
       const nowAbs = execution.nowAbs;
       const deviation = execution.delay == null ? null : wholeMinutes(execution.delay);
-      const deadline = execution.deadline;
-      const deadlineRounded = deadline.value == null ? null : wholeMinutes(deadline.value);
-      const remainingToDeadline = deadline.remaining == null ? null : Math.ceil(deadline.remaining);
       const forecast = execution.projectedEnd;
       const baselineText = execution.baseline == null ? "—" : absoluteToTime(execution.baseline);
       const forecastText = forecast == null ? "—" : absoluteToTime(Math.floor(forecast));
       const waitingStart = !execution.started && (deviation == null || deviation <= 0);
       const showDeviation = execution.live && deviation != null && !waitingStart;
-      const overDeadline = execution.deadlineForecast == null ? null : wholeMinutes(execution.deadlineForecast);
       const progress = timeline.steps.length ? Math.round((resolved.length / timeline.steps.length) * 100) : 0;
       const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
       const elapsedInterval = intervalElapsedTime(timeline, nowAbs);
@@ -2486,18 +2466,6 @@
       $("#shared-status-readable").textContent = showDeviation
         ? `${Math.abs(deviation)} min${Math.abs(deviation) >= 60 ? ` · ${formatHoursMinutes(deviation)}` : ""} · marco mais avançado da sequência`
         : "";
-      $("#shared-status-description").textContent = !execution.live
-        ? "A data do intervalo não corresponde ao momento atual."
-        : waitingStart
-          ? `Nenhum marco registrado · término planejado ${baselineText}`
-          : `Situação pelo marco mais avançado da sequência${
-              deadlineRounded > 0
-                ? ` · prazo final ${plan.windowEnd} estourado em ${formatMinutes(deadlineRounded)}`
-                : overDeadline != null && overDeadline > 0
-                  ? ` · projeção ultrapassa o prazo final ${plan.windowEnd} em ${formatMinutes(overDeadline)}`
-                  : remainingToDeadline == null ? "" : ` · restam ${formatMinutes(remainingToDeadline)} até ${plan.windowEnd}`
-            }`;
-
       renderSharedClock();
       $("#shared-forecast").textContent = absoluteToClock(forecast);
       $("#shared-forecast-note").textContent = forecast == null
