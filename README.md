@@ -12,27 +12,43 @@ Aplicação web estática para planejar e acompanhar intervalos de manutenção 
 
 ## Como o atraso é calculado
 
-O número principal de `executar.html`, do dashboard e do acompanhamento compartilhado responde a uma única pergunta: **quanto o intervalo inteiro está atrasado em relação ao planejado, agora**.
+O indicador principal da execução, do dashboard e do acompanhamento compartilhado é o **saldo entre a soma dos atrasos e a soma dos adiantamentos**, medidos etapa a etapa contra o **prazo final de cada etapa**.
 
-Ele é a diferença entre o **término projetado de todas as atividades** e o **término planejado das atividades** (o maior fim programado entre as etapas que continuam no escopo). A projeção é montada etapa a etapa:
+Regra por etapa:
+
+| Situação da etapa | Comparação | Resultado |
+|---|---|---|
+| Concluída | término real vs. fim programado | negativo = adiantada, positivo = atrasada |
+| Em andamento | agora vs. fim programado | dentro do prazo enquanto agora não passa dele |
+| Não iniciada | agora vs. fim programado | só entra na conta depois que o prazo vence |
+
+Uma etapa que começou muito antes do planejado continua **dentro do prazo** enquanto o horário atual não passar do fim programado dela — mesmo que já tenha gastado mais tempo do que a duração prevista. Ter começado cedo é margem, e a margem só acaba no prazo final da etapa.
+
+Etapa que ainda não começou e já passou do horário planejado de **início** não entra no saldo (a régua é o prazo final), mas aparece como aviso próprio no painel e no cartão da etapa.
+
+No fim, os atrasos são somados de um lado, os adiantamentos do outro, e o saldo vai para o indicador principal, junto com as duas parcelas.
+
+> **Etapas simultâneas somam separadamente.** Duas frentes 30 min além do próprio prazo dão 60 min de atraso no saldo, embora só 30 minutos de relógio tenham passado. O saldo mede desvio acumulado por etapa, não minutos de relógio do intervalo — para isso existe a **previsão de término**, exibida ao lado.
+
+## Projeção de término
+
+Ao lado do saldo, o site mostra **quando o intervalo deve terminar** pelo ritmo atual. Essa é a leitura de relógio, e ela não soma etapas simultâneas: o término vem do caminho mais longo. A projeção é montada etapa a etapa:
 
 - Etapa concluída: usa o horário real de término.
 - Etapa em andamento: assume, no mínimo, a duração planejada contada a partir do início real, e nunca termina antes de agora.
 - Etapa ainda não iniciada: não pode começar antes de agora nem antes do fim projetado das etapas que o plano colocou à sua frente; etapas planejadas em paralelo continuam em paralelo.
 - Etapa marcada como não executada: sai dos dois lados da conta, para que retirar escopo não vire adiantamento.
 
-Com isso o coordenador enxerga o atraso assim que ele acontece, e não apenas quando a janela é estourada. Etapas simultâneas nunca têm seus tempos somados: o atraso vem do caminho mais longo, e o painel indica qual etapa é o **ofensor principal**.
-
-Três leituras complementares aparecem juntas: o **atraso já acumulado** (o que já ocorreu), o número de **etapas em atraso agora**, e o **prazo final** da janela, com aviso quando a projeção ameaça ultrapassá-lo. Quando a projeção fecha no horário mas existem etapas atrasadas, o painel fica em estado de atenção em vez de verde, sinalizando que a folga do cronograma está sendo consumida.
+O **prazo final** da janela aparece em relógio próprio, com aviso quando a projeção ameaça ultrapassá-lo.
 
 ### Etapa em andamento
 
 Cada etapa aberta traz duas leituras diferentes, que respondem a perguntas diferentes:
 
-- **Posição no cronograma** (o selo de desvio): enquanto a etapa couber na própria duração planejada, o desvio é o do início. Assim que ela ultrapassa essa duração, passa a empurrar o término minuto a minuto — mesmo que tenha começado adiantada e o fim programado ainda esteja no futuro.
-- **Consumo da duração**: o tempo já em execução contra o previsto, sempre comparado ao fim programado da própria etapa.
+- **Posição no prazo** (o selo de desvio): agora contra o fim programado da etapa. Negativo enquanto o prazo não vence, positivo depois.
+- **Consumo da duração**: o tempo já em execução contra o previsto.
 
-As duas são necessárias: uma etapa pode estar adiantada no cronograma (porque começou muito antes do previsto) e ao mesmo tempo já ter consumido mais tempo do que o estimado. Somente o selo esconderia esse segundo fato.
+As duas são necessárias: uma etapa pode estar dentro do prazo (porque começou muito antes do previsto) e ao mesmo tempo já ter consumido mais tempo do que o estimado. Somente o selo esconderia esse segundo fato.
 
 Consumir mais tempo que o previsto **não é, por si só, um problema**. Uma etapa que começou bem antes do horário planejado pode gastar mais e ainda entregar com folga, e nesse caso a leitura é informativa, sem alarme:
 
