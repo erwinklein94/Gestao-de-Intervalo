@@ -504,6 +504,7 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .time-pair span { color: var(--muted); }
 .realized-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .realized-duration { display: block; margin-top: 9px; color: var(--muted); font-size: 9px; }
+.realized-duration.is-over { color: #a43b32; font-weight: 700; }
 .time-entry { display: grid; grid-template-columns: minmax(112px, 1fr) auto; gap: 6px; align-items: end; min-width: 0; }
 .time-entry label { min-width: 0; display: grid; gap: 5px; color: var(--blue); font-size: 10px; font-weight: 700; }
 .time-entry input { min-width: 0; padding: 0 10px; background: var(--white); color: var(--ink); }
@@ -766,6 +767,7 @@ html[data-theme="dark"] .step-variance.delay { color: #ffaaa0; background: #3b22
 html[data-theme="dark"] .step-variance.ahead { color: #79dfbd; background: #12382f; }
 html[data-theme="dark"] .execution-step.is-critical { background: #3b2226; }
 html[data-theme="dark"] .step-forecast { color: #8ed1f5; }
+html[data-theme="dark"] .realized-duration.is-over { color:#ffaaa0; }
 html[data-theme="dark"] .chart-tooltip { border-color:#1d3f56; background:#0f2739; box-shadow:0 12px 30px rgba(0,0,0,.5); }
 html[data-theme="dark"] .chart-tooltip .tip-head span, html[data-theme="dark"] .chart-tooltip .tip-on-time { color:#8ed1f5; }
 html[data-theme="dark"] .chart-tooltip .tip-delay { color:#ffaaa0; }

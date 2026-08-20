@@ -25,6 +25,15 @@ Com isso o coordenador enxerga o atraso assim que ele acontece, e não apenas qu
 
 Três leituras complementares aparecem juntas: o **atraso já acumulado** (o que já ocorreu), o número de **etapas em atraso agora**, e o **prazo final** da janela, com aviso quando a projeção ameaça ultrapassá-lo. Quando a projeção fecha no horário mas existem etapas atrasadas, o painel fica em estado de atenção em vez de verde, sinalizando que a folga do cronograma está sendo consumida.
 
+### Etapa em andamento
+
+Cada etapa aberta traz duas leituras diferentes, que respondem a perguntas diferentes:
+
+- **Posição no cronograma** (o selo de desvio): enquanto a etapa couber na própria duração planejada, o desvio é o do início. Assim que ela ultrapassa essa duração, passa a empurrar o término minuto a minuto — mesmo que tenha começado adiantada e o fim programado ainda esteja no futuro.
+- **Consumo da duração**: o tempo já em execução contra o previsto (`1h 40min de 1h 20min previstos · 20 min além da duração`), destacado em vermelho quando estoura.
+
+As duas são necessárias: uma etapa pode estar adiantada no cronograma (porque começou muito antes do previsto) e ao mesmo tempo já ter estourado a duração planejada. Somente o selo esconderia esse segundo fato.
+
 Os dados são mantidos localmente enquanto o usuário não está conectado. Ao entrar com e-mail e senha, planos e etapas são sincronizados com o Supabase, com acesso protegido por usuário e uma cópia local para continuidade em caso de falha temporária de conexão. A tela de planejamento também exporta um relatório Excel `.xlsx` com Programado x Realizado.
 
 O site possui temas claro e escuro. O tema claro é o padrão inicial, e a escolha do usuário fica memorizada no dispositivo.

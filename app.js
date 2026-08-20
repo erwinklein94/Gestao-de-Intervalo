@@ -517,11 +517,24 @@
     if (isStepComplete(step)) return step.end == null ? null : step.actualEndMinutes - step.end;
     if (step.actualStartMinutes != null && step.start != null) {
       const startDeviation = step.actualStartMinutes - step.start;
-      const overrun = nowAbs != null && step.end != null ? nowAbs - step.end : null;
-      return overrun != null && overrun > 0 ? Math.max(startDeviation, overrun) : startDeviation;
+      if (nowAbs == null || step.end == null) return startDeviation;
+      // Etapa em andamento: enquanto ela couber na própria duração planejada, o
+      // desvio é o do início. A partir do momento em que estoura essa duração,
+      // ela empurra o término minuto a minuto — mesmo que tenha começado
+      // adiantada e o fim programado ainda esteja no futuro.
+      const projectedEnd = Math.max(step.actualStartMinutes + (step.duration != null ? step.duration : 0), nowAbs);
+      return projectedEnd - step.end;
     }
     if (nowAbs != null && step.start != null && nowAbs > step.start) return nowAbs - step.start;
     return null;
+  }
+
+  // Quanto da duração planejada uma etapa em andamento já consumiu.
+  function stepDurationBurn(step, nowAbs) {
+    if (nowAbs == null || isStepSkipped(step) || step.actualStartMinutes == null || step.actualEndMinutes != null) return null;
+    const elapsed = Math.max(0, nowAbs - step.actualStartMinutes);
+    const planned = step.duration != null ? step.duration : null;
+    return { elapsed, planned, over: planned == null ? null : elapsed - planned };
   }
 
   // Fim planejado do trabalho que ainda faz parte do escopo. Etapas marcadas
@@ -1311,11 +1324,40 @@
       return { className: "", text: "No horário", value: 0 };
     }
 
-    function stepStateText(step) {
+    function stepStateText(step, nowAbs) {
       if (isStepSkipped(step)) return "Etapa não executada";
       if (isStepComplete(step)) return "Etapa concluída";
-      if (step.actualStartMinutes != null) return "Em andamento";
+      if (step.actualStartMinutes != null) {
+        const burn = stepDurationBurn(step, nowAbs);
+        return burn ? `Em andamento há ${formatMinutes(burn.elapsed)}` : "Em andamento";
+      }
       return "Aguardando início";
+    }
+
+    // Linha de duração: para etapa em andamento mostra o tempo corrido contra o
+    // previsto, para que o coordenador veja a etapa estourar a duração antes
+    // mesmo de o fim programado chegar.
+    function durationText(step, nowAbs) {
+      if (isStepSkipped(step)) return `Não executada${step.skipReason ? ` · ${step.skipReason}` : ""}`;
+      if (step.actualDuration != null) {
+        const variance = step.duration == null ? null : Math.round(step.actualDuration - step.duration);
+        return `Duração realizada: ${formatMinutes(step.actualDuration)}${
+          variance == null ? "" : variance === 0 ? " · igual ao previsto" : ` · ${variance > 0 ? "+" : "−"}${formatMinutes(variance)} vs. previsto`
+        }`;
+      }
+      const burn = stepDurationBurn(step, nowAbs);
+      if (!burn) return "Duração calculada ao informar início e fim";
+      if (burn.planned == null) return `Em execução há ${formatMinutes(burn.elapsed)}`;
+      return `Em execução há ${formatMinutes(burn.elapsed)} de ${formatMinutes(burn.planned)} previstos · ${
+        wholeMinutes(burn.over) > 0
+          ? `${formatMinutes(burn.over)} além da duração`
+          : wholeMinutes(burn.over) === 0 ? "no limite da duração" : `restam ${formatMinutes(-burn.over)}`
+      }`;
+    }
+
+    function durationOverClass(step, nowAbs) {
+      const burn = stepDurationBurn(step, nowAbs);
+      return burn && burn.over != null && wholeMinutes(burn.over) > 0 ? " is-over" : "";
     }
 
     // Linha de previsão exibida dentro de cada etapa aberta.
@@ -1339,12 +1381,7 @@
       root.innerHTML = status.steps.map((step, index) => {
         const variance = variancePresentation(step, status.nowAbs);
         const forecastText = stepForecastText(step, status);
-        const durationVariance = step.actualDuration != null && step.duration != null ? Math.round(step.actualDuration - step.duration) : null;
-        const realizedDurationText = isStepSkipped(step)
-          ? `Não executada${step.skipReason ? ` · ${escapeHtml(step.skipReason)}` : ""}`
-          : step.actualDuration == null
-            ? "Duração calculada ao informar início e fim"
-            : `Duração realizada: ${formatMinutes(step.actualDuration)}${durationVariance === 0 ? " · igual ao previsto" : ` · ${durationVariance > 0 ? "+" : "−"}${formatMinutes(durationVariance)} vs. previsto`}`;
+        const realizedDurationText = durationText(step, status.nowAbs);
         const stepComplete = isStepComplete(step);
         const skipped = isStepSkipped(step);
         const isCritical = !skipped && !stepComplete && step.id === criticalId && variance.value > 0;
@@ -1358,7 +1395,7 @@
             <span class="execution-index">${stepComplete ? "✓" : skipped ? "—" : String(index + 1).padStart(2, "0")}</span>
             <div class="execution-step-title">
               <h3>${escapeHtml(step.name || `Etapa ${index + 1}`)}${isCritical ? '<b class="critical-flag">Ofensor principal</b>' : ""}</h3>
-              <span data-step-state>${stepStateText(step)}</span>
+              <span data-step-state>${escapeHtml(stepStateText(step, status.nowAbs))}</span>
             </div>
             <span class="step-variance ${variance.className}" data-step-variance>${variance.text}</span>
           </header>
@@ -1380,7 +1417,7 @@
                   <button class="now-button" type="button" data-now="actualEnd" ${step.actualStart && !skipped ? "" : "disabled"}>Agora</button>
                 </div>
               </div>
-              <small class="realized-duration">${realizedDurationText}</small>
+              <small class="realized-duration${durationOverClass(step, status.nowAbs)}" data-step-duration>${escapeHtml(realizedDurationText)}</small>
               <small class="step-forecast" data-step-forecast ${forecastText ? "" : "hidden"}>${escapeHtml(forecastText)}</small>
               <button class="step-status-button" type="button" data-step-action="${skipped ? "restore" : "skip"}" ${stepComplete ? "disabled" : ""}>${skipped ? "Reativar etapa" : "Marcar como não executada"}</button>
             </div>
@@ -1408,7 +1445,12 @@
         const badge = $("[data-step-variance]", article);
         badge.className = `step-variance ${variance.className}`;
         badge.textContent = variance.text;
-        $("[data-step-state]", article).textContent = stepStateText(step);
+        $("[data-step-state]", article).textContent = stepStateText(step, status.nowAbs);
+        const duration = $("[data-step-duration]", article);
+        if (duration) {
+          duration.textContent = durationText(step, status.nowAbs);
+          duration.className = `realized-duration${durationOverClass(step, status.nowAbs)}`;
+        }
         const forecast = $("[data-step-forecast]", article);
         if (forecast) {
           const text = stepForecastText(step, status);
@@ -1853,7 +1895,7 @@
             actualText,
             actualDurationText: step.actualDuration != null
               ? formatMinutes(step.actualDuration)
-              : elapsed != null ? `${formatMinutes(elapsed)} até agora` : "",
+              : elapsed != null ? `${formatMinutes(elapsed)} até agora${step.duration != null && wholeMinutes(elapsed - step.duration) > 0 ? ` · ${formatMinutes(elapsed - step.duration)} além da duração` : ""}` : "",
             statusLabel: stepStatus.label,
             deviationText: stepStatus.variance == null ? "" : `${stepStatus.variance > 0 ? "+" : ""}${stepStatus.variance} min`,
             deviationTone: stepStatus.variance == null ? "" : stepStatus.variance > 0 ? "delay" : stepStatus.variance < 0 ? "ahead" : "on-time",
@@ -2298,7 +2340,13 @@
         const realized = isStepSkipped(step) ? "Não executada" : step.actualStart ? `${step.actualStart}–${step.actualEnd || "em andamento"}` : "Ainda não iniciada";
         return `<article class="shared-step ${stepStatus.className}">
           <header><span>${String(index + 1).padStart(2, "0")}</span><div><h3>${escapeHtml(step.name || `Etapa ${index + 1}`)}</h3><small>${stepStatus.label}</small></div>${stepStatus.variance == null ? "" : `<b>${stepStatus.variance > 0 ? "+" : ""}${stepStatus.variance} min</b>`}</header>
-          <div class="shared-step-times"><p><span>Planejado</span><strong>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</strong><small>${formatMinutes(step.duration)}</small></p><p><span>Realizado</span><strong>${escapeHtml(realized)}</strong><small>${step.actualDuration == null ? "Duração em aberto" : formatMinutes(step.actualDuration)}</small></p></div>
+          <div class="shared-step-times"><p><span>Planejado</span><strong>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</strong><small>${formatMinutes(step.duration)}</small></p><p><span>Realizado</span><strong>${escapeHtml(realized)}</strong><small>${(() => {
+            if (step.actualDuration != null) return formatMinutes(step.actualDuration);
+            const burn = stepDurationBurn(step, nowAbs);
+            if (!burn) return "Duração em aberto";
+            if (burn.planned == null) return `${formatMinutes(burn.elapsed)} em curso`;
+            return `${formatMinutes(burn.elapsed)} de ${formatMinutes(burn.planned)}${wholeMinutes(burn.over) > 0 ? ` · ${formatMinutes(burn.over)} além` : ""}`;
+          })()}</small></p></div>
           ${step.actualNotes ? `<p class="shared-step-note"><span>Registro operacional</span>${escapeHtml(step.actualNotes)}</p>` : ""}
         </article>`;
       }).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
@@ -2342,7 +2390,7 @@
           actualText,
           actualDurationText: step.actualDuration != null
             ? formatMinutes(step.actualDuration)
-            : elapsed != null ? `${formatMinutes(elapsed)} até agora` : "",
+            : elapsed != null ? `${formatMinutes(elapsed)} até agora${step.duration != null && wholeMinutes(elapsed - step.duration) > 0 ? ` · ${formatMinutes(elapsed - step.duration)} além da duração` : ""}` : "",
           statusLabel: stepStatus.label,
           deviationText: stepStatus.variance == null ? "" : `${stepStatus.variance > 0 ? "+" : ""}${stepStatus.variance} min`,
           deviationTone: stepStatus.variance == null ? "" : stepStatus.variance > 0 ? "delay" : stepStatus.variance < 0 ? "ahead" : "on-time",
