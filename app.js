@@ -393,6 +393,10 @@
     return `${hours}h ${String(minutes).padStart(2, "0")}min`;
   }
 
+  function pluralize(count, singular, plural) {
+    return `${count} ${count === 1 ? singular : plural}`;
+  }
+
   function wholeMinutes(total) {
     if (!Number.isFinite(total)) return null;
     return total < 0 ? Math.ceil(total) : Math.floor(total);
@@ -1533,10 +1537,18 @@
         }`;
       } else if (delayRounded < 0) {
         $("#status-label").textContent = "Execução adiantada em relação ao planejado";
-        $("#status-description").textContent = `Projeção de término às ${forecastText}, ${formatHoursMinutes(delayRounded)} antes do planejado (${baselineText}). A margem só se confirma a cada novo marco registrado.`;
+        $("#status-description").textContent = `Projeção de término às ${forecastText}, ${formatHoursMinutes(delayRounded)} antes do planejado (${baselineText}).${
+          lateNow.length
+            ? ` Mesmo assim, ${pluralize(lateNow.length, "etapa está atrasada", "etapas estão atrasadas")} agora — a margem depende de o desvio não crescer.`
+            : " A margem só se confirma a cada novo marco registrado."
+        }`;
       } else if (hasLate) {
         $("#status-label").textContent = "No horário, com desvios já absorvidos";
-        $("#status-description").textContent = `A projeção ainda fecha em ${forecastText}, igual ao planejado, mas ${lateNow.length ? `${lateNow.length} etapa(s) estão atrasadas agora` : `${lateFinished.length} etapa(s) fecharam com atraso`}. A folga do cronograma está sendo consumida.`;
+        $("#status-description").textContent = `A projeção ainda fecha em ${forecastText}, igual ao planejado, mas ${
+          lateNow.length
+            ? `${pluralize(lateNow.length, "etapa está atrasada", "etapas estão atrasadas")} agora`
+            : pluralize(lateFinished.length, "etapa fechou com atraso", "etapas fecharam com atraso")
+        }. A folga do cronograma está sendo consumida.`;
       } else {
         $("#status-label").textContent = "Execução no horário planejado";
         $("#status-description").textContent = `Projeção de término às ${forecastText}, alinhada ao planejado (${baselineText}). Nenhuma etapa em atraso.`;
@@ -1554,7 +1566,7 @@
       if (live && started && !finished) {
         chips.push({
           tone: slippage != null && slippage > 0 ? "chip-alert" : "chip-ok",
-          label: "Atraso já acumulado",
+          label: "Maior atraso numa etapa",
           value: slippage == null ? "—" : slippage > 0 ? `+${slippage} min` : "nenhum"
         });
         chips.push({
@@ -1617,7 +1629,7 @@
       $("#metric-late-note").textContent = !live
         ? "Acompanhamento indisponível"
         : lateNow.length ? `Pior: ${stepLabel(lateNow[0].step)} +${wholeMinutes(lateNow[0].deviation)} min`
-        : lateFinished.length ? `${lateFinished.length} concluída(s) com atraso`
+        : lateFinished.length ? `${pluralize(lateFinished.length, "concluída com atraso", "concluídas com atraso")}`
         : "Nenhuma etapa em atraso";
 
       $("#metric-forecast").textContent = forecastText;
@@ -1647,7 +1659,7 @@
       $("#operational-detail").textContent = !live
         ? "Sem acompanhamento ao vivo: confira a data do intervalo no planejamento."
         : !started ? "O desvio será calculado assim que houver um primeiro marco realizado."
-        : `Execução ${delayRounded > 0 ? `${delayRounded} min atrasada` : delayRounded < 0 ? `${Math.abs(delayRounded)} min adiantada` : "no horário"} vs. planejado · previsão de término ${forecastText} · prazo final ${plan.windowEnd || "—"}${lateNow.length ? ` · ${lateNow.length} etapa(s) em atraso agora` : ""}.`;
+        : `Execução ${delayRounded > 0 ? `${delayRounded} min atrasada` : delayRounded < 0 ? `${Math.abs(delayRounded)} min adiantada` : "no horário"} vs. planejado · previsão de término ${forecastText} · prazo final ${plan.windowEnd || "—"}${lateNow.length ? ` · ${pluralize(lateNow.length, "etapa em atraso agora", "etapas em atraso agora")}` : ""}.`;
 
       // ---------- ritmo / compensação ----------
       const openSteps = steps.filter((step) => !isStepResolved(step));
@@ -1869,7 +1881,7 @@
         : scheduleDeviation == null
           ? "Aguardando o primeiro marco operacional"
           : `${status.finished ? "Encerramento real" : "Projeção de término"} ${absoluteToTime(Math.floor(status.projectedEnd))} vs. planejado ${absoluteToTime(status.baseline)} · ${formatHoursMinutes(scheduleDeviation)}${
-              status.lateNow.length ? ` · ${status.lateNow.length} etapa(s) em atraso agora` : ""
+              status.lateNow.length ? ` · ${pluralize(status.lateNow.length, "etapa em atraso agora", "etapas em atraso agora")}` : ""
             }${concurrentExecution ? " · há períodos concomitantes" : ""}`;
       $("#dashboard-variance-card").className = `dashboard-kpi featured ${scheduleDeviation == null ? "variance-neutral" : scheduleDeviation > 0 ? "variance-positive" : scheduleDeviation < 0 ? "variance-negative" : "variance-zero"}`;
 
@@ -2329,7 +2341,7 @@
         : waitingStart
           ? `Nenhum marco registrado · término planejado ${baselineText}`
           : `${Math.abs(deviation)} min${Math.abs(deviation) >= 60 ? ` · ${formatHoursMinutes(deviation)}` : ""} vs. planejado ${baselineText}${
-              execution.lateNow.length ? ` · ${execution.lateNow.length} etapa(s) em atraso agora` : ""
+              execution.lateNow.length ? ` · ${pluralize(execution.lateNow.length, "etapa em atraso agora", "etapas em atraso agora")}` : ""
             }${
               deadlineRounded > 0
                 ? ` · prazo final ${plan.windowEnd} estourado em ${formatMinutes(deadlineRounded)}`
