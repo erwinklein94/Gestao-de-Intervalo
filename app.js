@@ -516,6 +516,11 @@
     return intervals.some((interval, index) => index > 0 && interval.start < Math.max(...intervals.slice(0, index).map((previous) => previous.end)));
   }
 
+  function adjustedDeadline(windowEnd, deviation) {
+    if (!Number.isFinite(windowEnd)) return null;
+    return windowEnd + (Number.isFinite(deviation) ? wholeMinutes(deviation) : 0);
+  }
+
   // Tempo corrido do intervalo em relógio, sem somar etapas concomitantes.
   // Enquanto houver execução aberta, mede do primeiro início real até agora.
   // Depois de encerrado, congela no último término real registrado.
@@ -1766,12 +1771,12 @@
       $("#live-forecast-note").textContent = projectedEnd == null
         ? "Aguardando dados do intervalo"
         : `Pelo ritmo atual · planejado ${baselineText}`;
-      $("#live-deadline").textContent = timeline.windowEnd == null ? "--:--" : absoluteToTime(timeline.windowEnd);
+      const adjustedDeadlineValue = adjustedDeadline(timeline.windowEnd, showNumber ? delayRounded : null);
+      $("#live-deadline").textContent = adjustedDeadlineValue == null ? "--:--" : absoluteToTime(adjustedDeadlineValue);
       $("#live-deadline-note").textContent = timeline.windowEnd == null
         ? "Janela não definida"
-        : deadlineExceeded > 0 ? `Ultrapassado em ${formatMinutes(deadlineExceeded)}`
-        : overDeadline != null && overDeadline > 0 ? `Projeção ultrapassa em ${formatMinutes(overDeadline)}`
-        : remainingToDeadline == null ? "Aguardando" : `Restam ${formatMinutes(remainingToDeadline)}`;
+        : !showNumber ? `Planejado ${absoluteToTime(timeline.windowEnd)} · aguardando projeção`
+        : `Planejado ${absoluteToTime(timeline.windowEnd)} · ${delayRounded > 0 ? `${formatMinutes(delayRounded)} de atraso previsto` : delayRounded < 0 ? `${formatMinutes(Math.abs(delayRounded))} de adiantamento previsto` : "sem desvio previsto"}`;
 
       // ---------- cartões de resumo ----------
       $("#metric-window").textContent = timeline.windowStart == null ? "—" : `${plan.windowStart}–${plan.windowEnd}`;
@@ -2447,6 +2452,13 @@
     const content = $("#shared-content");
     let sharedPlan = null;
     let refreshTimer = null;
+    let clockTimer = null;
+
+    function renderSharedClock() {
+      const now = new Date();
+      $("#shared-live-clock").textContent = now.toLocaleTimeString("pt-BR", { hour12: false });
+      $("#shared-live-date").textContent = now.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+    }
 
     function showError(message) {
       loading.hidden = true;
@@ -2490,6 +2502,7 @@
       const progress = timeline.steps.length ? Math.round((resolved.length / timeline.steps.length) * 100) : 0;
       const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
       const actualTotal = completed.reduce((sum, step) => sum + (step.actualDuration || 0), 0);
+      const adjustedDeadlineValue = adjustedDeadline(timeline.windowEnd, showDeviation ? deviation : null);
 
       $("#shared-title").textContent = plan.title || "Intervalo sem nome";
       $("#shared-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Coordenação: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
@@ -2514,7 +2527,11 @@
           : deviation > 0 ? "Execução atrasada"
           : deviation < 0 ? "Execução adiantada"
           : hasLate ? "Dentro do prazo, com desvios individuais" : "Execução dentro do prazo";
-      $("#shared-status-readable").textContent = !execution.live
+      $("#shared-status-readable").hidden = !showDeviation;
+      $("#shared-status-readable").textContent = showDeviation
+        ? `${Math.abs(deviation)} min${Math.abs(deviation) >= 60 ? ` · ${formatHoursMinutes(deviation)}` : ""} · marco mais avançado da sequência`
+        : "";
+      $("#shared-status-description").textContent = !execution.live
         ? "A data do intervalo não corresponde ao momento atual."
         : waitingStart
           ? `Nenhum marco registrado · término planejado ${baselineText}`
@@ -2525,10 +2542,36 @@
                   ? ` · projeção ultrapassa o prazo final ${plan.windowEnd} em ${formatMinutes(overDeadline)}`
                   : remainingToDeadline == null ? "" : ` · restam ${formatMinutes(remainingToDeadline)} até ${plan.windowEnd}`
             }`;
-      $("#shared-forecast").textContent = forecastText;
+
+      const sharedChips = [];
+      if (execution.live && deviation != null) {
+        sharedChips.push({ tone: execution.totals.late > 0 ? "chip-alert" : "chip-ok", label: "Tempo em atraso", value: execution.totals.late > 0 ? `+${execution.totals.late} min em ${pluralize(execution.totals.lateCount, "etapa", "etapas")}` : "nenhum" });
+        sharedChips.push({ tone: "chip-ok", label: "Tempo de adiantamento", value: execution.totals.ahead > 0 ? `−${execution.totals.ahead} min em ${pluralize(execution.totals.aheadCount, "etapa", "etapas")}` : "nenhum" });
+      }
+      if (execution.live && execution.started && !execution.finished) {
+        sharedChips.push({ tone: execution.lateNow.length ? "chip-alert" : "chip-ok", label: "Etapas em atraso agora", value: execution.lateNow.length ? `${execution.lateNow.length} de ${timeline.steps.length - execution.skipped.length}` : "nenhuma" });
+      }
+      if (running.length) sharedChips.push({ tone: "chip-info", label: "Em andamento", value: running.length > 1 ? `${running.length} simultâneas` : running[0].name });
+      if (execution.lateFinished.length) sharedChips.push({ tone: "chip-warn", label: "Concluídas com atraso", value: String(execution.lateFinished.length) });
+      if (timeline.windowEnd != null) {
+        sharedChips.push({
+          tone: deadlineRounded > 0 ? "chip-alert" : overDeadline != null && overDeadline > 0 ? "chip-warn" : "chip-ok",
+          label: `Prazo final planejado ${absoluteToTime(timeline.windowEnd)}`,
+          value: !showDeviation ? "aguardando projeção" : deviation > 0 ? `+${formatMinutes(deviation)} previsto` : deviation < 0 ? `−${formatMinutes(Math.abs(deviation))} previsto` : "sem desvio previsto"
+        });
+      }
+      $("#shared-status-chips").innerHTML = sharedChips.map((chip) => `<li class="${chip.tone}"><span>${escapeHtml(chip.label)}</span><strong>${escapeHtml(String(chip.value))}</strong></li>`).join("");
+
+      renderSharedClock();
+      $("#shared-forecast").textContent = absoluteToClock(forecast);
       $("#shared-forecast-note").textContent = forecast == null
         ? "Aguardando primeiro marco"
         : `Planejado ${baselineText}${plan.windowEnd && plan.windowEnd !== baselineText ? ` · prazo final ${plan.windowEnd}` : ""}`;
+      $("#shared-deadline").textContent = adjustedDeadlineValue == null ? "—" : absoluteToTime(adjustedDeadlineValue);
+      $("#shared-deadline-note").textContent = timeline.windowEnd == null
+        ? "Janela não definida"
+        : !showDeviation ? `Planejado ${absoluteToTime(timeline.windowEnd)} · aguardando projeção`
+        : `Planejado ${absoluteToTime(timeline.windowEnd)} · ${deviation > 0 ? `${formatMinutes(deviation)} de atraso previsto` : deviation < 0 ? `${formatMinutes(Math.abs(deviation))} de adiantamento previsto` : "sem desvio previsto"}`;
 
       $("#shared-window").textContent = plan.windowStart && plan.windowEnd ? `${plan.windowStart}–${plan.windowEnd}` : "—";
       $("#shared-window-note").textContent = timeline.duration == null ? "Janela não definida" : formatMinutes(timeline.duration);
@@ -2642,6 +2685,8 @@
     $("#shared-retry").addEventListener("click", () => loadSharedPlan(true));
     loadSharedPlan(true);
     refreshTimer = setInterval(() => loadSharedPlan(false), 10000);
+    renderSharedClock();
+    clockTimer = setInterval(renderSharedClock, 1000);
   }
 
   async function accountPage() {
@@ -2791,7 +2836,7 @@
   }
 
   if (window.__GESTAO_TEST_MODE__) {
-    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, finalDeadlineStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes };
+    window.__GESTAO_TEST_API__ = { adjustedDeadline, buildTimeline, executionStatus, finalDeadlineStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes };
     return;
   }
 

@@ -53,12 +53,30 @@
 
       <section class="shared-view" id="shared-execution" data-shared-view="execution">
         <section class="shared-status" id="shared-status">
-          <div>
+          <div class="shared-status-main">
             <p class="section-kicker" id="shared-status-label">Situação atual</p>
             <div class="shared-delay-value"><span id="shared-status-sign"></span><strong id="shared-status-minutes">—</strong><b>min</b></div>
-            <p id="shared-status-readable">Aguardando o primeiro marco operacional</p>
+            <p class="status-readable" id="shared-status-readable" hidden>Aguardando o primeiro marco operacional</p>
+            <p id="shared-status-description">Aguardando o primeiro marco operacional</p>
+            <ul class="status-chips" id="shared-status-chips" aria-label="Leitura rápida da execução"></ul>
           </div>
-          <article class="shared-forecast"><span>Término previsto</span><strong id="shared-forecast">—</strong><small id="shared-forecast-note">Meta —</small></article>
+          <div class="status-clocks shared-status-clocks">
+            <article class="status-clock">
+              <span>Horário atual</span>
+              <strong id="shared-live-clock">--:--:--</strong>
+              <small id="shared-live-date">—</small>
+            </article>
+            <article class="status-clock status-forecast-clock">
+              <span>Término previsto</span>
+              <strong id="shared-forecast">—</strong>
+              <small id="shared-forecast-note">Aguardando primeiro marco</small>
+            </article>
+            <article class="status-clock">
+              <span>Prazo final</span>
+              <strong id="shared-deadline">—</strong>
+              <small id="shared-deadline-note">Planejado —</small>
+            </article>
+          </div>
         </section>
 
         <section class="shared-kpis" aria-label="Resumo operacional">
