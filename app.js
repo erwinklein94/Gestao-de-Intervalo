@@ -516,6 +516,31 @@
     return intervals.some((interval, index) => index > 0 && interval.start < Math.max(...intervals.slice(0, index).map((previous) => previous.end)));
   }
 
+  // Tempo corrido do intervalo em relógio, sem somar etapas concomitantes.
+  // Enquanto houver execução aberta, mede do primeiro início real até agora.
+  // Depois de encerrado, congela no último término real registrado.
+  function intervalElapsedTime(timeline, nowAbs = null) {
+    const executed = timeline.steps.filter((step) => !isStepSkipped(step) && step.actualStartMinutes != null);
+    if (!executed.length) return { minutes: null, start: null, end: null, finished: false };
+
+    const start = Math.min(...executed.map((step) => step.actualStartMinutes));
+    const finished = timeline.steps.length > 0 && timeline.steps.every(isStepResolved);
+    const completedEnds = timeline.steps
+      .filter(isStepComplete)
+      .map((step) => step.actualEndMinutes)
+      .filter(Number.isFinite);
+    const end = finished
+      ? (completedEnds.length ? Math.max(...completedEnds) : null)
+      : (nowAbs == null ? null : Math.max(start, nowAbs));
+
+    return {
+      minutes: end == null ? null : Math.max(0, end - start),
+      start,
+      end,
+      finished
+    };
+  }
+
   // Desvio confirmado de UMA etapa. Uma etapa em andamento ainda não possui
   // término real: nesse estado, o marco comparável é o início. Isso evita que
   // uma frente aberta contamine o intervalo inteiro quando outras etapas podem
@@ -1969,10 +1994,10 @@
       const running = timeline.steps.filter((step) => step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step));
       const progress = timeline.steps.length ? Math.round((resolved.length / timeline.steps.length) * 100) : 0;
       const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
-      const actualTotal = completed.reduce((sum, step) => sum + (step.actualDuration || 0), 0);
       const status = executionStatus(plan, timeline);
       const scheduleDeviation = status.delay == null ? null : wholeMinutes(status.delay);
       const nowAbs = status.nowAbs;
+      const elapsedInterval = intervalElapsedTime(timeline, nowAbs);
       const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
       const concurrentExecution = hasConcurrentExecution(timeline, nowAbs);
 
@@ -1981,10 +2006,14 @@
       $("#dashboard-progress").textContent = `${progress}%`;
       $("#dashboard-progress-note").textContent = `${resolved.length} de ${timeline.steps.length} etapas encerradas`;
       $("#dashboard-planned-total").textContent = plannedTotal ? formatMinutes(plannedTotal) : "—";
-      $("#dashboard-actual-total").textContent = completed.length ? formatMinutes(actualTotal) : "—";
-      $("#dashboard-actual-note").textContent = completed.length
-        ? `Soma de ${completed.length} etapa${completed.length > 1 ? "s" : ""} concluída${completed.length > 1 ? "s" : ""}${concurrentExecution ? " · inclui períodos concomitantes" : ""}`
-        : running.length > 1 ? `${running.length} etapas simultâneas em andamento` : "Somente etapas concluídas";
+      $("#dashboard-actual-total").textContent = elapsedInterval.minutes == null ? "—" : formatMinutes(elapsedInterval.minutes);
+      $("#dashboard-actual-note").textContent = elapsedInterval.start == null
+        ? "Aguardando o primeiro início realizado"
+        : elapsedInterval.finished
+          ? `${absoluteToTime(elapsedInterval.start)}–${absoluteToTime(elapsedInterval.end)} · intervalo encerrado`
+          : elapsedInterval.end == null
+            ? "Horário atual indisponível para a data deste plano"
+            : `Desde ${absoluteToTime(elapsedInterval.start)} até agora · períodos concomitantes contam uma vez`;
       $("#dashboard-variance").textContent = scheduleDeviation == null
         ? "—"
         : scheduleDeviation > 0 ? `Atrasado ${scheduleDeviation} min`
@@ -2727,7 +2756,7 @@
   }
 
   if (window.__GESTAO_TEST_MODE__) {
-    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, finalDeadlineStatus, operationalDeviation, stepScheduleDeviation, wholeMinutes };
+    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, finalDeadlineStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes };
     return;
   }
 

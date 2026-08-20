@@ -24,7 +24,7 @@ sandbox.window.window = sandbox.window;
 
 const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 vm.runInNewContext(source, sandbox, { filename: "app.js" });
-const { buildTimeline, executionStatus } = sandbox.window.__GESTAO_TEST_API__;
+const { buildTimeline, executionStatus, intervalElapsedTime } = sandbox.window.__GESTAO_TEST_API__;
 
 function plan(steps, overrides = {}) {
   return {
@@ -102,3 +102,33 @@ function statusOf(candidate) {
 }
 
 console.log("schedule-status: 5 cenários aprovados");
+
+{
+  const candidate = plan([
+    { plannedStart: "08:00", plannedEnd: "09:00", actualStart: "08:00", actualEnd: "09:00" },
+    { plannedStart: "08:30", plannedEnd: "09:30", actualStart: "08:30" }
+  ]);
+  const timeline = buildTimeline(candidate);
+  const elapsed = intervalElapsedTime(timeline, statusOf(candidate).nowAbs);
+  assert.equal(elapsed.minutes, 75, "o tempo do intervalo deve ir do primeiro início até agora");
+  assert.equal(elapsed.finished, false);
+}
+
+{
+  const candidate = plan([
+    { plannedStart: "08:00", plannedEnd: "09:00", actualStart: "08:00", actualEnd: "09:10" },
+    { plannedStart: "08:30", plannedEnd: "10:00", actualStart: "08:20", actualEnd: "09:50" }
+  ]);
+  const timeline = buildTimeline(candidate);
+  const elapsed = intervalElapsedTime(timeline, statusOf(candidate).nowAbs);
+  assert.equal(elapsed.minutes, 110, "intervalo encerrado deve congelar no último término real");
+  assert.equal(elapsed.finished, true);
+}
+
+{
+  const candidate = plan([{ plannedStart: "08:00", plannedEnd: "09:00" }]);
+  const timeline = buildTimeline(candidate);
+  assert.equal(intervalElapsedTime(timeline, statusOf(candidate).nowAbs).minutes, null, "sem início realizado não há tempo gasto");
+}
+
+console.log("interval-elapsed: 3 cenários aprovados");
