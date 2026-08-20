@@ -671,6 +671,172 @@
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Escala e marcações de hora da linha do tempo comparativa.
+  // Escolhe um passo "redondo" (5, 10, 15, 30 min, 1h, 2h...) que caiba na
+  // largura disponível, e alinha as marcas a horários cheios em vez de começar
+  // no minuto quebrado do início da janela.
+  // ---------------------------------------------------------------------------
+  const TIMELINE_TICK_STEPS = [5, 10, 15, 20, 30, 60, 90, 120, 180, 240, 360, 720];
+
+  function timelineScale(start, end, availablePx) {
+    const span = Math.max(1, end - start);
+    const usable = Number.isFinite(availablePx) && availablePx > 0 ? availablePx : 620;
+    const maxLabels = Math.max(3, Math.min(16, Math.floor(usable / 52)));
+    const step = TIMELINE_TICK_STEPS.find((value) => span / value <= maxLabels - 1) || TIMELINE_TICK_STEPS[TIMELINE_TICK_STEPS.length - 1];
+    const ticks = [];
+    for (let value = Math.ceil(start / step) * step; value <= end; value += step) ticks.push(value);
+    if (!ticks.length) return { ticks: [start, end], step };
+    // Mostra também as bordas reais quando elas não ficam coladas na primeira
+    // ou na última marca redonda.
+    if (ticks[0] - start > step * 0.45) ticks.unshift(start);
+    if (end - ticks[ticks.length - 1] > step * 0.45) ticks.push(end);
+    return { ticks, step };
+  }
+
+  // O eixo repete o mesmo grid das linhas do gráfico, para que as marcas fiquem
+  // exatamente sobre as linhas de grade das faixas em qualquer largura.
+  // Largura útil da faixa de barras. O gráfico pode ser montado com o container
+  // ainda oculto (aba do acompanhamento compartilhado), quando clientWidth é 0;
+  // nesse caso estima-se pela viewport em vez de cair num valor fixo.
+  function timelineAvailablePx(host) {
+    const hostWidth = host && host.clientWidth ? host.clientWidth : Math.max(320, window.innerWidth - 80);
+    return hostWidth * (window.innerWidth <= 720 ? 0.95 : 0.57);
+  }
+
+  function timelineAxisHtml(ticks, start, span) {
+    const labels = ticks.map((value) => {
+      const percent = Math.max(0, Math.min(100, ((value - start) / span) * 100));
+      const anchor = percent <= 1 ? "translateX(0)" : percent >= 99 ? "translateX(-100%)" : "translateX(-50%)";
+      return `<span style="left:${percent}%;transform:${anchor}">${absoluteToTime(value)}</span>`;
+    }).join("");
+    return `<div class="timeline-axis" aria-hidden="true"><i></i><div class="timeline-axis-scale">${labels}</div><i></i></div>`;
+  }
+
+  // Linhas de grade desenhadas como gradiente, para não criar um elemento por
+  // marca em cada uma das faixas do gráfico.
+  function timelineGridStyle(ticks, start, span) {
+    const line = "rgba(0,56,101,.13)";
+    const stops = ["transparent 0"];
+    ticks.forEach((value) => {
+      const percent = Math.max(0, Math.min(100, ((value - start) / span) * 100));
+      stops.push(`transparent calc(${percent}% - 1px)`, `${line} calc(${percent}% - 1px)`, `${line} ${percent}%`, `transparent ${percent}%`);
+    });
+    stops.push("transparent 100%");
+    return `background-image:linear-gradient(90deg, ${stops.join(", ")})`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tooltip das barras da linha do tempo.
+  // ---------------------------------------------------------------------------
+  function timelineTipData(step, index, extra = {}) {
+    const attrs = {
+      "tip-index": String(index + 1).padStart(2, "0"),
+      "tip-name": step.name || `Etapa ${index + 1}`,
+      "tip-planned": `${step.plannedStart || "—"} – ${step.plannedEnd || "—"}`,
+      "tip-planned-duration": step.duration == null ? "" : formatMinutes(step.duration),
+      "tip-actual": extra.actualText || "",
+      "tip-actual-duration": extra.actualDurationText || "",
+      "tip-status": extra.statusLabel || "",
+      "tip-deviation": extra.deviationText || "",
+      "tip-deviation-tone": extra.deviationTone || "",
+      "tip-forecast": extra.forecastText || "",
+      "tip-note": (step.actualNotes || step.skipReason || "").slice(0, 160),
+      "tip-kind": extra.kind || ""
+    };
+    return Object.entries(attrs)
+      .filter(([, value]) => value !== "" && value != null)
+      .map(([key, value]) => `data-${key}="${escapeHtml(String(value))}"`)
+      .join(" ");
+  }
+
+  function chartTooltipElement() {
+    let tip = document.getElementById("chart-tooltip");
+    if (!tip) {
+      tip = document.createElement("div");
+      tip.id = "chart-tooltip";
+      tip.className = "chart-tooltip";
+      tip.setAttribute("role", "tooltip");
+      tip.hidden = true;
+      document.body.appendChild(tip);
+    }
+    return tip;
+  }
+
+  function hideChartTooltip() {
+    const tip = document.getElementById("chart-tooltip");
+    if (tip) tip.hidden = true;
+  }
+
+  function bindTimelineTooltip(container) {
+    if (!container || container.dataset.tooltipBound === "1") return;
+    container.dataset.tooltipBound = "1";
+    const tip = chartTooltipElement();
+
+    function cursorTimeFor(target, clientX) {
+      const track = target.closest("[data-track-start]");
+      if (!track) return "";
+      const rect = track.getBoundingClientRect();
+      if (!rect.width) return "";
+      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      const start = Number(track.dataset.trackStart);
+      const span = Number(track.dataset.trackSpan);
+      if (!Number.isFinite(start) || !Number.isFinite(span)) return "";
+      return absoluteToTime(start + ratio * span);
+    }
+
+    function paint(target, clientX, clientY) {
+      const data = target.dataset;
+      const row = (label, value, tone) => value
+        ? `<div class="tip-row"><span>${label}</span><strong${tone ? ` class="tip-${tone}"` : ""}>${escapeHtml(value)}</strong></div>`
+        : "";
+      tip.innerHTML = `<div class="tip-head"><b>${escapeHtml(data.tipIndex || "")}</b><span>${escapeHtml(data.tipName || "")}</span>${
+        data.tipKind ? `<i>${escapeHtml(data.tipKind)}</i>` : ""
+      }</div>
+        ${row("Programado", data.tipPlanned)}
+        ${row("Duração programada", data.tipPlannedDuration)}
+        ${row("Realizado", data.tipActual)}
+        ${row("Duração realizada", data.tipActualDuration)}
+        ${row("Situação", data.tipStatus)}
+        ${row("Desvio", data.tipDeviation, data.tipDeviationTone)}
+        ${row("Previsão de término", data.tipForecast)}
+        ${row("Registro", data.tipNote)}
+        ${(() => { const time = cursorTimeFor(target, clientX); return time ? `<div class="tip-cursor">Cursor em ${escapeHtml(time)}</div>` : ""; })()}`;
+      tip.hidden = false;
+
+      const rect = tip.getBoundingClientRect();
+      const gap = 16;
+      let left = clientX + gap;
+      let top = clientY + gap;
+      if (left + rect.width > window.innerWidth - 8) left = clientX - rect.width - gap;
+      if (top + rect.height > window.innerHeight - 8) top = clientY - rect.height - gap;
+      tip.style.left = `${Math.max(8, left)}px`;
+      tip.style.top = `${Math.max(8, top)}px`;
+    }
+
+    function handleMove(event) {
+      const target = event.target.closest("[data-tip-name]");
+      if (!target) { tip.hidden = true; return; }
+      paint(target, event.clientX, event.clientY);
+    }
+
+    container.addEventListener("mousemove", handleMove);
+    container.addEventListener("mouseleave", () => { tip.hidden = true; });
+    // Toque: mantém o mesmo conteúdo ao tocar na barra.
+    container.addEventListener("click", (event) => {
+      const target = event.target.closest("[data-tip-name]");
+      if (!target) { tip.hidden = true; return; }
+      const rect = target.getBoundingClientRect();
+      paint(target, rect.left + rect.width / 2, rect.top);
+    });
+    container.addEventListener("focusin", (event) => {
+      const target = event.target.closest("[data-tip-name]");
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      paint(target, rect.left + rect.width / 2, rect.bottom);
+    });
+    container.addEventListener("focusout", () => { tip.hidden = true; });
+  }
   function stepLabel(step, fallbackIndex) {
     if (!step) return "Etapa";
     const position = step.index != null ? step.index : fallbackIndex || 0;
@@ -1662,10 +1828,14 @@
       const comparisonDuration = comparisonStart != null && comparisonEnd != null ? Math.max(1, comparisonEnd - comparisonStart) : null;
       const comparisonPosition = (value) => comparisonDuration == null || value == null ? 0 : Math.max(0, Math.min(100, ((value - comparisonStart) / comparisonDuration) * 100));
       const comparisonWidth = (start, end) => start == null || end == null ? 0 : Math.max(0.8, comparisonPosition(end) - comparisonPosition(start));
+      const timelineHost = $("#dashboard-timeline");
+      const timelineScaleInfo = comparisonDuration == null ? null : timelineScale(comparisonStart, comparisonEnd, timelineAvailablePx(timelineHost));
+      const timelineGrid = timelineScaleInfo ? timelineGridStyle(timelineScaleInfo.ticks, comparisonStart, comparisonDuration) : "";
       $("#dashboard-timeline-range").textContent = comparisonDuration == null
         ? "Defina os horários do intervalo"
-        : `Escala comparativa: ${absoluteToTime(comparisonStart)}–${absoluteToTime(comparisonEnd)} · ${formatMinutes(comparisonDuration)}`;
-      $("#dashboard-timeline").innerHTML = comparisonDuration == null || !timeline.steps.length
+        : `Escala comparativa: ${absoluteToTime(comparisonStart)}–${absoluteToTime(comparisonEnd)} · ${formatMinutes(comparisonDuration)} · marcas a cada ${formatMinutes(timelineScaleInfo.step)}`;
+      hideChartTooltip();
+      timelineHost.innerHTML = comparisonDuration == null || !timeline.steps.length
         ? `<div class="chart-empty">Adicione etapas e horários para gerar a linha do tempo comparativa.</div>`
         : `${timeline.steps.map((step, index) => {
           const actualEnd = activeTimelineEnd(step);
@@ -1675,15 +1845,35 @@
             : step.actualStartMinutes == null
               ? "Aguardando execução"
               : `${absoluteToTime(step.actualStartMinutes)}–${runningStep ? "agora" : absoluteToTime(step.actualEndMinutes)}`;
+          const stepStatus = statusFor(step, nowAbs);
+          const elapsed = runningStep && actualEnd != null ? actualEnd - step.actualStartMinutes : null;
+          const projection = status.projection.byStep.get(step.id);
+          const projectedEnd = projection && Number.isFinite(projection.projectedEnd) ? projection.projectedEnd : null;
+          const tipInfo = {
+            actualText,
+            actualDurationText: step.actualDuration != null
+              ? formatMinutes(step.actualDuration)
+              : elapsed != null ? `${formatMinutes(elapsed)} até agora` : "",
+            statusLabel: stepStatus.label,
+            deviationText: stepStatus.variance == null ? "" : `${stepStatus.variance > 0 ? "+" : ""}${stepStatus.variance} min`,
+            deviationTone: stepStatus.variance == null ? "" : stepStatus.variance > 0 ? "delay" : stepStatus.variance < 0 ? "ahead" : "on-time",
+            forecastText: isStepSkipped(step) || isStepComplete(step) || projectedEnd == null
+              ? ""
+              : `${absoluteToTime(Math.floor(projectedEnd))}${step.end == null ? "" : ` (${wholeMinutes(projectedEnd - step.end) > 0 ? "+" : ""}${wholeMinutes(projectedEnd - step.end)} min vs. programado)`}`
+          };
+          const rowTip = timelineTipData(step, index, tipInfo);
+          const plannedTip = timelineTipData(step, index, { ...tipInfo, kind: "Barra planejada" });
+          const actualTip = timelineTipData(step, index, { ...tipInfo, kind: runningStep ? "Barra em andamento" : "Barra realizada" });
           return `<div class="timeline-compare-row">
             <div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div>
-            <div class="timeline-compare-track" aria-label="${escapeHtml(step.name || `Etapa ${index + 1}`)}: planejado ${escapeHtml(step.plannedStart || "—")} a ${escapeHtml(step.plannedEnd || "—")}; realizado ${actualText}">
-              <div class="timeline-lane timeline-planned-lane"><i style="left:${comparisonPosition(step.start)}%;width:${comparisonWidth(step.start, step.end)}%"></i></div>
-              <div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i class="${runningStep ? "running" : "complete"}" style="left:${comparisonPosition(step.actualStartMinutes)}%;width:${comparisonWidth(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div>
+            <div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${timelineGrid}" aria-label="${escapeHtml(step.name || `Etapa ${index + 1}`)}: planejado ${escapeHtml(step.plannedStart || "—")} a ${escapeHtml(step.plannedEnd || "—")}; realizado ${escapeHtml(actualText)}">
+              <div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${comparisonPosition(step.start)}%;width:${comparisonWidth(step.start, step.end)}%"></i></div>
+              <div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${runningStep ? "running" : "complete"}" style="left:${comparisonPosition(step.actualStartMinutes)}%;width:${comparisonWidth(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div>
             </div>
-            <div class="timeline-compare-times"><span><b>P</b>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</span><span class="${runningStep ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${actualText}</span></div>
+            <div class="timeline-compare-times"><span><b>P</b>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</span><span class="${runningStep ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div>
           </div>`;
-        }).join("")}<div class="timeline-axis"><span>${absoluteToTime(comparisonStart)}</span><span>${absoluteToTime(comparisonStart + comparisonDuration / 2)}</span><span>${absoluteToTime(comparisonEnd)}</span></div>`;
+        }).join("")}${timelineAxisHtml(timelineScaleInfo.ticks, comparisonStart, comparisonDuration)}`;
+      bindTimelineTooltip(timelineHost);
 
       $("#duration-chart").innerHTML = timeline.steps.length ? timeline.steps.map((step, index) => `
         <div class="duration-row">
@@ -2133,13 +2323,39 @@
       const comparisonDuration = comparisonStart != null && comparisonEnd != null ? Math.max(1, comparisonEnd - comparisonStart) : null;
       const position = (value) => comparisonDuration == null || value == null ? 0 : Math.max(0, Math.min(100, ((value - comparisonStart) / comparisonDuration) * 100));
       const width = (start, end) => start == null || end == null ? 0 : Math.max(.8, position(end) - position(start));
-      $("#shared-timeline-range").textContent = comparisonDuration == null ? "Horários não definidos" : `${absoluteToTime(comparisonStart)}–${absoluteToTime(comparisonEnd)} · ${formatMinutes(comparisonDuration)}`;
-      $("#shared-timeline").innerHTML = comparisonDuration == null ? `<div class="chart-empty">Linha do tempo indisponível.</div>` : `${timeline.steps.map((step, index) => {
+      const sharedTimelineHost = $("#shared-timeline");
+      const sharedScale = comparisonDuration == null ? null : timelineScale(comparisonStart, comparisonEnd, timelineAvailablePx(sharedTimelineHost));
+      const sharedGrid = sharedScale ? timelineGridStyle(sharedScale.ticks, comparisonStart, comparisonDuration) : "";
+      $("#shared-timeline-range").textContent = comparisonDuration == null
+        ? "Horários não definidos"
+        : `${absoluteToTime(comparisonStart)}–${absoluteToTime(comparisonEnd)} · ${formatMinutes(comparisonDuration)} · marcas a cada ${formatMinutes(sharedScale.step)}`;
+      hideChartTooltip();
+      sharedTimelineHost.innerHTML = comparisonDuration == null ? `<div class="chart-empty">Linha do tempo indisponível.</div>` : `${timeline.steps.map((step, index) => {
         const actualEnd = activeTimelineEnd(step);
         const isRunning = step.actualStartMinutes != null && step.actualEndMinutes == null && !isStepSkipped(step);
         const actualText = isStepSkipped(step) ? "Não executada" : step.actualStartMinutes == null ? "Aguardando" : `${absoluteToTime(step.actualStartMinutes)}–${isRunning ? "agora" : absoluteToTime(step.actualEndMinutes)}`;
-        return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="timeline-compare-track"><div class="timeline-lane timeline-planned-lane"><i style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${actualText}</span></div></div>`;
-      }).join("")}<div class="timeline-axis"><span>${absoluteToTime(comparisonStart)}</span><span>${absoluteToTime(comparisonStart + comparisonDuration / 2)}</span><span>${absoluteToTime(comparisonEnd)}</span></div>`;
+        const stepStatus = sharedStepStatus(step, nowAbs);
+        const elapsed = isRunning && actualEnd != null ? actualEnd - step.actualStartMinutes : null;
+        const projection = execution.projection.byStep.get(step.id);
+        const projectedEnd = projection && Number.isFinite(projection.projectedEnd) ? projection.projectedEnd : null;
+        const tipInfo = {
+          actualText,
+          actualDurationText: step.actualDuration != null
+            ? formatMinutes(step.actualDuration)
+            : elapsed != null ? `${formatMinutes(elapsed)} até agora` : "",
+          statusLabel: stepStatus.label,
+          deviationText: stepStatus.variance == null ? "" : `${stepStatus.variance > 0 ? "+" : ""}${stepStatus.variance} min`,
+          deviationTone: stepStatus.variance == null ? "" : stepStatus.variance > 0 ? "delay" : stepStatus.variance < 0 ? "ahead" : "on-time",
+          forecastText: isStepSkipped(step) || isStepComplete(step) || projectedEnd == null
+            ? ""
+            : `${absoluteToTime(Math.floor(projectedEnd))}${step.end == null ? "" : ` (${wholeMinutes(projectedEnd - step.end) > 0 ? "+" : ""}${wholeMinutes(projectedEnd - step.end)} min vs. programado)`}`
+        };
+        const rowTip = timelineTipData(step, index, tipInfo);
+        const plannedTip = timelineTipData(step, index, { ...tipInfo, kind: "Barra planejada" });
+        const actualTip = timelineTipData(step, index, { ...tipInfo, kind: isRunning ? "Barra em andamento" : "Barra realizada" });
+        return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${sharedGrid}"><div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div></div>`;
+      }).join("")}${timelineAxisHtml(sharedScale.ticks, comparisonStart, comparisonDuration)}`;
+      bindTimelineTooltip(sharedTimelineHost);
 
       const maxDuration = Math.max(1, ...timeline.steps.flatMap((step) => [step.duration || 0, step.actualDuration || 0]));
       $("#shared-duration-chart").innerHTML = timeline.steps.map((step, index) => `<div class="duration-row"><div class="duration-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="duration-bars"><div class="chart-bar-line"><i class="planned" style="width:${Math.max(2, ((step.duration || 0) / maxDuration) * 100)}%"></i><b>${formatMinutes(step.duration)}</b></div><div class="chart-bar-line"><i class="actual" style="width:${step.actualDuration == null ? 0 : Math.max(2, (step.actualDuration / maxDuration) * 100)}%"></i><b>${step.actualDuration == null ? "—" : formatMinutes(step.actualDuration)}</b></div></div></div>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
