@@ -559,56 +559,6 @@
       && step.start != null && nowAbs > step.start;
   }
 
-  // Comprimento total coberto por um conjunto de intervalos, unindo os que se
-  // sobrepõem. É o que impede que duas etapas simultâneas na mesma situação
-  // contem o mesmo minuto de relógio duas vezes.
-  function mergedSpan(intervals) {
-    const sorted = intervals
-      .filter((item) => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start)
-      .sort((a, b) => a.start - b.start);
-    let total = 0;
-    let openStart = null;
-    let openEnd = null;
-    sorted.forEach((item) => {
-      if (openStart == null) { openStart = item.start; openEnd = item.end; return; }
-      if (item.start > openEnd) { total += openEnd - openStart; openStart = item.start; openEnd = item.end; return; }
-      openEnd = Math.max(openEnd, item.end);
-    });
-    if (openStart != null) total += openEnd - openStart;
-    return total;
-  }
-
-  // Total de atraso e de adiantamento do intervalo, medido etapa a etapa
-  // contra o prazo final de cada uma, mas contado em tempo de relógio:
-  //
-  //   etapa atrasada    ocupa a janela [prazo final, prazo final + atraso]
-  //   etapa adiantada   ocupa a janela [prazo final − adiantamento, prazo final]
-  //
-  // Etapas sequenciais têm janelas disjuntas e portanto se somam normalmente.
-  // Etapas simultâneas se sobrepõem e o trecho comum é contado uma vez só.
-  function deviationTotals(timeline, nowAbs) {
-    const lateWindows = [];
-    const aheadWindows = [];
-    let lateCount = 0;
-    let aheadCount = 0;
-    let counted = 0;
-    let overlapped = false;
-    timeline.steps.forEach((step) => {
-      const deviation = stepScheduleDeviation(step, nowAbs);
-      if (deviation == null) return;
-      const rounded = wholeMinutes(deviation);
-      counted += 1;
-      if (rounded > 0) { lateCount += 1; lateWindows.push({ start: step.end, end: step.end + rounded }); }
-      else if (rounded < 0) { aheadCount += 1; aheadWindows.push({ start: step.end + rounded, end: step.end }); }
-    });
-    const late = mergedSpan(lateWindows);
-    const ahead = mergedSpan(aheadWindows);
-    const rawLate = lateWindows.reduce((sum, item) => sum + (item.end - item.start), 0);
-    const rawAhead = aheadWindows.reduce((sum, item) => sum + (item.end - item.start), 0);
-    overlapped = rawLate > late || rawAhead > ahead;
-    return { late, ahead, net: late - ahead, lateCount, aheadCount, counted, overlapped };
-  }
-
   // Quanto da duração planejada uma etapa em andamento já consumiu.
   function stepDurationBurn(step, nowAbs) {
     if (nowAbs == null || isStepSkipped(step) || step.actualStartMinutes == null || step.actualEndMinutes != null) return null;
@@ -750,13 +700,6 @@
       .sort((a, b) => b.deviation - a.deviation);
 
     const critical = lateNow[0] || openMeasured[0] || null;
-    const currentSlippage = measured.length ? Math.max(...measured.map((entry) => entry.deviation)) : null;
-    const startOverdue = steps.filter((step) => isStartOverdue(step, nowAbs) && stepScheduleDeviation(step, nowAbs) == null);
-
-    // Os totais continuam disponíveis como análise das etapas. O indicador
-    // principal usa somente o marco mais avançado da sequência, para que etapas
-    // concomitantes e pendentes não gerem um falso atraso do intervalo inteiro.
-    const totals = deviationTotals(timeline, nowAbs);
     const operational = operationalDeviation(timeline, nowAbs);
     const delay = nowAbs == null ? null : operational.value;
 
@@ -765,41 +708,12 @@
     const projectedEnd = projection.projectedEnd;
 
     const started = completed.length > 0 || active.length > 0 || skipped.length > 0;
-    const deadline = finalDeadlineStatus(plan, timeline);
-    const deadlineForecast = projectedEnd == null || timeline.windowEnd == null ? null : projectedEnd - timeline.windowEnd;
-
     return {
       projection, nowAbs, live: nowAbs != null, timeline,
       steps, active, pending, completed, skipped, resolved,
-      measured, lateNow, lateFinished, critical, currentSlippage, startOverdue,
-      totals, operational, baseline, projectedEnd, delay,
-      started, finished: projection.finished,
-      deadline, deadlineForecast
-    };
-  }
-
-  function finalDeadlineStatus(plan, timeline) {
-    if (timeline.windowEnd == null) return { value: null, remaining: null, type: "no-deadline", reference: null };
-    const allResolved = timeline.steps.length > 0 && timeline.steps.every(isStepResolved);
-    const completedEnds = timeline.steps.filter(isStepComplete).map((step) => step.actualEndMinutes).filter(Number.isFinite);
-    const finalActualEnd = completedEnds.length ? Math.max(...completedEnds) : null;
-
-    if (allResolved && finalActualEnd != null) {
-      return {
-        value: Math.max(0, finalActualEnd - timeline.windowEnd),
-        remaining: Math.max(0, timeline.windowEnd - finalActualEnd),
-        type: finalActualEnd > timeline.windowEnd ? "completed-late" : "completed-on-time",
-        reference: finalActualEnd
-      };
-    }
-
-    const nowAbs = currentAbsolute(plan, timeline);
-    if (nowAbs == null) return { value: null, remaining: null, type: "unavailable", reference: null };
-    return {
-      value: Math.max(0, nowAbs - timeline.windowEnd),
-      remaining: Math.max(0, timeline.windowEnd - nowAbs),
-      type: nowAbs > timeline.windowEnd ? "deadline-exceeded" : "within-deadline",
-      reference: nowAbs
+      measured, lateNow, lateFinished, critical,
+      operational, baseline, projectedEnd, delay,
+      started, finished: projection.finished
     };
   }
 
@@ -1644,21 +1558,16 @@
     function renderDashboard() {
       const status = getStatus();
       const {
-        timeline, steps, active, pending, resolved, skipped,
-        lateNow, lateFinished, critical, currentSlippage, startOverdue, totals,
+        timeline, steps, active, pending, resolved,
+        lateNow, lateFinished,
         baseline, projectedEnd, delay, started, finished, live
       } = status;
 
       const delayRounded = delay == null ? null : wholeMinutes(delay);
-      const composition = `${totals.late} min de atraso ${totals.late > 0 ? `em ${pluralize(totals.lateCount, "etapa", "etapas")}` : ""} contra ${totals.ahead} min de adiantamento${
-        totals.ahead > 0 ? ` em ${pluralize(totals.aheadCount, "etapa", "etapas")}` : ""
-      }${totals.overlapped ? ", já descontados os períodos simultâneos" : ""}`.replace(/\s+/g, " ");
-      const slippage = currentSlippage == null ? null : wholeMinutes(currentSlippage);
       const waiting = !started && (delayRounded == null || delayRounded <= 0);
       const hasLate = lateNow.length > 0 || lateFinished.length > 0;
       const baselineText = baseline == null ? "—" : absoluteToTime(baseline);
       const forecastText = projectedEnd == null ? "—" : absoluteToTime(Math.floor(projectedEnd));
-      const criticalLate = critical && wholeMinutes(critical.deviation) > 0 ? critical : null;
 
       // ---------- indicador principal: atraso da EXECUÇÃO INTEIRA vs. planejado ----------
       let tone;
@@ -1735,82 +1644,6 @@
         ? "Aguardando dados"
         : `Pelo ritmo atual · planejado ${baselineText}`;
 
-      // ---------- próxima ação ----------
-      if (finished) {
-        $("#operational-action").textContent = "Execução encerrada: revise os registros finais.";
-      } else if (!live) {
-        $("#operational-action").textContent = "Ajuste a data do intervalo para retomar o acompanhamento ao vivo.";
-      } else if (criticalLate) {
-        $("#operational-action").textContent = criticalLate.step.actualStartMinutes == null
-          ? `Inicie “${stepLabel(criticalLate.step)}” — deveria ter começado às ${criticalLate.step.plannedStart}.`
-          : `Encerre “${stepLabel(criticalLate.step)}” — já passou ${wholeMinutes(criticalLate.deviation)} min do previsto.`;
-      } else if (active.length > 1) {
-        $("#operational-action").textContent = `Acompanhe ${active.length} etapas simultâneas e registre cada término real.`;
-      } else if (active.length === 1) {
-        $("#operational-action").textContent = `Acompanhe “${stepLabel(active[0])}” e registre o término real.`;
-      } else if (startOverdue.length) {
-        $("#operational-action").textContent = `Registre o início real de “${stepLabel(startOverdue[0])}” — deveria ter começado às ${startOverdue[0].plannedStart}.`;
-      } else if (nextPending) {
-        $("#operational-action").textContent = `Registre o início real de “${stepLabel(nextPending)}”.`;
-      } else {
-        $("#operational-action").textContent = "Aguardando o primeiro registro.";
-      }
-
-      $("#operational-detail").textContent = !live
-        ? "Sem acompanhamento ao vivo: confira a data do intervalo no planejamento."
-        : delayRounded == null ? "O saldo será calculado assim que alguma etapa tiver prazo ou marco a comparar."
-        : `Saldo ${delayRounded > 0 ? `${delayRounded} min de atraso` : delayRounded < 0 ? `${Math.abs(delayRounded)} min de adiantamento` : "zerado"} (+${totals.late} / −${totals.ahead}) · previsão de término ${forecastText} · prazo final ${plan.windowEnd || "—"}${
-            lateNow.length ? ` · ${pluralize(lateNow.length, "etapa em atraso agora", "etapas em atraso agora")}` : ""
-          }.`;
-
-      // ---------- ritmo / compensação ----------
-      const openSteps = steps.filter((step) => !isStepResolved(step));
-      const activeIds = new Set(active.map((step) => step.id));
-      const recoverable = openSteps.filter((step) => !activeIds.has(step.id));
-      const card = $("#compensation-card");
-      card.className = "compensation-card";
-      if (!live || delayRounded == null) {
-        card.classList.add("compensation-neutral");
-        $("#compensation-title").textContent = "Sem recuperação indicada agora";
-        $("#compensation-description").textContent = live
-          ? "O saldo começará a ser calculado quando alguma etapa tiver prazo ou marco a comparar."
-          : "Retome o acompanhamento ao vivo para calcular a recuperação necessária.";
-        $("#compensation-number").textContent = "—";
-      } else if (finished) {
-        card.classList.add(delayRounded > 0 ? "compensation-alert" : "compensation-good");
-        $("#compensation-title").textContent = "Intervalo encerrado";
-        $("#compensation-description").textContent = `Saldo final somando etapa a etapa: ${composition}.`;
-        $("#compensation-number").textContent = delayRounded > 0 ? `+${delayRounded} min` : delayRounded < 0 ? `−${Math.abs(delayRounded)} min` : "No horário";
-      } else if (delayRounded > 0) {
-        card.classList.add("compensation-alert");
-        if (recoverable.length) {
-          const each = Math.ceil(delayRounded / recoverable.length);
-          $("#compensation-title").textContent = `${delayRounded} min de saldo a recuperar`;
-          $("#compensation-description").textContent = `Referência matemática: cerca de ${each} min por etapa ainda não iniciada (${recoverable.length}). Valide segurança, recursos e viabilidade antes de ajustar o ritmo.`;
-          $("#compensation-number").textContent = `≈ ${each} min/etapa`;
-        } else {
-          $("#compensation-title").textContent = "Recuperação depende das etapas em andamento";
-          $("#compensation-description").textContent = "Não há etapa futura para distribuir a recuperação. O saldo só cai se as etapas abertas fecharem dentro do próprio prazo.";
-          $("#compensation-number").textContent = `+${delayRounded} min`;
-        }
-      } else if (delayRounded < 0) {
-        card.classList.add("compensation-good");
-        $("#compensation-title").textContent = `Saldo positivo de ${Math.abs(delayRounded)} min`;
-        $("#compensation-description").textContent = lateNow.length
-          ? `Há ${pluralize(lateNow.length, "etapa atrasada", "etapas atrasadas")} consumindo esse saldo. Preserve a execução segura.`
-          : "Preserve a execução segura; o adiantamento só se confirma a cada novo marco registrado.";
-        $("#compensation-number").textContent = `−${Math.abs(delayRounded)} min`;
-      } else if (hasLate) {
-        card.classList.add("compensation-alert");
-        $("#compensation-title").textContent = "Atrasos e adiantamentos se anulam";
-        $("#compensation-description").textContent = `O saldo está zerado (${composition}), mas qualquer novo desvio passa a pesar direto no total.`;
-        $("#compensation-number").textContent = "Atenção";
-      } else {
-        card.classList.add("compensation-neutral");
-        $("#compensation-title").textContent = "Sem recuperação indicada agora";
-        $("#compensation-description").textContent = "A execução está alinhada ao planejamento.";
-        $("#compensation-number").textContent = "No horário";
-      }
     }
 
     function renderClock() {
@@ -2730,7 +2563,7 @@
   }
 
   if (window.__GESTAO_TEST_MODE__) {
-    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, finalDeadlineStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes };
+    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes };
     return;
   }
 
