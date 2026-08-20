@@ -12,17 +12,17 @@ Aplicação web estática para planejar e acompanhar intervalos de manutenção 
 
 ## Como o atraso é calculado
 
-O indicador principal da execução, do dashboard e do acompanhamento compartilhado é o **saldo entre o tempo em atraso e o tempo de adiantamento**, medidos etapa a etapa contra o **prazo final de cada etapa**.
+O indicador principal da execução, do dashboard e do acompanhamento compartilhado usa o **marco mais avançado da sequência operacional**. A sequência define a ordem lógica de início, mas não impede que etapas sejam concomitantes ou sobrepostas.
 
 Regra por etapa:
 
 | Situação da etapa | Comparação | Resultado |
 |---|---|---|
 | Concluída | término real vs. fim programado | negativo = adiantada, positivo = atrasada |
-| Em andamento | agora vs. fim programado | dentro do prazo enquanto agora não passa dele |
-| Não iniciada | agora vs. fim programado | só entra na conta depois que o prazo vence |
+| Em andamento | início real vs. início programado | negativo = iniciou adiantada, positivo = iniciou atrasada |
+| Não iniciada | não entra no indicador geral | aparece como aviso quando o início programado vence |
 
-Uma etapa que começou muito antes do planejado continua **dentro do prazo** enquanto o horário atual não passar do fim programado dela — mesmo que já tenha gastado mais tempo do que a duração prevista. Ter começado cedo é margem, e a margem só acaba no prazo final da etapa.
+Enquanto uma etapa está em andamento, somente o início é um marco realizado. O sistema não inventa um término nem transforma automaticamente a etapa em atraso porque o relógio avançou. O consumo da duração e a projeção de término continuam visíveis separadamente.
 
 Etapa que ainda não começou e já passou do horário planejado de **início** não entra no saldo (a régua é o prazo final), mas aparece como aviso próprio no painel e no cartão da etapa.
 
@@ -35,7 +35,7 @@ Os totais não são uma soma aritmética dos desvios: cada etapa ocupa uma **jan
 
 Etapas **sequenciais** têm janelas disjuntas e portanto se somam normalmente. Etapas **simultâneas** se sobrepõem, e o trecho comum é contado uma vez só. Duas frentes 30 min além do próprio prazo dão **30 min** de atraso no total, não 60 — porque só 30 minutos de relógio se passaram. Quando há sobreposição, o painel avisa: *"já descontados os períodos simultâneos"*.
 
-O saldo (`tempo em atraso − tempo de adiantamento`) vai para o indicador principal, com as duas parcelas ao lado.
+Esses totais permanecem como informação analítica. O status geral — **adiantado, dentro do prazo ou atrasado** — vem do marco mais avançado da sequência para evitar falsos atrasos em cronogramas concomitantes.
 
 ## Projeção de término
 
@@ -52,7 +52,7 @@ O **prazo final** da janela aparece em relógio próprio, com aviso quando a pro
 
 Cada etapa aberta traz duas leituras diferentes, que respondem a perguntas diferentes:
 
-- **Posição no prazo** (o selo de desvio): agora contra o fim programado da etapa. Negativo enquanto o prazo não vence, positivo depois.
+- **Posição na sequência** (o selo de desvio): início real contra início programado enquanto a etapa estiver aberta; depois de concluída, término real contra término programado.
 - **Consumo da duração**: o tempo já em execução contra o previsto.
 
 As duas são necessárias: uma etapa pode estar dentro do prazo (porque começou muito antes do previsto) e ao mesmo tempo já ter consumido mais tempo do que o estimado. Somente o selo esconderia esse segundo fato.

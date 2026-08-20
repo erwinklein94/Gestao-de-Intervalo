@@ -326,12 +326,13 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 }
 .schedule-table td { padding: 10px 8px; border-bottom: 1px solid var(--surface-2); vertical-align: middle; }
 .schedule-table tbody tr:last-child td { border-bottom: 0; }
-.schedule-table td:first-child { width: 42px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.schedule-table td:first-child { width: 94px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .schedule-table td:nth-child(2) { min-width: 300px; }
 .schedule-table td:nth-child(3), .schedule-table td:nth-child(4) { width: 130px; }
 .schedule-table td:nth-child(5) { width: 110px; color: var(--blue); font-weight: 700; font-size: 12px; white-space: nowrap; }
 .schedule-table td:last-child { width: 150px; }
 .row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.sequence-select { width: 68px; min-width: 68px; padding-inline: 8px; font-weight: 700; text-align: center; }
 .row-action {
   width: 32px;
   height: 32px;
