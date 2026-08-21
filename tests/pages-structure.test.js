@@ -39,6 +39,7 @@ includesAll(management, [
 
 assert.deepEqual(attributeValues(management, "data-view-button"), ["delays", "running", "history", "overview"]);
 assert.deepEqual(attributeValues(management, "data-view"), ["delays", "running", "history", "overview"]);
+assert.match(management, /class="management-tabs"[^>]*role="tablist"/, "áreas gerenciais devem ser um conjunto acessível de botões");
 assert.deepEqual(attributeValues(management, "data-filter"), [
   "manager",
   "coordinator",
@@ -81,6 +82,7 @@ includesAll(admin, [
 ], "estrutura da administração");
 assert.deepEqual(attributeValues(admin, "data-admin-tab"), ["users", "subs"]);
 assert.deepEqual(attributeValues(admin, "data-admin-view"), ["users", "subs"]);
+assert.match(admin, /class="admin-tabs"[^>]*role="tablist"/, "áreas administrativas devem ser um conjunto acessível de botões");
 
 // Integrações estruturais das páginas existentes que receberam as novas funções.
 const account = read("conta.html");
@@ -118,6 +120,14 @@ includesAll(styles, [
   ".admin-row",
   ".comments-list"
 ], "estilos dos componentes novos");
+includesAll(styles, [
+  "grid-template-columns: repeat(auto-fit, minmax(92px, 1fr))",
+  ".management-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
+  ".shared-tabs,\n  .detail-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }",
+  "max-height: calc(100dvh - 12px)",
+  "padding: 14px 14px max(24px, env(safe-area-inset-bottom))",
+  ".portal-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }"
+], "navegação compacta e modais seguros no celular");
 assert.match(styles, /@media \(max-width: 720px\)/, "componentes devem compartilhar o breakpoint móvel principal");
 let braceBalance = 0;
 for (const character of styles.replace(/\/\*[\s\S]*?\*\//g, "")) {

@@ -410,7 +410,7 @@
     const shareAllowed = !demoMode
       && ["editor", "coordinator"].includes(actualProfile.role)
       && plan.user_id === currentUser.id;
-    root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Página de acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header><nav class="detail-tabs"><button type="button" data-detail-tab="plan">Plano do intervalo</button><button type="button" data-detail-tab="execution">Execução do intervalo</button><button type="button" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section data-detail-view="plan">${planTabMarkup(plan)}</section><section data-detail-view="execution">${executionTabMarkup(plan)}</section><section data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link de acompanhamento</button><span class="auth-feedback"></span></div>' : ""}</div>`;
+    root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Página de acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link de acompanhamento</button><span class="auth-feedback"></span></div>' : ""}</div>`;
     const activate = (tab) => {
       $$('[data-detail-tab]', root).forEach((button) => { const active = button.dataset.detailTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); });
       $$('[data-detail-view]', root).forEach((view) => { view.hidden = view.dataset.detailView !== tab; });
@@ -452,7 +452,11 @@
     const allowed = ["delays", "running", "history", "overview"];
     if (view === "dashboard") view = "overview";
     if (!allowed.includes(view)) view = "delays";
-    $$('[data-view-button]').forEach((button) => button.classList.toggle("active", button.dataset.viewButton === view));
+    $$('[data-view-button]').forEach((button) => {
+      const active = button.dataset.viewButton === view;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
     $$('[data-view]').forEach((section) => { section.hidden = section.dataset.view !== view; });
     const url = new URL(location.href); url.searchParams.set("view", view); history.replaceState(null, "", url);
   }
@@ -578,7 +582,11 @@
     $("#user-search").addEventListener("input", renderAdminUsers);
     $("#sub-search").addEventListener("input", renderAdminSubs);
     $$('[data-admin-tab]').forEach((button) => button.addEventListener("click", () => {
-      $$('[data-admin-tab]').forEach((candidate) => candidate.classList.toggle("active", candidate === button));
+      $$('[data-admin-tab]').forEach((candidate) => {
+        const active = candidate === button;
+        candidate.classList.toggle("active", active);
+        candidate.setAttribute("aria-selected", String(active));
+      });
       $$('[data-admin-view]').forEach((view) => { view.hidden = view.dataset.adminView !== button.dataset.adminTab; });
     }));
     $("#admin-user-form").addEventListener("submit", async (event) => {

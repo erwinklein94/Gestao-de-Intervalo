@@ -8,9 +8,9 @@
   <meta name="description" content="Acompanhamento gerencial, histórico e indicadores dos intervalos.">
   <title>Gestão de Intervalo | Visão gerencial</title>
   <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=20260821-4">
+  <link rel="stylesheet" href="styles.css?v=20260821-5">
   <script src="assets/supabase.min.js" defer></script>
-  <script src="assets/portal.js?v=20260821-3" defer></script>
+  <script src="assets/portal.js?v=20260821-4" defer></script>
 </head>
 <body data-page="management">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -32,11 +32,11 @@
       <div class="hero-snapshot"><span id="hero-role">—</span><strong id="hero-live-count">0</strong><small>intervalos em execução agora</small></div>
     </section>
 
-    <nav class="management-tabs" aria-label="Áreas de acompanhamento">
-      <button type="button" data-view-button="delays">Maiores atrasos</button>
-      <button type="button" data-view-button="running">Em execução</button>
-      <button type="button" data-view-button="history">Histórico</button>
-      <button type="button" data-view-button="overview">Dashboard geral</button>
+    <nav class="management-tabs" aria-label="Áreas de acompanhamento" role="tablist">
+      <button type="button" role="tab" aria-selected="false" data-view-button="delays">Maiores atrasos</button>
+      <button type="button" role="tab" aria-selected="false" data-view-button="running">Em execução</button>
+      <button type="button" role="tab" aria-selected="false" data-view-button="history">Histórico</button>
+      <button type="button" role="tab" aria-selected="false" data-view-button="overview">Dashboard geral</button>
     </nav>
 
     <section class="management-workspace">

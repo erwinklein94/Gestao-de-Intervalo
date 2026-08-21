@@ -4,7 +4,7 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
   <script src="assets/auth-guard.js"></script><meta name="description" content="Administração de usuários, hierarquia e SUBs.">
   <title>Gestão de Intervalo | Administração</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=20260821-4"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260821-3" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20260821-5"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260821-4" defer></script>
 </head>
 <body data-page="admin">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -12,7 +12,7 @@
   <main id="conteudo">
     <section class="admin-hero"><p class="eyebrow">Acesso de Editor</p><h1>Administração do sistema</h1><p>Gerencie contas, vínculos organizacionais e a lista de SUBs sem alterar registros históricos.</p></section>
     <section class="admin-workspace">
-      <nav class="admin-tabs"><button class="active" type="button" data-admin-tab="users">Perfis e hierarquia</button><button type="button" data-admin-tab="subs">SUBs</button></nav>
+      <nav class="admin-tabs" aria-label="Áreas da administração" role="tablist"><button class="active" type="button" role="tab" aria-selected="true" data-admin-tab="users">Perfis e hierarquia</button><button type="button" role="tab" aria-selected="false" data-admin-tab="subs">SUBs</button></nav>
       <section data-admin-view="users">
         <article class="chart-card admin-form-card">
           <div class="chart-heading"><div><p class="section-kicker">Nova conta</p><h2>Criar perfil de acesso</h2></div></div>
