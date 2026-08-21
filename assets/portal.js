@@ -747,32 +747,38 @@
       .map((manager) => manager.full_name || manager.email);
   }
 
-  function orgNodeMarkup(profile, childrenByManager, parentId = null) {
-    const reports = childrenByManager.get(profile.id) || [];
+  function orgCardMarkup(profile, directCount, alsoResponsible) {
     const chips = classificationChips(profile);
-    // O mesmo Coordenador pode estar no escopo de varios Gerentes: ele aparece
-    // sob cada um, e a copia que nao e do gestor primario vem marcada.
-    const primary = members.find((candidate) => candidate.id === profile.manager_id);
-    const shared = Boolean(parentId && primary && primary.id !== parentId);
-    const details = reports.length
-      ? `<b>${reports.length}</b> subordinado${reports.length > 1 ? "s" : ""} direto${reports.length > 1 ? "s" : ""}`
-      : "";
+    const details = [
+      directCount ? `<b>${directCount}</b> subordinado${directCount > 1 ? "s" : ""} direto${directCount > 1 ? "s" : ""}` : "",
+      alsoResponsible?.length ? `Também responde por ${escapeHtml(alsoResponsible.join(", "))}` : ""
+    ].filter(Boolean).join(" · ");
     const legend = [
       `${profile.full_name || "Sem nome"} · ${profile.email}`,
-      shared ? `Gestor primário: ${primary.full_name || primary.email}` : "",
       extraManagerNames(profile).length ? `Também sob ${extraManagerNames(profile).join(", ")}` : ""
     ].filter(Boolean).join("\n");
+    return `<article class="org-node ${profile.enabled ? "" : "is-disabled"}" data-role="${escapeHtml(profile.role)}" title="${escapeHtml(legend)}">
+      <span class="org-node-role">${escapeHtml(ROLE_LABELS[profile.role] || profile.role)}</span>
+      <strong>${escapeHtml(profile.full_name || "Sem nome")}</strong>
+      <span class="org-node-email">${escapeHtml(profile.email)}</span>
+      ${chips ? `<span class="org-node-chips">${chips}</span>` : ""}
+      ${details ? `<span class="org-node-meta">${details}</span>` : ""}
+      ${profile.enabled ? "" : '<span class="org-node-flag">Conta inativa</span>'}
+    </article>`;
+  }
+
+  // Um grupo reune os gestores que respondem exatamente pelo mesmo time. Eles
+  // sao desenhados lado a lado e os subordinados aparecem uma unica vez abaixo
+  // do grupo, em vez de um card repetido por gestor.
+  function orgGroupMarkup(group) {
+    const heads = group.heads.map((head) =>
+      orgCardMarkup(head.profile, head.directCount, head.alsoResponsible)).join("");
+    const isShared = group.heads.length > 1;
     return `<li>
-      <article class="org-node ${profile.enabled ? "" : "is-disabled"}" data-role="${escapeHtml(profile.role)}" title="${escapeHtml(legend)}">
-        <span class="org-node-role">${escapeHtml(ROLE_LABELS[profile.role] || profile.role)}</span>
-        <strong>${escapeHtml(profile.full_name || "Sem nome")}</strong>
-        <span class="org-node-email">${escapeHtml(profile.email)}</span>
-        ${chips ? `<span class="org-node-chips">${chips}</span>` : ""}
-        ${details ? `<span class="org-node-meta">${details}</span>` : ""}
-        ${shared ? `<span class="org-node-flag org-node-shared">Compartilhado · ${escapeHtml(primary.full_name || primary.email)}</span>` : ""}
-        ${profile.enabled ? "" : '<span class="org-node-flag">Conta inativa</span>'}
-      </article>
-      ${reports.length ? `<ul>${reports.map((child) => orgNodeMarkup(child, childrenByManager, profile.id)).join("")}</ul>` : ""}
+      ${isShared
+        ? `<div class="org-coheads"><span class="org-coheads-label">Gestão compartilhada</span><div class="org-coheads-cards">${heads}</div></div>`
+        : heads}
+      ${group.children.length ? `<ul>${group.children.map(orgGroupMarkup).join("")}</ul>` : ""}
     </li>`;
   }
 
@@ -785,42 +791,72 @@
     const byMemberId = new Map(ranked
       .filter((profile) => profile.organization_member_id)
       .map((profile) => [profile.organization_member_id, profile]));
-    const childrenByManager = new Map();
-    const roots = [];
     const rank = (profile) => {
       const position = ORG_ROLE_ORDER.indexOf(profile.role);
       return position === -1 ? ORG_ROLE_ORDER.length : position;
     };
-    const addChild = (supervisorId, child) => {
-      if (!childrenByManager.has(supervisorId)) childrenByManager.set(supervisorId, []);
-      const list = childrenByManager.get(supervisorId);
-      if (!list.some((entry) => entry.id === child.id)) list.push(child);
-    };
+    const byName = (a, b) => rank(a) - rank(b)
+      || (a.full_name || a.email).localeCompare(b.full_name || b.email, "pt-BR");
 
-    // A arvore segue manager_operator_assignments, e nao apenas o gestor
-    // primario: um Coordenador no escopo de varios Gerentes aparece sob todos.
-    const supervisorsByOperator = new Map();
+    // Time de cada Gerente, vindo dos vinculos; quem nao tem vinculo cai no
+    // gestor primario, para nao sumir do organograma.
+    const teamByManager = new Map();
+    const addToTeam = (managerId, operatorId) => {
+      if (!teamByManager.has(managerId)) teamByManager.set(managerId, new Set());
+      teamByManager.get(managerId).add(operatorId);
+    };
     managerAssignments.forEach((assignment) => {
       const manager = byMemberId.get(assignment.manager_member_id);
       const operator = byMemberId.get(assignment.operator_member_id);
-      if (!manager || !operator) return;
-      if (!supervisorsByOperator.has(operator.id)) supervisorsByOperator.set(operator.id, new Set());
-      supervisorsByOperator.get(operator.id).add(manager.id);
+      if (manager && operator) addToTeam(manager.id, operator.id);
+    });
+    ranked.forEach((profile) => {
+      if (!SINGLE_CLASSIFICATION_ROLES.includes(profile.role)) return;
+      const linked = [...teamByManager.values()].some((team) => team.has(profile.id));
+      if (linked || !profile.manager_id || !byId.has(profile.manager_id)) return;
+      addToTeam(profile.manager_id, profile.id);
     });
 
-    ranked.forEach((profile) => {
-      const supervisors = supervisorsByOperator.get(profile.id);
-      if (supervisors?.size) { supervisors.forEach((supervisorId) => addChild(supervisorId, profile)); return; }
-      const supervisor = profile.manager_id && byId.has(profile.manager_id) ? profile.manager_id : null;
-      if (!supervisor) { roots.push(profile); return; }
-      addChild(supervisor, profile);
-    });
-    const sortBranch = (list) => list.sort((a, b) =>
-      rank(a) - rank(b) || (a.full_name || a.email).localeCompare(b.full_name || b.email, "pt-BR"));
-    sortBranch(roots);
-    childrenByManager.forEach(sortBranch);
-    root.innerHTML = roots.length
-      ? `<ul class="org-tree">${roots.map((profile) => orgNodeMarkup(profile, childrenByManager)).join("")}</ul>`
+    const childrenOf = (profile) => {
+      const team = teamByManager.get(profile.id);
+      if (team?.size) return [...team].map((id) => byId.get(id)).filter(Boolean);
+      return ranked.filter((candidate) => candidate.manager_id === profile.id);
+    };
+
+    // Cada operador entra no organograma uma unica vez: o primeiro grupo que o
+    // reivindica o desenha, e os demais gestores dele viram texto no card.
+    const claimed = new Set();
+    const buildGroups = (siblings) => {
+      const groups = [];
+      const byTeamKey = new Map();
+      siblings.slice().sort(byName).forEach((profile) => {
+        const team = teamByManager.get(profile.id);
+        const key = team?.size ? [...team].sort().join("|") : null;
+        const head = { profile, directCount: team?.size || childrenOf(profile).length, alsoResponsible: [] };
+        if (key && byTeamKey.has(key)) { byTeamKey.get(key).heads.push(head); return; }
+        const group = { heads: [head], children: [], key };
+        if (key) byTeamKey.set(key, group);
+        groups.push(group);
+      });
+
+      groups.forEach((group) => {
+        const owned = childrenOf(group.heads[0].profile)
+          .filter((child) => !claimed.has(child.id));
+        const taken = childrenOf(group.heads[0].profile)
+          .filter((child) => claimed.has(child.id))
+          .map((child) => child.full_name || child.email);
+        if (taken.length) group.heads.forEach((head) => { head.alsoResponsible = taken; });
+        owned.forEach((child) => claimed.add(child.id));
+        group.children = buildGroups(owned);
+      });
+      return groups;
+    };
+
+    const roots = ranked.filter((profile) => !profile.manager_id || !byId.has(profile.manager_id));
+    roots.forEach((profile) => claimed.add(profile.id));
+    const tree = buildGroups(roots);
+    root.innerHTML = tree.length
+      ? `<ul class="org-tree">${tree.map(orgGroupMarkup).join("")}</ul>`
       : emptyMarkup("Nenhum perfil cadastrado.");
   }
 
