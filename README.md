@@ -1,14 +1,57 @@
 # Gestão de Intervalo
 
-Aplicação web estática para planejar e acompanhar intervalos de manutenção de via permanente. Foi desenhada para funcionar diretamente no GitHub Pages, sem servidor ou dependências de build.
+Aplicação web para planejar, executar e acompanhar intervalos de manutenção de via permanente. O frontend é estático, responsivo e não exige etapa de build; a autenticação, a persistência, a hierarquia organizacional e as autorizações são fornecidas pelo Supabase. A publicação do frontend é feita pelo GitHub Pages.
 
-## Como usar
+## Arquitetura
 
-1. Abra `index.html`, cadastre os dados do intervalo e monte livremente as etapas.
-2. Revise a linha do tempo e trave o cronograma.
-3. Abra `executar.html` durante o intervalo e preencha somente os horários e registros realizados.
-4. Consulte `dashboard.html` para comparar o planejado com o realizado e analisar progresso, duração e desvios por etapa.
-5. Acompanhe o indicador superior de atraso/adiantamento e a necessidade de compensação nas etapas seguintes.
+| Camada | Responsabilidade | Arquivos principais |
+|---|---|---|
+| Fluxo operacional | Planejamento, execução, dashboard individual, conta, compartilhamento e sincronização offline | `index.html`, `executar.html`, `dashboard.html`, `conta.html`, `acompanhar.html`, `app.js` |
+| Portal gerencial | Cards, filtros, histórico, dashboard geral, acompanhamento detalhado e modo de exemplos | `gestao.html`, `assets/portal.js` |
+| Administração | Criação e edição de perfis, hierarquia Gerente → Coordenador e cadastro de SUBs | `admin.html`, `assets/portal.js` |
+| Identidade e interface | Login, proteção inicial de rotas, temas claro/escuro e estilos responsivos | `login.html`, `assets/auth-guard.js`, `styles.css` |
+| Backend | Auth, Postgres, RLS, funções SQL, auditoria, dados demonstrativos e Edge Functions | `supabase/migrations/`, `supabase/functions/` |
+| Entrega | Publicação automática do site estático | `.github/workflows/deploy-pages.yml` |
+
+O navegador usa somente a chave publicável do projeto. Chaves `service_role` ou secretas permanecem restritas às Edge Functions e nunca devem ser copiadas para HTML ou JavaScript público.
+
+## Perfis e permissões
+
+As permissões são aplicadas na navegação e novamente no banco por Row Level Security (RLS). Ocultar uma página ou botão não é considerado controle de acesso.
+
+| Perfil | Escopo | Páginas e ações principais |
+|---|---|---|
+| Diretor | Toda a operação | Gestão, maiores atrasos, intervalos em execução, histórico, dashboard geral, acompanhamento somente leitura e Minha Conta |
+| Consultor | Mesmo escopo do Diretor | Mesma visão global e somente leitura dos intervalos |
+| Gerente | Coordenadores vinculados ao próprio Gerente | Mesmas quatro visões gerenciais, filtradas automaticamente para a própria equipe |
+| Coordenador | Próprios intervalos | Planejamento, execução, dashboard individual, histórico, comentários operacionais e Minha Conta |
+| Editor | Toda a operação | Visão gerencial completa, ferramentas operacionais, Administração, gestão de usuários/SUBs e modo Exemplos |
+
+Cada Coordenador deve possuir Gerente responsável, SUB e classificação `infrastructure` ou `superstructure`. Perfis legados incompletos são preservados com indicação de revisão, em vez de terem dados removidos silenciosamente.
+
+## Páginas
+
+- `login.html`: autenticação por e-mail e senha e validação da conta habilitada.
+- `index.html`: criação e revisão do plano, montagem de etapas, linha do tempo, travamento do cronograma e exportação `.xlsx`.
+- `executar.html`: registro dos horários e observações realizados, etapas não executadas, comentários e estado de sincronização.
+- `dashboard.html`: indicadores e gráficos do intervalo selecionado, comparação Programado × Realizado e impressão preparada para PDF em A4 paisagem.
+- `gestao.html`: portal com as áreas Maiores atrasos, Em execução, Histórico e Dashboard geral. Inclui filtros por Gerente, Coordenador, SUB, classificação, status, prazo, tipo, período e texto livre.
+- `admin.html`: área exclusiva do Editor para criar e editar usuários, vínculos e SUBs. SUBs deixam de ser excluídas e podem ser desativadas para preservar referências históricas.
+- `conta.html`: mostra somente os dados do usuário autenticado e os atalhos permitidos. Para Editor, oferece Administração e o botão **Exemplos**.
+- `acompanhar.html`: acompanhamento público somente leitura por link temporário, revogável e protegido por token.
+
+Os cards gerenciais mostram título, local, Gerente, Coordenador, SUB, classificação, tipo, janela, progresso, status e desvio. Ao abrir um card, a Página de Acompanhamento reúne Plano, Execução, Dashboard e comentários no mesmo contexto.
+
+O site possui temas claro e escuro. O tema claro é o padrão inicial, e a preferência escolhida fica memorizada no dispositivo.
+
+## Fluxo operacional
+
+1. Entre por `login.html` com uma conta habilitada.
+2. Em `index.html`, preencha os dados do intervalo e monte as etapas.
+3. Revise a linha do tempo e trave o cronograma.
+4. Durante o intervalo, use `executar.html` para registrar somente horários e informações realizados.
+5. Consulte `dashboard.html` para comparar o planejado com o realizado e analisar progresso, duração e desvios por etapa.
+6. Use `gestao.html?view=history` para consultar intervalos concluídos dentro do escopo do perfil.
 
 ## Como o atraso é calculado
 
@@ -33,7 +76,7 @@ Os totais não são uma soma aritmética dos desvios: cada etapa ocupa uma **jan
 - Etapa atrasada ocupa `[prazo final, prazo final + atraso]`.
 - Etapa adiantada ocupa `[prazo final − adiantamento, prazo final]`.
 
-Etapas **sequenciais** têm janelas disjuntas e portanto se somam normalmente. Etapas **simultâneas** se sobrepõem, e o trecho comum é contado uma vez só. Duas frentes 30 min além do próprio prazo dão **30 min** de atraso no total, não 60 — porque só 30 minutos de relógio se passaram. Quando há sobreposição, o painel avisa: *"já descontados os períodos simultâneos"*.
+Etapas **sequenciais** têm janelas disjuntas e portanto se somam normalmente. Etapas **simultâneas** se sobrepõem, e o trecho comum é contado uma vez só. Duas frentes 30 min além do próprio prazo dão **30 min** de atraso no total, não 60 — porque só 30 minutos de relógio se passaram. Quando há sobreposição, o painel avisa: *“já descontados os períodos simultâneos”*.
 
 Esses totais permanecem como informação analítica. O status geral — **adiantado, dentro do prazo ou atrasado** — vem do marco mais avançado da sequência para evitar falsos atrasos em cronogramas concomitantes.
 
@@ -55,9 +98,9 @@ Cada etapa aberta traz duas leituras diferentes, que respondem a perguntas difer
 - **Posição na sequência** (o selo de desvio): início real contra início programado enquanto a etapa estiver aberta; depois de concluída, término real contra término programado.
 - **Consumo da duração**: o tempo já em execução contra o previsto.
 
-As duas são necessárias: uma etapa pode estar dentro do prazo (porque começou muito antes do previsto) e ao mesmo tempo já ter consumido mais tempo do que o estimado. Somente o selo esconderia esse segundo fato.
+As duas são necessárias: uma etapa pode estar dentro do prazo porque começou antes do previsto e, ao mesmo tempo, já ter consumido mais tempo do que o estimado.
 
-Consumir mais tempo que o previsto **não é, por si só, um problema**. Uma etapa que começou bem antes do horário planejado pode gastar mais e ainda entregar com folga, e nesse caso a leitura é informativa, sem alarme:
+Consumir mais tempo que o previsto **não é, por si só, um problema**. Uma etapa que começou bem antes do horário planejado pode gastar mais e ainda entregar com folga; nesse caso a leitura é informativa, sem alarme:
 
 > Em execução há 1h 40min de 1h 20min previstos · 20 min a mais que o previsto, **ainda 1h 00min antes do fim programado**
 
@@ -65,23 +108,114 @@ O destaque em vermelho aparece apenas quando a etapa passa do próprio fim progr
 
 > Em execução há 2h 00min de 1h 45min previstos · 15 min a mais que o previsto e **15 min além do fim programado**
 
-Os dados são mantidos localmente enquanto o usuário não está conectado. Ao entrar com e-mail e senha, planos e etapas são sincronizados com o Supabase, com acesso protegido por usuário e uma cópia local para continuidade em caso de falha temporária de conexão. A tela de planejamento também exporta um relatório Excel `.xlsx` com Programado x Realizado.
+## Dados e segurança no Supabase
 
-O site possui temas claro e escuro. O tema claro é o padrão inicial, e a escolha do usuário fica memorizada no dispositivo.
+As migrações mantêm as tabelas operacionais originais e ampliam o modelo de forma aditiva. Os principais objetos são:
 
-Todas as áreas operacionais são protegidas por autenticação. Usuários sem sessão válida ou com conta desabilitada são direcionados para `login.html` antes de acessar planejamento, execução, dashboard ou conta.
+- `user_profiles`: conta Auth, papel, habilitação e dados organizacionais reais.
+- `organization_members`: diretório e hierarquia por dataset, incluindo personas sem conta Auth no ambiente demonstrativo.
+- `subs`: catálogo administrável das 103 SUBs identificadas no mapa utilizado como fonte, mais futuras inclusões administrativas.
+- `datasets`: separação explícita entre `real` e `demo`.
+- `interval_plans` e `interval_steps`: plano, execução, status, responsáveis, revisões e etapas independentes.
+- `interval_comments`: comentários históricos com autoria e exclusão lógica.
+- `interval_sync_receipts`: recibos de idempotência da sincronização offline.
+- `interval_audit_log`: rastreabilidade das alterações relevantes de intervalos e comentários.
+- `interval_share_links`: tokens temporários e revogáveis para acompanhamento externo.
 
-Os dados locais são separados por usuário. A carga demonstrativa e o botão `Exemplo` são exclusivos do perfil editor; coordenadores não recebem exemplos e também são impedidos pelo RLS de gravar planos demonstrativos.
+As políticas RLS calculam o escopo a partir do usuário autenticado e da hierarquia: Diretor, Consultor e Editor consultam toda a operação; Gerente consulta apenas sua equipe; Coordenador consulta e altera apenas os próprios intervalos. Permissões de tabela e coluna são concedidas explicitamente, separadas das políticas de linha.
 
-Toda alteração de planejamento ou execução é gravada imediatamente no dispositivo e colocada em uma fila de sincronização com o Supabase. Se o usuário trocar de página, recarregar o site ou perder a conexão durante o salvamento, a versão local pendente é preservada e reenviada antes de qualquer leitura da nuvem, evitando que dados recentes sejam substituídos por uma versão anterior.
+## Modo Exemplos
 
-O dashboard possui exportação em PDF por meio da impressão preparada do navegador, incluindo indicadores, gráficos e tabela operacional em formato A4 paisagem.
+O botão **Exemplos**, disponível em Minha Conta para o Editor, abre um conjunto demonstrativo preenchido com todos os papéis, Gerentes, Coordenadores, classificações, SUBs, intervalos simultâneos, atrasados, adiantados, concluídos, comentários e dashboards.
 
-## Publicação
+O isolamento não depende de uma simples filtragem visual:
 
-O workflow em `.github/workflows/deploy-pages.yml` publica todo push na branch `main` usando GitHub Pages via Actions.
+- dados reais e exemplos possuem `dataset_id` distintos;
+- cabeçalhos de contexto demonstrativo só são reconhecidos pelo banco para uma conta real de Editor habilitada;
+- personas demonstrativas existem em `organization_members`, sem criar contas em `auth.users`;
+- RLS filtra consultas, métricas, históricos e diretórios pelo dataset corrente;
+- gravações de planos e comentários demonstrativos ficam desabilitadas;
+- um banner persistente identifica o ambiente e permite alternar a persona visualizada;
+- ao sair, o contexto demonstrativo é removido da sessão e o portal retorna imediatamente aos dados reais.
+
+## Comentários
+
+Comentários podem ser registrados durante a execução por usuários operacionais autorizados. Cada registro guarda nome, perfil, conteúdo, data e hora. A criação também participa da fila offline.
+
+O autor pode excluir logicamente o próprio comentário somente enquanto o intervalo ainda está em execução. Comentários de outros autores não podem ser removidos; depois da conclusão, todos se tornam parte permanente do histórico. Consultas e links compartilhados omitem conteúdo excluído.
+
+## Funcionamento offline e outbox
+
+Depois do primeiro login, alterações operacionais são gravadas imediatamente em `localStorage`, em uma área separada por usuário. O navegador mantém também uma outbox persistente por usuário e um identificador estável do dispositivo.
+
+O ciclo de sincronização é:
+
+1. salvar a versão local antes de qualquer chamada de rede;
+2. colocar plano, etapas ou comentário na outbox com `operation_id` único;
+3. chamar `sync_interval_plan` quando houver conexão;
+4. validar a revisão esperada no servidor e gravar plano e etapas em uma transação;
+5. registrar um recibo por usuário, dispositivo e operação para tornar reenvios idempotentes;
+6. remover o item local somente depois da confirmação do Supabase.
+
+Falhas transitórias usam novas tentativas com espera progressiva. Ao recuperar a conexão, voltar à aba ou reabrir a página, itens pendentes são retomados. Em conflito de revisão, a cópia local permanece preservada para revisão em vez de substituir silenciosamente a versão do servidor.
+
+A interface informa estados como **Salvo**, **Sem conexão**, **Sincronizando**, **Pendente de sincronização**, **Sincronizado** e **Erro de sincronização**.
+
+## Migrações Supabase
+
+As migrações ficam em `supabase/migrations/` e devem ser aplicadas na ordem do timestamp. A expansão organizacional está em `20260821115809_expand_organizational_interval_management.sql`; `20260821133000_complete_sub_catalog.sql` completa o catálogo com as SUBs 100–103 sem alterar as anteriores. As migrações seguintes cobrem o índice da auditoria por autor e o bootstrap das personas demo sob RLS com privilégios do próprio chamador.
+
+Com a CLI autenticada e o projeto correto vinculado:
+
+```powershell
+supabase db push --dry-run
+supabase db push
+```
+
+Revise sempre o `--dry-run`, a lista de migrações pendentes e os advisors de segurança/desempenho antes de aplicar em produção. Não edite uma migração já aplicada; crie uma nova migração incremental. As tabelas do schema exposto usam RLS e concessões explícitas, pois exposição à Data API e autorização por linha são controles diferentes.
+
+## Edge Functions
+
+- `create-site-user`: endpoint autenticado usado pela Administração. Revalida o JWT, exige Editor habilitado, valida papel/hierarquia/SUB e mantém a chave administrativa somente no ambiente da função.
+- `interval-share`: endpoint público por token de alta entropia. Aceita somente planos do dataset real, valida link, expiração, revogação e proprietário habilitado, e retorna uma projeção de dados somente leitura sem identificadores privados.
+
+Deploy pela CLI, preservando verificação JWT na função administrativa e desabilitando-a somente na função cujo próprio token é a credencial:
+
+```powershell
+supabase functions deploy create-site-user --use-api
+supabase functions deploy interval-share --no-verify-jwt --use-api
+```
+
+Se o domínio do frontend mudar, atualize de forma consciente a lista de origens permitidas nas duas funções antes do deploy.
+
+## Execução local
+
+Não há instalação de dependências nem build. Sirva o diretório por HTTP para que navegação, armazenamento e CORS tenham o mesmo comportamento esperado do site publicado:
+
+```powershell
+python -m http.server 4173
+```
+
+Abra `http://localhost:4173/login.html`. As Edge Functions já aceitam as origens locais documentadas no código; abrir os arquivos diretamente por `file://` não é o fluxo suportado.
+
+## Testes
+
+Os testes de cálculo usam o runtime nativo do Node.js:
+
+```powershell
+node --test tests/*.test.js
+```
+
+Eles validam cenários de etapas simultâneas, seleção do marco operacional, encerramento, tempo decorrido, métricas gerenciais, filtros, capacidades por perfil, estrutura das páginas, RLS, hierarquia, histórico, fila offline e Edge Functions. Antes de publicar, faça também um teste funcional com cada papel, incluindo bloqueios de rota, escopo do Gerente, edição exclusiva de Coordenador/Editor, comentários, alternância real/demo, perda e retorno da conexão e link compartilhado revogado ou expirado.
+
+## Publicação no GitHub Pages
+
+O workflow `.github/workflows/deploy-pages.yml` publica o conteúdo do repositório a cada push na branch `main` e também aceita execução manual. O fluxo faz checkout, configura Pages, envia o artefato estático e cria o deployment; não há etapa de build.
+
+Após alterar CSS ou JavaScript, mantenha os parâmetros de versão dos assets nos arquivos HTML sincronizados para evitar cache antigo. Depois do push, acompanhe o workflow **Deploy GitHub Pages** na aba Actions e valide as rotas principais no endereço publicado.
 
 ## Referências de produto
 
 - Identidade visual baseada no brand book oficial da Rumo: paleta institucional, combinações de acessibilidade e Verdana como tipografia de sistema para HTML.
-- Fluxo funcional derivado da planilha `00 - CronoAVF.xlsx`: planejado x executado, duração, produtividade/ritmo e visão de Gantt, reorganizados para uso operacional em telas menores.
+- Fluxo funcional derivado da planilha `00 - CronoAVF.xlsx`: planejado × executado, duração, produtividade/ritmo e visão de Gantt, reorganizados para uso operacional em telas menores.
+- Catálogo inicial de SUBs derivado do Mapa Rumo 2020-V9, preservando todas as 103 identificações encontradas no documento.

@@ -2,18 +2,20 @@
   "use strict";
 
   const STORAGE_KEY = "gestaoIntervaloRumo.v1";
+  const OUTBOX_KEY = "gestaoIntervaloRumo.outbox";
+  const DEVICE_KEY = "gestaoIntervaloRumo.deviceId";
   const THEME_KEY = "gestaoIntervaloRumo.theme";
   const SKIPPED_PREFIX = "[[ETAPA_NAO_EXECUTADA]]";
   const SUPABASE_URL = "https://rzsybguxlueorjpsstmu.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sHHGnU3rob-unvk-_CCdcA_Ut4omY23";
   const page = document.body.dataset.page;
+  let currentUser = null;
+  let currentProfile = null;
   let activeStorageKey = window.__GESTAO_USER_ID__ ? `${STORAGE_KEY}.${window.__GESTAO_USER_ID__}` : STORAGE_KEY;
   let store = loadStore();
   let saveTimer;
   let toastTimer;
   let cloudClient = null;
-  let currentUser = null;
-  let currentProfile = null;
   let cloudTimer;
   let cloudSyncing = false;
   let cloudSyncPending = false;
@@ -22,6 +24,11 @@
   let pageRefreshHandler = null;
   let cloudRefreshRunning = false;
   let cloudRefreshTimer = null;
+  let outbox = [];
+  let deviceId = "";
+  let syncRetryTimer = null;
+  const dirtyPlanIds = new Set();
+  const ROLE_LABELS = { director: "Diretor", consultant: "Consultor", manager: "Gerente", coordinator: "Coordenador", editor: "Editor" };
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -77,7 +84,7 @@
       id: uid(),
       title,
       serviceType: "",
-      coordinator: "",
+      coordinator: currentProfile?.role === "coordinator" ? (currentProfile.full_name || "") : "",
       date: todayISO(),
       location: "",
       windowStart: "",
@@ -88,6 +95,15 @@
       lockedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      ownerId: currentUser?.id || null,
+      datasetId: null,
+      coordinatorMemberId: currentProfile?.role === "coordinator" ? (currentProfile.organization_member_id || null) : null,
+      managerMemberId: null,
+      subId: currentProfile?.sub_id || null,
+      coordinatorType: currentProfile?.coordinator_type || null,
+      status: "planning",
+      completedAt: null,
+      revision: 0,
       deletedStepIds: [],
       structureDirty: false,
       steps: [blankStep()]
@@ -137,7 +153,7 @@
       console.warn("Não foi possível ler os dados locais.", error);
     }
     const first = blankPlan();
-    return { version: 3, activePlanId: first.id, plans: [first], deletedPlanIds: [] };
+    return { version: 4, activePlanId: first.id, plans: [first], deletedPlanIds: [] };
   }
 
   function normalizePlan(plan) {
@@ -145,6 +161,15 @@
     plan.executionNotes = plan.executionNotes || "";
     plan.deletedStepIds = Array.isArray(plan.deletedStepIds) ? plan.deletedStepIds : [];
     plan.structureDirty = Boolean(plan.structureDirty);
+    plan.ownerId = plan.ownerId || null;
+    plan.datasetId = plan.datasetId || null;
+    plan.coordinatorMemberId = plan.coordinatorMemberId || null;
+    plan.managerMemberId = plan.managerMemberId || null;
+    plan.subId = plan.subId || null;
+    plan.coordinatorType = plan.coordinatorType || null;
+    plan.status = plan.status || "planning";
+    plan.completedAt = plan.completedAt || null;
+    plan.revision = Number.isFinite(Number(plan.revision)) ? Number(plan.revision) : 0;
     plan.steps.forEach((step) => {
       step.id = step.id || uid();
       step.name = step.name || "";
@@ -154,14 +179,14 @@
       step.actualEnd = step.actualEnd || "";
       const parsedNotes = parseStoredActualNotes(step.actualNotes || "");
       step.actualNotes = parsedNotes.notes;
-      step.executionStatus = step.executionStatus === "skipped" || parsedNotes.skipped ? "skipped" : "pending";
+      step.executionStatus = step.executionStatus === "skipped" || parsedNotes.skipped ? "skipped" : step.executionStatus || "pending";
       step.skipReason = step.skipReason || parsedNotes.reason;
     });
   }
 
   function normalizeStore(candidate) {
-    candidate.version = 3;
-    candidate.deletedPlanIds = Array.isArray(candidate.deletedPlanIds) ? candidate.deletedPlanIds : [];
+    candidate.version = 4;
+    candidate.deletedPlanIds = Array.isArray(candidate.deletedPlanIds) ? candidate.deletedPlanIds.map((item) => typeof item === "string" ? { clientId: item } : item) : [];
     candidate.plans.forEach(normalizePlan);
     return candidate;
   }
@@ -187,6 +212,32 @@
     localStorage.setItem(activeStorageKey, JSON.stringify(store));
   }
 
+  function outboxStorageKey() {
+    return currentUser ? `${OUTBOX_KEY}.${currentUser.id}` : OUTBOX_KEY;
+  }
+
+  function loadOutbox() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(outboxStorageKey()) || "[]");
+      outbox = Array.isArray(parsed) ? parsed : [];
+    } catch { outbox = []; }
+    try {
+      deviceId = localStorage.getItem(DEVICE_KEY) || uid();
+      localStorage.setItem(DEVICE_KEY, deviceId);
+    } catch { deviceId = uid(); }
+  }
+
+  function saveOutbox() {
+    localStorage.setItem(outboxStorageKey(), JSON.stringify(outbox));
+  }
+
+  function setSyncState(label, state = "saved") {
+    const node = $("#save-state");
+    if (!node) return;
+    node.textContent = label;
+    node.dataset.syncState = state;
+  }
+
   function selectPlan(planId) {
     if (!store.plans.some((plan) => plan.id === planId)) return false;
     store.activePlanId = planId;
@@ -202,10 +253,10 @@
     const plan = activePlan();
     if (plan) plan.updatedAt = new Date().toISOString();
     store.pendingSync = Boolean(currentUser);
+    if (plan) dirtyPlanIds.add(plan.id);
     localRevision += 1;
     writeStoreLocally();
-    const state = $("#save-state");
-    if (state) state.textContent = "Salvando…";
+    setSyncState(navigator.onLine ? "Salvo" : "Sem conexão", navigator.onLine ? "saved" : "offline");
     clearTimeout(saveTimer);
     saveTimer = null;
     if (immediate) scheduleCloudSync(true);
@@ -214,7 +265,8 @@
 
   function planToDatabase(plan) {
     return {
-      user_id: currentUser.id,
+      database_id: plan.databaseId || null,
+      user_id: plan.ownerId || currentUser.id,
       client_id: plan.id,
       title: plan.title || "",
       service_type: plan.serviceType || "",
@@ -227,16 +279,33 @@
       execution_notes: plan.executionNotes || "",
       is_locked: Boolean(plan.locked),
       locked_at: plan.lockedAt || null,
-      is_example: Boolean(plan.isExample),
-      created_at: plan.createdAt || new Date().toISOString(),
-      updated_at: plan.updatedAt || new Date().toISOString()
+      coordinator_member_id: plan.coordinatorMemberId || null,
+      manager_member_id: plan.managerMemberId || null,
+      sub_id: plan.subId || null,
+      coordinator_type: plan.coordinatorType || null
     };
+  }
+
+  function stepsToDatabase(plan) {
+    return plan.steps.map((step) => ({
+      client_id: step.id,
+      activity_name: step.name || "",
+      planned_start: step.plannedStart || null,
+      planned_end: step.plannedEnd || null,
+      actual_start: step.actualStart || null,
+      actual_end: step.actualEnd || null,
+      actual_notes: storedActualNotes(step),
+      status: step.executionStatus || "pending",
+      skip_reason: step.skipReason || ""
+    }));
   }
 
   function databaseToPlan(row) {
     return {
       id: row.client_id,
       databaseId: row.id,
+      ownerId: row.user_id,
+      datasetId: row.dataset_id,
       title: row.title,
       serviceType: row.service_type,
       coordinator: row.coordinator,
@@ -249,6 +318,13 @@
       locked: row.is_locked,
       lockedAt: row.locked_at,
       isExample: row.is_example,
+      coordinatorMemberId: row.coordinator_member_id,
+      managerMemberId: row.manager_member_id,
+      subId: row.sub_id,
+      coordinatorType: row.coordinator_type,
+      status: row.status || "planning",
+      completedAt: row.completed_at,
+      revision: Number(row.revision || 0),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       deletedStepIds: [],
@@ -264,8 +340,9 @@
           actualStart: (step.actual_start || "").slice(0, 5),
           actualEnd: (step.actual_end || "").slice(0, 5),
           actualNotes: parsedNotes.notes,
-          executionStatus: parsedNotes.skipped ? "skipped" : "pending",
-          skipReason: parsedNotes.reason
+          executionStatus: step.status || (parsedNotes.skipped ? "skipped" : step.actual_end ? "completed" : step.actual_start ? "running" : "pending"),
+          skipReason: step.skip_reason || parsedNotes.reason,
+          revision: Number(step.revision || 0)
         };
       })
     };
@@ -279,90 +356,123 @@
     cloudTimer = setTimeout(syncStoreToCloud, immediate ? 0 : 700);
   }
 
+  function snapshotSignature(planPayload, stepsPayload) {
+    const comparablePlan = { ...planPayload, database_id: null };
+    return JSON.stringify([comparablePlan, stepsPayload]);
+  }
+
+  function enqueueDirtyPlans() {
+    for (const planId of [...dirtyPlanIds]) {
+      if (outbox.some((item) => item.planId === planId && item.state !== "done")) continue;
+      const plan = store.plans.find((candidate) => candidate.id === planId);
+      dirtyPlanIds.delete(planId);
+      if (!plan) continue;
+      const planPayload = planToDatabase(plan);
+      const stepsPayload = stepsToDatabase(plan);
+      outbox.push({
+        type: "plan_sync", operationId: uid(), deviceId, planId,
+        baseRevision: Number(plan.revision || 0), planPayload, stepsPayload,
+        signature: snapshotSignature(planPayload, stepsPayload), attempts: 0,
+        createdAt: new Date().toISOString(), state: "pending"
+      });
+    }
+    saveOutbox();
+  }
+
   async function syncStoreToCloud() {
     if (!cloudClient || !currentUser || cloudSyncing) return;
+    if (!navigator.onLine) {
+      setSyncState("Sem conexão", "offline");
+      store.pendingSync = true;
+      writeStoreLocally();
+      return;
+    }
     cloudSyncing = true;
     cloudSyncPending = false;
-    const syncingRevision = localRevision;
-    const state = $("#save-state");
-    if (state) state.textContent = "Salvando na nuvem…";
+    clearTimeout(syncRetryTimer);
+    setSyncState("Sincronizando", "syncing");
     try {
-      const plansPayload = store.plans.map(planToDatabase);
-      const { data: savedPlans, error: planError } = await cloudClient
-        .from("interval_plans")
-        .upsert(plansPayload, { onConflict: "user_id,client_id" })
-        .select("id,client_id");
-      if (planError) throw planError;
-
       if (store.deletedPlanIds?.length) {
-        const { error: deletePlanError } = await cloudClient
-          .from("interval_plans")
-          .delete()
-          .eq("user_id", currentUser.id)
-          .in("client_id", store.deletedPlanIds);
-        if (deletePlanError) throw deletePlanError;
+        for (const deleted of [...store.deletedPlanIds]) {
+          let request = cloudClient.from("interval_plans").delete();
+          request = deleted.databaseId ? request.eq("id", deleted.databaseId) : request.eq("client_id", deleted.clientId).eq("user_id", deleted.ownerId || currentUser.id);
+          const { error } = await request;
+          if (error) throw error;
+          store.deletedPlanIds = store.deletedPlanIds.filter((item) => item !== deleted);
+          writeStoreLocally();
+        }
       }
 
-      for (const plan of store.plans) {
-        const savedPlan = savedPlans.find((item) => item.client_id === plan.id);
-        if (!savedPlan) continue;
-        plan.databaseId = savedPlan.id;
-        if (plan.steps.length) {
-          const stepsPayload = plan.steps.map((step, position) => ({
-            plan_id: savedPlan.id,
-            client_id: step.id,
-            position,
-            activity_name: step.name || "",
-            planned_start: step.plannedStart || null,
-            planned_end: step.plannedEnd || null,
-            actual_start: step.actualStart || null,
-            actual_end: step.actualEnd || null,
-            actual_notes: storedActualNotes(step)
-          }));
-          const stepRequest = !plan.structureDirty
-            ? cloudClient.from("interval_steps").upsert(stepsPayload, { onConflict: "plan_id,client_id" }).select("id,client_id")
-            : null;
-          if (stepRequest) {
-            const { data: savedSteps, error: stepError } = await stepRequest;
-            if (stepError) throw stepError;
-            (savedSteps || []).forEach((savedStep) => {
-              const localStep = plan.steps.find((step) => step.id === savedStep.client_id);
-              if (localStep) localStep.databaseId = savedStep.id;
-            });
-          } else {
-            const { error: clearStepsError } = await cloudClient.from("interval_steps").delete().eq("plan_id", savedPlan.id);
-            if (clearStepsError) throw clearStepsError;
-            const { data: savedSteps, error: stepError } = await cloudClient.from("interval_steps").insert(stepsPayload).select("id,client_id");
-            if (stepError) throw stepError;
-            (savedSteps || []).forEach((savedStep) => {
-              const localStep = plan.steps.find((step) => step.id === savedStep.client_id);
-              if (localStep) localStep.databaseId = savedStep.id;
-            });
+      enqueueDirtyPlans();
+      while (outbox.length) {
+        const item = outbox[0];
+        if (item.state === "conflict") throw new Error("SYNC_CONFLICT_LOCAL");
+        item.state = "syncing";
+        item.attempts = Number(item.attempts || 0) + 1;
+        saveOutbox();
+        if (item.type === "comment_create") {
+          const localPlan = store.plans.find((candidate) => candidate.id === item.planId);
+          item.payload.plan_id ||= localPlan?.databaseId || null;
+          item.payload.dataset_id ||= localPlan?.datasetId || null;
+          if (!item.payload.plan_id) { item.state = "pending"; saveOutbox(); throw new Error("PLAN_AWAITING_SYNC"); }
+          const { error } = await cloudClient.from("interval_comments").insert(item.payload);
+          if (error && error.code !== "23505") { item.state = "pending"; saveOutbox(); throw error; }
+          outbox.shift(); saveOutbox(); continue;
+        }
+        if (item.type === "comment_delete") {
+          const { error } = await cloudClient.from("interval_comments").update({ deleted_at: item.deletedAt }).eq("id", item.commentId);
+          if (error) { item.state = "pending"; saveOutbox(); throw error; }
+          outbox.shift(); saveOutbox(); continue;
+        }
+        const { data, error } = await cloudClient.rpc("sync_interval_plan", {
+          p_plan: item.planPayload,
+          p_steps: item.stepsPayload,
+          p_expected_revision: item.baseRevision,
+          p_operation_id: item.operationId,
+          p_device_id: item.deviceId
+        });
+        if (error) {
+          if (/SYNC_CONFLICT|40001/.test(`${error.message} ${error.code}`)) {
+            item.state = "conflict";
+            saveOutbox();
+            throw new Error("SYNC_CONFLICT_LOCAL");
           }
+          item.state = "pending";
+          saveOutbox();
+          throw error;
         }
-        if (plan.deletedStepIds?.length) {
-          const { error: deletedStepError } = await cloudClient
-            .from("interval_steps")
-            .delete()
-            .eq("plan_id", savedPlan.id)
-            .in("client_id", plan.deletedStepIds);
-          if (deletedStepError) throw deletedStepError;
+        const plan = store.plans.find((candidate) => candidate.id === item.planId);
+        if (plan) {
+          plan.databaseId = data.plan_id;
+          plan.revision = Number(data.revision || plan.revision || 0);
+          plan.status = data.status || plan.status;
+          plan.deletedStepIds = [];
+          plan.structureDirty = false;
+          const latestPayload = planToDatabase(plan);
+          const latestSteps = stepsToDatabase(plan);
+          if (snapshotSignature(latestPayload, latestSteps) !== item.signature) dirtyPlanIds.add(plan.id);
         }
+        outbox.shift();
+        saveOutbox();
+        enqueueDirtyPlans();
       }
-      if (syncingRevision === localRevision && !cloudSyncPending) {
-        store.pendingSync = false;
-        store.deletedPlanIds = [];
-        store.plans.forEach((plan) => { plan.deletedStepIds = []; plan.structureDirty = false; });
-        writeStoreLocally();
-        if (state) state.textContent = "Salvo na nuvem";
-      }
+      store.pendingSync = dirtyPlanIds.size > 0 || outbox.length > 0 || store.deletedPlanIds.length > 0;
+      writeStoreLocally();
+      setSyncState(store.pendingSync ? "Pendente de sincronização" : "Sincronizado", store.pendingSync ? "pending" : "saved");
     } catch (error) {
       console.error("Falha ao salvar no Supabase.", error);
-      if (state) state.textContent = "Falha ao salvar na nuvem";
-      showToast("Não foi possível salvar na nuvem. Os dados continuam neste dispositivo.");
+      store.pendingSync = true;
+      writeStoreLocally();
+      const conflict = error.message === "SYNC_CONFLICT_LOCAL";
+      setSyncState(conflict ? "Erro de sincronização" : navigator.onLine ? "Pendente de sincronização" : "Sem conexão", conflict ? "error" : navigator.onLine ? "pending" : "offline");
+      showToast(conflict ? "Conflito detectado. A cópia local foi preservada para revisão." : "Sem confirmação do servidor. Os dados continuam salvos neste dispositivo.");
+      if (!conflict && navigator.onLine) {
+        const attempts = Math.max(1, Number(outbox[0]?.attempts || 1));
+        syncRetryTimer = setTimeout(() => scheduleCloudSync(true), Math.min(30000, 1000 * 2 ** Math.min(attempts, 5)));
+      }
     } finally {
       cloudSyncing = false;
-      if (cloudSyncPending || syncingRevision !== localRevision) {
+      if (cloudSyncPending || dirtyPlanIds.size) {
         clearTimeout(cloudTimer);
         cloudTimer = setTimeout(syncStoreToCloud, 0);
       }
@@ -927,6 +1037,7 @@
     const errors = [];
     const warnings = [];
     if (!plan.title.trim()) errors.push("informe o nome do plano");
+    if (currentProfile?.role === "editor" && !plan.coordinatorMemberId) errors.push("selecione o Coordenador responsável");
     if (!plan.date) errors.push("informe a data");
     if (timeline.windowStart == null || timeline.windowEnd == null) errors.push("preencha a janela completa");
     if (plan.windowStart && plan.windowEnd && plan.windowStart === plan.windowEnd) errors.push("o início e o fim da janela não podem ser iguais");
@@ -1045,6 +1156,44 @@
     const stepsRoot = $("#planning-steps");
     const selector = $("#plan-selector");
     const dialog = $("#confirm-dialog");
+    let coordinatorDirectory = [];
+
+    async function configureCoordinatorField() {
+      const currentField = form.elements.coordinator;
+      if (!currentField || !currentProfile) return;
+      if (currentProfile.role === "coordinator") {
+        currentField.readOnly = true;
+        currentField.title = "O Coordenador responsável é definido pela sua conta.";
+        return;
+      }
+      if (currentProfile.role !== "editor") return;
+
+      const select = document.createElement("select");
+      select.name = "coordinator";
+      select.dataset.coordinatorSelector = "";
+      select.setAttribute("aria-label", "Coordenador responsável");
+      select.required = true;
+      currentField.replaceWith(select);
+      select.innerHTML = '<option value="">Carregando Coordenadores…</option>';
+      select.disabled = true;
+
+      const { data, error } = await cloudClient
+        .from("organization_members")
+        .select("id,full_name,manager_id,sub_id,coordinator_type")
+        .eq("role", "coordinator")
+        .eq("enabled", true)
+        .order("full_name");
+      if (error) {
+        select.innerHTML = '<option value="">Não foi possível carregar os Coordenadores</option>';
+        showToast("Não foi possível carregar a hierarquia de Coordenadores.");
+        return;
+      }
+      coordinatorDirectory = data || [];
+      select.innerHTML = '<option value="">Selecione o Coordenador</option>' + coordinatorDirectory
+        .map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.full_name)}</option>`)
+        .join("");
+      renderForm();
+    }
 
     function renderSelector() {
       selector.innerHTML = store.plans
@@ -1058,8 +1207,10 @@
       ["title", "serviceType", "coordinator", "date", "location", "windowStart", "windowEnd", "notes"].forEach((name) => {
         const input = form.elements[name];
         if (input) {
-          input.value = plan[name] || "";
-          input.disabled = plan.locked;
+          input.value = name === "coordinator" && input.dataset.coordinatorSelector !== undefined
+            ? (plan.coordinatorMemberId || "")
+            : (plan[name] || "");
+          input.disabled = plan.locked || (name === "coordinator" && currentProfile?.role === "coordinator");
         }
       });
       $("#lock-banner").hidden = !plan.locked;
@@ -1158,7 +1309,16 @@
       const plan = activePlan();
       if (plan.locked) return;
       const field = event.target.name;
-      if (field && Object.hasOwn(plan, field)) plan[field] = event.target.value;
+      if (field === "coordinator" && event.target.dataset.coordinatorSelector !== undefined) {
+        const member = coordinatorDirectory.find((candidate) => candidate.id === event.target.value);
+        plan.coordinator = member?.full_name || "";
+        plan.coordinatorMemberId = member?.id || null;
+        plan.managerMemberId = member?.manager_id || null;
+        plan.subId = member?.sub_id || null;
+        plan.coordinatorType = member?.coordinator_type || null;
+      } else if (field && Object.hasOwn(plan, field)) {
+        plan[field] = event.target.value;
+      }
       persist();
       renderSelector();
       renderValidation();
@@ -1309,8 +1469,12 @@
         return;
       }
       const plan = activePlan();
+      if (plan.status !== "planning" || plan.completedAt || hasExecutionData(plan)) {
+        showToast("Somente rascunhos sem execução podem ser excluídos.");
+        return;
+      }
       if (!confirm(`Excluir “${plan.title || "Plano sem nome"}”? Esta ação não pode ser desfeita.`)) return;
-      store.deletedPlanIds.push(plan.id);
+      store.deletedPlanIds.push({ clientId: plan.id, databaseId: plan.databaseId || null, ownerId: plan.ownerId || currentUser?.id || null });
       store.plans = store.plans.filter((item) => item.id !== plan.id);
       store.activePlanId = store.plans[0].id;
       persist(true);
@@ -1375,17 +1539,54 @@
     });
 
     renderForm();
+    configureCoordinatorField();
     pageRefreshHandler = renderForm;
   }
 
   function executionPage() {
     let plan = activePlan();
+    let comments = [];
     const root = $("#execution-steps");
     const blocked = $("#execution-blocked");
     const content = $("#execution-content");
 
     function nowTime() {
       return new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+
+    function pendingCommentsForPlan() {
+      return outbox.filter((item) => item.type === "comment_create" && item.planId === plan.id).map((item) => ({
+        id: `pending-${item.payload.client_id}`,
+        client_id: item.payload.client_id,
+        author_user_id: currentUser.id,
+        author_name: currentProfile.full_name || "Usuário",
+        author_role: currentProfile.role,
+        content: item.payload.content,
+        created_at: item.createdAt,
+        pending: true
+      }));
+    }
+
+    async function loadExecutionComments() {
+      if (!plan.databaseId || !cloudClient) { comments = pendingCommentsForPlan(); renderComments(); return; }
+      const { data, error } = await cloudClient.from("interval_comments").select("*").eq("plan_id", plan.databaseId).order("created_at");
+      if (error) { console.warn("Não foi possível atualizar os comentários.", error); renderComments(); return; }
+      const pending = pendingCommentsForPlan().filter((local) => !(data || []).some((remote) => remote.client_id === local.client_id));
+      comments = [...(data || []), ...pending];
+      renderComments();
+    }
+
+    function renderComments() {
+      const commentsRoot = $("#execution-comments");
+      if (!commentsRoot) return;
+      const visible = comments.filter((comment) => !comment.deleted_at);
+      commentsRoot.innerHTML = visible.length ? visible.map((comment) => {
+        const removable = comment.author_user_id === currentUser.id && !comment.pending && plan.status === "executing";
+        return `<article class="interval-comment ${comment.pending ? "is-pending" : ""}" data-comment-id="${escapeHtml(comment.id)}"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(ROLE_LABELS[comment.author_role] || comment.author_role)}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}${comment.pending ? " · Pendente de sincronização" : ""}</time></header><p>${escapeHtml(comment.content)}</p>${removable ? '<button type="button" data-comment-delete>Excluir meu comentário</button>' : ""}</article>`;
+      }).join("") : `<div class="portal-empty"><strong>Nenhum comentário</strong><span>Atualizações registradas durante a execução aparecerão aqui.</span></div>`;
+      const allowed = plan.status === "executing" || (hasExecutionData(plan) && !getStatus().finished);
+      $("#execution-comment-form").hidden = !allowed;
+      $("#execution-comments-locked").hidden = allowed;
     }
 
     function getStatus() {
@@ -1730,6 +1931,43 @@
       plan.executionNotes = event.target.value;
       persist();
     });
+    $("#execution-comment-form")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const content = form.content.value.trim();
+      const feedback = $("#execution-comment-feedback");
+      if (!content) return;
+      enqueueDirtyPlans();
+      const clientId = uid();
+      outbox.push({
+        type: "comment_create", operationId: uid(), deviceId, planId: plan.id,
+        payload: { client_id: clientId, dataset_id: plan.datasetId, plan_id: plan.databaseId, author_user_id: currentUser.id, author_name: currentProfile.full_name || "Usuário", author_role: currentProfile.role, content },
+        attempts: 0, createdAt: new Date().toISOString(), state: "pending"
+      });
+      saveOutbox();
+      store.pendingSync = true;
+      writeStoreLocally();
+      form.reset();
+      feedback.textContent = navigator.onLine ? "Salvando…" : "Salvo localmente. Será enviado quando a conexão retornar.";
+      comments.push(...pendingCommentsForPlan().filter((pending) => pending.client_id === clientId));
+      renderComments();
+      scheduleCloudSync(true);
+      if (navigator.onLine) setTimeout(loadExecutionComments, 900);
+    });
+    $("#execution-comments")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-comment-delete]");
+      if (!button) return;
+      const row = button.closest("[data-comment-id]");
+      const deletedAt = new Date().toISOString();
+      const comment = comments.find((item) => item.id === row.dataset.commentId);
+      if (comment) comment.deleted_at = deletedAt;
+      outbox.push({ type: "comment_delete", operationId: uid(), deviceId, planId: plan.id, commentId: row.dataset.commentId, deletedAt, attempts: 0, createdAt: deletedAt, state: "pending" });
+      saveOutbox();
+      store.pendingSync = true;
+      writeStoreLocally();
+      renderComments();
+      scheduleCloudSync(true);
+    });
     $("#print-button").addEventListener("click", () => window.print());
 
     function renderPage() {
@@ -1746,6 +1984,7 @@
       renderSteps();
       renderDashboard();
       renderClock();
+      loadExecutionComments();
     }
 
     renderPage();
@@ -1957,8 +2196,28 @@
     button.className = "auth-button";
     button.dataset.authButton = "";
     button.textContent = currentUser ? "Minha conta" : "Entrar";
-    button.addEventListener("click", () => currentUser ? openAccountDialog() : openAuthDialog());
+    button.addEventListener("click", () => currentUser ? location.assign("conta.html") : openAuthDialog());
     tools.prepend(button);
+  }
+
+  function renderRoleNavigation() {
+    const nav = $(".primary-nav");
+    if (!nav || !currentProfile) return;
+    let links;
+    if (currentProfile.role === "coordinator") {
+      links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
+    } else if (currentProfile.role === "editor") {
+      links = [["gestao.html", "Gestão", "management"], ["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
+    } else {
+      links = [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
+    }
+    nav.style.setProperty("--nav-count", links.length);
+    nav.innerHTML = links.map(([href, label, target], index) => `<a href="${href}" class="${page === target ? "active" : ""}" ${page === target ? 'aria-current="page"' : ""}><span>${index + 1}</span>${escapeHtml(label)}</a>`).join("");
+  }
+
+  function routeAllowedForRole() {
+    if (!["planning", "execution", "dashboard"].includes(page)) return true;
+    return ["coordinator", "editor"].includes(currentProfile?.role);
   }
 
   function createDialog(className, content) {
@@ -2045,19 +2304,15 @@
       .select("*,interval_steps(*)")
       .order("updated_at", { ascending: false });
     if (error) throw error;
-    const allowedData = currentProfile?.role === "editor" ? data : data.filter((plan) => !plan.is_example);
-    if (!allowedData.length) {
-      if (currentProfile?.role !== "editor") {
-        const first = blankPlan();
-        store = { version: 3, activePlanId: first.id, plans: [first], deletedPlanIds: [] };
-        writeStoreLocally();
-      }
-      await syncStoreToCloud();
+    if (!data.length) {
+      const first = store.plans.find((plan) => !plan.isExample) || blankPlan();
+      store = { version: 4, activePlanId: first.id, plans: [first], deletedPlanIds: [], pendingSync: false };
+      writeStoreLocally();
       return;
     }
-    const plans = allowedData.map(databaseToPlan);
+    const plans = data.map(databaseToPlan);
     const activeId = plans.some((plan) => plan.id === store.activePlanId) ? store.activePlanId : plans[0].id;
-    store = { version: 3, activePlanId: activeId, plans, deletedPlanIds: [] };
+    store = { version: 4, activePlanId: activeId, plans, deletedPlanIds: [] };
     store.pendingSync = false;
     writeStoreLocally();
   }
@@ -2071,18 +2326,16 @@
         .select("*,interval_steps(*)")
         .order("updated_at", { ascending: false });
       if (error) throw error;
-      const allowedData = currentProfile?.role === "editor" ? data : data.filter((plan) => !plan.is_example);
-      if (!allowedData.length) return;
-      const plans = allowedData.map(databaseToPlan);
+      if (!data.length) return;
+      const plans = data.map(databaseToPlan);
       const activeId = plans.some((item) => item.id === store.activePlanId) ? store.activePlanId : plans[0].id;
       const incomingSignature = JSON.stringify(plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes])]));
       const currentSignature = JSON.stringify(store.plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes])]));
       if (incomingSignature === currentSignature) return;
-      store = { version: 3, activePlanId: activeId, plans, deletedPlanIds: [], pendingSync: false };
+      store = { version: 4, activePlanId: activeId, plans, deletedPlanIds: [], pendingSync: false };
       writeStoreLocally();
       pageRefreshHandler?.();
-      const state = $("#save-state");
-      if (state) state.textContent = "Atualizado da nuvem";
+      setSyncState("Sincronizado", "saved");
     } catch (error) {
       console.warn("Não foi possível atualizar os dados da nuvem.", error);
     } finally {
@@ -2117,8 +2370,11 @@
     const { data: { session } } = await cloudClient.auth.getSession();
     currentUser = session?.user || null;
     if (page === "login") {
-      if (currentUser) location.replace("index.html");
-      else loginPage();
+      if (currentUser) {
+        const { data: profile } = await cloudClient.from("user_profiles").select("role,enabled").eq("id", currentUser.id).single();
+        if (profile?.enabled) location.replace(["coordinator", "editor"].includes(profile.role) ? "index.html" : "gestao.html");
+        else loginPage();
+      } else loginPage();
       return;
     }
     renderAuthControls();
@@ -2136,7 +2392,16 @@
       return;
     }
 
+    sessionStorage.removeItem("gestaoIntervaloRumo.dataset");
+    sessionStorage.removeItem("gestaoIntervaloRumo.demoPersona");
+    renderRoleNavigation();
+    if (!routeAllowedForRole()) {
+      location.replace("gestao.html");
+      return;
+    }
+
     activeStorageKey = `${STORAGE_KEY}.${currentUser.id}`;
+    loadOutbox();
     const hasUserStore = Boolean(localStorage.getItem(activeStorageKey));
     if (hasUserStore) {
       store = loadStore();
@@ -2144,33 +2409,34 @@
       // Migra com segurança os dados da versão anterior, que ainda usava uma chave local única.
       store.pendingSync = true;
       normalizeStore(store);
+      store.plans.filter((plan) => !plan.isExample).forEach((plan) => { plan.ownerId ||= currentUser.id; dirtyPlanIds.add(plan.id); });
       writeStoreLocally();
     } else {
       const first = blankPlan();
-      store = { version: 3, activePlanId: first.id, plans: [first], deletedPlanIds: [], pendingSync: false };
+      store = { version: 4, activePlanId: first.id, plans: [first], deletedPlanIds: [], pendingSync: false };
       writeStoreLocally();
     }
 
-    if (currentProfile.role !== "editor") {
-      $("#example-plan-button")?.remove();
-      const hadExamples = store.plans.some((plan) => plan.isExample);
-      store.plans = store.plans.filter((plan) => !plan.isExample);
-      if (!store.plans.length) store.plans = [blankPlan()];
-      if (!store.plans.some((plan) => plan.id === store.activePlanId)) store.activePlanId = store.plans[0].id;
-      if (hadExamples) store.pendingSync = true;
-      writeStoreLocally();
+    $("#example-plan-button")?.remove();
+    const hadExamples = store.plans.some((plan) => plan.isExample);
+    store.plans = store.plans.filter((plan) => !plan.isExample);
+    if (!store.plans.length) store.plans = [blankPlan()];
+    if (!store.plans.some((plan) => plan.id === store.activePlanId)) store.activePlanId = store.plans[0].id;
+    if (hadExamples) writeStoreLocally();
+    if (store.pendingSync && !outbox.length && !dirtyPlanIds.size) {
+      store.plans.filter((plan) => !plan.ownerId || plan.ownerId === currentUser.id).forEach((plan) => dirtyPlanIds.add(plan.id));
     }
-    if (state) state.textContent = "Sincronizando…";
+    setSyncState("Sincronizando", "syncing");
     try {
-      if (store.pendingSync) {
+      if (store.pendingSync || outbox.length || dirtyPlanIds.size) {
         cloudSyncPending = true;
         await syncStoreToCloud();
       }
       if (!store.pendingSync) await loadCloudStore();
-      if (state) state.textContent = store.pendingSync ? "Pendente de sincronização" : "Salvo na nuvem";
+      setSyncState(store.pendingSync ? "Pendente de sincronização" : "Sincronizado", store.pendingSync ? "pending" : "saved");
     } catch (error) {
       console.error("Falha ao carregar dados do Supabase.", error);
-      if (state) state.textContent = "Falha na sincronização";
+      setSyncState("Erro de sincronização", "error");
     } finally {
       document.documentElement.classList.remove("auth-checking");
       initializeCurrentPage();
@@ -2195,7 +2461,7 @@
         button.textContent = "Entrar no sistema";
         return;
       }
-      const { data: profile } = await cloudClient.from("user_profiles").select("enabled").eq("id", data.user.id).single();
+      const { data: profile } = await cloudClient.from("user_profiles").select("enabled,role").eq("id", data.user.id).single();
       if (!profile?.enabled) {
         await cloudClient.auth.signOut();
         feedback.textContent = "Esta conta está desabilitada. Procure um editor.";
@@ -2203,7 +2469,7 @@
         button.textContent = "Entrar no sistema";
         return;
       }
-      location.replace("index.html");
+      location.replace(["coordinator", "editor"].includes(profile.role) ? "index.html" : "gestao.html");
     });
   }
 
@@ -2264,6 +2530,15 @@
       $("#shared-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Coordenação: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
       $("#shared-updated").textContent = `Atualizado às ${new Date(metadata.fetched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
       $("#shared-expiry").textContent = `Link válido até ${new Date(metadata.share.expires_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`;
+      $("#shared-plan-summary").innerHTML = [
+        ["Título", plan.title || "—"], ["Tipo", plan.serviceType || "—"], ["Data", plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
+        ["Local", plan.location || "—"], ["Coordenador", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${plan.windowStart}–${plan.windowEnd}` : "—"]
+      ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+      $("#shared-planning-notes").textContent = plan.notes || "Nenhuma observação registrada.";
+      $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
+      const sharedComments = metadata.comments || [];
+      $("#shared-comment-count").textContent = sharedComments.length;
+      $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(ROLE_LABELS[comment.author_role] || comment.author_role)}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
 
       const hasLate = execution.lateNow.length > 0 || execution.lateFinished.length > 0;
       const status = $("#shared-status");
@@ -2416,7 +2691,7 @@
     clockTimer = setInterval(renderSharedClock, 1000);
   }
 
-  async function accountPage() {
+  async function renderAccountHistory() {
     const gate = $("#account-gate");
     const content = $("#account-content");
     if (!currentUser || !currentProfile?.enabled) {
@@ -2429,15 +2704,16 @@
     content.hidden = false;
     $("#account-name").textContent = currentProfile.full_name || "Usuário";
     $("#account-email").textContent = currentProfile.email;
-    $("#account-role").textContent = currentProfile.role === "editor" ? "Editor" : "Coordenador";
-    const databasePlanIds = store.plans.map((plan) => plan.databaseId).filter(Boolean);
+    $("#account-role").textContent = ROLE_LABELS[currentProfile.role] || currentProfile.role;
+    const personalPlans = store.plans.filter((plan) => plan.ownerId === currentUser.id);
+    const databasePlanIds = personalPlans.map((plan) => plan.databaseId).filter(Boolean);
     const { data: shareRows, error: shareRowsError } = databasePlanIds.length
       ? await cloudClient.from("interval_share_links").select("id,plan_id,expires_at,revoked_at,token_hint").in("plan_id", databasePlanIds)
       : { data: [], error: null };
     if (shareRowsError) console.warn("Não foi possível consultar os links de acompanhamento.", shareRowsError);
     const shareByPlan = new Map((shareRows || []).map((share) => [share.plan_id, share]));
     const now = Date.now();
-    $("#account-history").innerHTML = store.plans.length ? [...store.plans].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map((plan) => {
+    $("#account-history").innerHTML = personalPlans.length ? [...personalPlans].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map((plan) => {
       const timeline = buildTimeline(plan);
       const resolved = timeline.steps.filter(isStepResolved).length;
       const share = shareByPlan.get(plan.databaseId);
@@ -2457,7 +2733,7 @@
       const button = event.target.closest("[data-share-action]");
       if (!button) return;
       const item = button.closest(".history-item");
-      const plan = store.plans.find((candidate) => candidate.id === item.dataset.planId);
+        const plan = personalPlans.find((candidate) => candidate.id === item.dataset.planId);
       if (!plan?.databaseId) {
         showToast("Aguarde o intervalo terminar de salvar na nuvem.");
         return;
@@ -2536,34 +2812,69 @@
       });
     }
 
-    if (currentProfile.role !== "editor") return;
-    $("#editor-panel").hidden = false;
-    const form = $("#user-create-form");
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const feedback = $("#user-create-feedback");
-      feedback.textContent = "Criando conta…";
-      const { data, error } = await cloudClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value, email: form.email.value, password: form.password.value } });
-      if (error || data?.error) { feedback.textContent = data?.error || error.message; return; }
-      feedback.textContent = "Conta criada e habilitada.";
-      form.reset();
-      await renderUsers();
-    });
+  }
 
-    async function renderUsers() {
-      const { data } = await cloudClient.from("user_profiles").select("*").order("created_at", { ascending: false });
-      $("#users-list").innerHTML = (data || []).map((profile) => `<article class="user-row" data-user-id="${profile.id}"><div><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span></div><span>${profile.role === "editor" ? "Editor" : "Coordenador"}</span><label class="account-switch"><input type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}><i></i><b>${profile.enabled ? "Habilitada" : "Desabilitada"}</b></label></article>`).join("");
-      $$(".user-row input", $("#users-list")).forEach((input) => input.addEventListener("change", async () => {
-        const row = input.closest(".user-row");
-        await cloudClient.from("user_profiles").update({ enabled: input.checked }).eq("id", row.dataset.userId);
-        await renderUsers();
-      }));
+  async function accountPage() {
+    const gate = $("#account-gate");
+    const content = $("#account-content");
+    if (!currentUser || !currentProfile?.enabled) {
+      gate.hidden = false;
+      content.hidden = true;
+      $("#account-login")?.addEventListener("click", openAuthDialog, { once: true });
+      return;
     }
-    await renderUsers();
+    gate.hidden = true;
+    content.hidden = false;
+    const roleLabel = ROLE_LABELS[currentProfile.role] || currentProfile.role;
+    $("#account-name").textContent = currentProfile.full_name || "Usuário";
+    $("#account-email").textContent = currentProfile.email;
+    $("#account-role").textContent = roleLabel;
+    $("#account-detail-name").textContent = currentProfile.full_name || "Não informado";
+    $("#account-detail-email").textContent = currentProfile.email;
+    $("#account-detail-role").textContent = roleLabel;
+    $("#account-detail-enabled").textContent = currentProfile.enabled ? "Conta habilitada" : "Conta desabilitada";
+
+    const { data: directory } = await cloudClient.from("organization_members")
+      .select("id,full_name,role,manager_id,sub_id,coordinator_type")
+      .eq("enabled", true);
+    const ownMember = (directory || []).find((member) => member.id === currentProfile.organization_member_id);
+    const manager = (directory || []).find((member) => member.id === ownMember?.manager_id);
+    const { data: ownSub } = ownMember?.sub_id
+      ? await cloudClient.from("subs").select("code,name").eq("id", ownMember.sub_id).maybeSingle()
+      : { data: null };
+    const coordinator = currentProfile.role === "coordinator";
+    $("#account-manager-row").hidden = !coordinator;
+    $("#account-sub-row").hidden = !coordinator;
+    $("#account-type-row").hidden = !coordinator;
+    $("#account-detail-manager").textContent = manager?.full_name || "Cadastro pendente de revisão";
+    $("#account-detail-sub").textContent = ownSub ? `${ownSub.code} · ${ownSub.name}` : "Cadastro pendente de revisão";
+    $("#account-detail-type").textContent = ownMember?.coordinator_type === "infrastructure" ? "Infraestrutura" : ownMember?.coordinator_type === "superstructure" ? "Superestrutura" : "Cadastro pendente de revisão";
+
+    await renderAccountHistory();
+
+    if (coordinator) {
+      const primary = $("#account-primary-link");
+      primary.href = "index.html";
+      $("strong", primary).textContent = "Planejamento";
+      $("small", primary).textContent = "Criar e revisar seus intervalos";
+    }
+    if (currentProfile.role === "editor") {
+      $("#account-admin-link").hidden = false;
+      $("#account-examples").hidden = false;
+      $("#account-examples").addEventListener("click", () => {
+        sessionStorage.setItem("gestaoIntervaloRumo.dataset", "demo");
+        sessionStorage.removeItem("gestaoIntervaloRumo.demoPersona");
+        location.assign("gestao.html");
+      });
+    }
+    $("#account-sign-out").addEventListener("click", async () => {
+      await cloudClient.auth.signOut();
+      location.replace("login.html");
+    });
   }
 
   if (window.__GESTAO_TEST_MODE__) {
-    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes };
+    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes, snapshotSignature };
     return;
   }
 

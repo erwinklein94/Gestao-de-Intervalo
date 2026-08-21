@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR" class="auth-checking">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
+  <script src="assets/auth-guard.js"></script><meta name="description" content="Administração de usuários, hierarquia e SUBs.">
+  <title>Gestão de Intervalo | Administração</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
+  <link rel="stylesheet" href="styles.css?v=20260821-1"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260821-1" defer></script>
+</head>
+<body data-page="admin">
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+  <header class="site-header"><a class="brand" href="gestao.html"><img src="assets/rumo-logo-white.png" alt="Rumo"><span>Gestão de Intervalo</span></a><nav class="primary-nav" aria-label="Navegação principal" data-role-nav></nav><div class="header-tools"><span class="save-state" id="portal-state">Verificando acesso…</span><button class="theme-toggle" type="button" data-theme-toggle><span>☾</span><b>Tema escuro</b></button></div></header>
+  <main id="conteudo">
+    <section class="admin-hero"><p class="eyebrow">Acesso de Editor</p><h1>Administração do sistema</h1><p>Gerencie contas, vínculos organizacionais e a lista de SUBs sem alterar registros históricos.</p></section>
+    <section class="admin-workspace">
+      <nav class="admin-tabs"><button class="active" type="button" data-admin-tab="users">Perfis e hierarquia</button><button type="button" data-admin-tab="subs">SUBs</button></nav>
+      <section data-admin-view="users">
+        <article class="chart-card admin-form-card">
+          <div class="chart-heading"><div><p class="section-kicker">Nova conta</p><h2>Criar perfil de acesso</h2></div></div>
+          <form id="admin-user-form" class="admin-form">
+            <label class="field"><span>Nome completo *</span><input name="fullName" required maxlength="120"></label>
+            <label class="field"><span>E-mail *</span><input name="email" type="email" required></label>
+            <label class="field"><span>Senha inicial *</span><input name="password" type="password" minlength="8" required></label>
+            <label class="field"><span>Perfil *</span><select name="role" required><option value="director">Diretor</option><option value="consultant">Consultor</option><option value="manager">Gerente</option><option value="coordinator" selected>Coordenador</option><option value="editor">Editor</option></select></label>
+            <label class="field" data-coordinator-field><span>Gerente responsável *</span><select name="managerId"></select></label>
+            <label class="field" data-coordinator-field><span>SUB *</span><select name="subId"></select></label>
+            <label class="field" data-coordinator-field><span>Classificação *</span><select name="coordinatorType"><option value="infrastructure">Infraestrutura</option><option value="superstructure">Superestrutura</option></select></label>
+            <div class="admin-form-actions"><button class="button button-secondary" type="submit">Criar conta</button><span class="auth-feedback" id="admin-user-feedback"></span></div>
+          </form>
+        </article>
+        <header class="portal-section-heading"><div><p class="section-kicker">Contas reais</p><h2>Usuários e relações</h2><p>Coordenadores exigem Gerente, SUB e classificação.</p></div><label class="field compact-search"><span>Buscar</span><input id="user-search" type="search" placeholder="Nome ou e-mail"></label></header>
+        <div class="admin-list" id="admin-users"></div>
+      </section>
+      <section data-admin-view="subs" hidden>
+        <article class="chart-card admin-form-card"><div class="chart-heading"><div><p class="section-kicker">Cadastro operacional</p><h2>Adicionar SUB</h2></div></div><form id="sub-form" class="admin-form"><label class="field"><span>Código *</span><input name="code" required maxlength="30" placeholder="SUB 104"></label><label class="field"><span>Nome *</span><input name="name" required maxlength="120"></label><label class="field"><span>Operação</span><input name="operation" maxlength="120"></label><label class="field"><span>Ordem</span><input name="sortOrder" type="number" min="0" value="104"></label><div class="admin-form-actions"><button class="button button-secondary" type="submit">Adicionar SUB</button><span class="auth-feedback" id="sub-feedback"></span></div></form></article>
+        <header class="portal-section-heading"><div><p class="section-kicker">Fonte inicial: mapa da malha</p><h2>Lista administrável de SUBs</h2><p>As 103 identificações do documento foram preservadas; desative em vez de excluir.</p></div><label class="field compact-search"><span>Buscar</span><input id="sub-search" type="search" placeholder="Código, nome ou operação"></label></header>
+        <div class="admin-list" id="admin-subs"></div>
+      </section>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div><footer class="site-footer"><img src="assets/rumo-logo-blue.png" alt="Rumo"><span>Gestão de Intervalo · Administração protegida por perfil</span></footer>
+</body>
+</html>

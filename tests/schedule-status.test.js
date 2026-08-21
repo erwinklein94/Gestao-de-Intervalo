@@ -24,7 +24,7 @@ sandbox.window.window = sandbox.window;
 
 const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 vm.runInNewContext(source, sandbox, { filename: "app.js" });
-const { buildTimeline, executionStatus, intervalElapsedTime } = sandbox.window.__GESTAO_TEST_API__;
+const { buildTimeline, executionStatus, intervalElapsedTime, snapshotSignature } = sandbox.window.__GESTAO_TEST_API__;
 
 function plan(steps, overrides = {}) {
   return {
@@ -132,3 +132,14 @@ console.log("schedule-status: 5 cenários aprovados");
 }
 
 console.log("interval-elapsed: 3 cenários aprovados");
+
+{
+  const steps = [{ client_id: "step-1", status: "running" }];
+  const local = snapshotSignature({ database_id: null, client_id: "plan-1", title: "Plano" }, steps);
+  const confirmed = snapshotSignature({ database_id: "server-plan-id", client_id: "plan-1", title: "Plano" }, steps);
+  const edited = snapshotSignature({ database_id: "server-plan-id", client_id: "plan-1", title: "Plano revisado" }, steps);
+  assert.equal(local, confirmed, "a confirmação do ID do servidor não deve gerar uma nova operação offline");
+  assert.notEqual(confirmed, edited, "edições feitas durante a sincronização precisam gerar uma nova operação");
+}
+
+console.log("offline-signature: idempotência e reedição aprovadas");

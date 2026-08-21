@@ -8,8 +8,8 @@
   <meta name="referrer" content="no-referrer">
   <title>Acompanhamento do intervalo | Gestão de Intervalo</title>
   <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=20260820-5">
-  <script src="app.js?v=20260820-5" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20260821-1">
+  <script src="app.js?v=20260821-1" defer></script>
 </head>
 <body data-page="shared">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -47,11 +47,19 @@
       </section>
 
       <nav class="shared-tabs" aria-label="Visualização do acompanhamento">
-        <button class="active" type="button" data-shared-tab="execution" aria-selected="true">Execução</button>
+        <button class="active" type="button" data-shared-tab="plan" aria-selected="true">Plano</button>
+        <button type="button" data-shared-tab="execution" aria-selected="false">Execução</button>
         <button type="button" data-shared-tab="dashboard" aria-selected="false">Dashboard</button>
       </nav>
 
-      <section class="shared-view" id="shared-execution" data-shared-view="execution">
+      <section class="shared-view" id="shared-plan" data-shared-view="plan">
+        <section class="shared-section-heading"><div><p class="section-kicker">Plano do intervalo</p><h2>Dados e sequência planejada</h2></div><p>Informações protegidas para consulta.</p></section>
+        <div class="shared-plan-summary" id="shared-plan-summary"></div>
+        <article class="detail-note"><span>Observações de planejamento</span><p id="shared-planning-notes">—</p></article>
+        <div class="detail-step-list" id="shared-planned-steps"></div>
+      </section>
+
+      <section class="shared-view" id="shared-execution" data-shared-view="execution" hidden>
         <section class="shared-status" id="shared-status">
           <div class="shared-status-main">
             <p class="section-kicker" id="shared-status-label">Situação atual</p>
@@ -81,6 +89,7 @@
 
         <section class="shared-section-heading"><div><p class="section-kicker">Leitura operacional</p><h2>Etapas do intervalo</h2></div><p>Horários planejados e realizados, sem possibilidade de edição.</p></section>
         <div class="shared-steps" id="shared-steps"></div>
+        <section class="comments-panel shared-comments"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span id="shared-comment-count">0</span></header><div class="comments-list" id="shared-comments"></div></section>
       </section>
 
       <section class="shared-view" id="shared-dashboard" data-shared-view="dashboard" hidden>

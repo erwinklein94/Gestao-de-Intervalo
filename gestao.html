@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR" class="auth-checking">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="theme-color" content="#003865">
+  <script src="assets/auth-guard.js"></script>
+  <meta name="description" content="Acompanhamento gerencial, histórico e indicadores dos intervalos.">
+  <title>Gestão de Intervalo | Visão gerencial</title>
+  <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
+  <link rel="stylesheet" href="styles.css?v=20260821-1">
+  <script src="assets/supabase.min.js" defer></script>
+  <script src="assets/portal.js?v=20260821-1" defer></script>
+</head>
+<body data-page="management">
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+  <header class="site-header">
+    <a class="brand" href="gestao.html" aria-label="Gestão de Intervalo - início"><img src="assets/rumo-logo-white.png" alt="Rumo"><span>Gestão de Intervalo</span></a>
+    <nav class="primary-nav" aria-label="Navegação principal" data-role-nav></nav>
+    <div class="header-tools"><span class="save-state" id="portal-state">Carregando…</span><button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false"><span>☾</span><b>Tema escuro</b></button></div>
+  </header>
+
+  <aside class="demo-banner" id="demo-banner" hidden>
+    <div><strong>Ambiente de exemplos</strong><span>Dados demonstrativos isolados da operação real.</span></div>
+    <label>Visualizar como <select id="demo-persona"></select></label>
+    <button class="button button-light" id="exit-demo" type="button">Sair dos exemplos</button>
+  </aside>
+
+  <main id="conteudo">
+    <section class="management-hero">
+      <div><p class="eyebrow">Acompanhamento gerencial</p><h1>Todos os intervalos.<br>Uma visão clara.</h1><p id="scope-description">Carregando seu escopo de acesso…</p></div>
+      <div class="hero-snapshot"><span id="hero-role">—</span><strong id="hero-live-count">0</strong><small>intervalos em execução agora</small></div>
+    </section>
+
+    <nav class="management-tabs" aria-label="Áreas de acompanhamento">
+      <button type="button" data-view-button="delays">Maiores atrasos</button>
+      <button type="button" data-view-button="running">Em execução</button>
+      <button type="button" data-view-button="history">Histórico</button>
+      <button type="button" data-view-button="overview">Dashboard geral</button>
+    </nav>
+
+    <section class="management-workspace">
+      <section class="portal-filters" aria-labelledby="filters-title">
+        <div class="portal-filters-heading"><div><p class="section-kicker">Filtros do seu escopo</p><h2 id="filters-title">Localize um intervalo</h2></div><button type="button" class="button button-ghost" id="clear-filters">Limpar filtros</button></div>
+        <div class="portal-filter-grid">
+          <label class="field"><span>Gerente</span><select data-filter="manager"><option value="">Todos</option></select></label>
+          <label class="field"><span>Coordenador</span><select data-filter="coordinator"><option value="">Todos</option></select></label>
+          <label class="field"><span>SUB</span><select data-filter="sub"><option value="">Todas</option></select></label>
+          <label class="field"><span>Classificação</span><select data-filter="classification"><option value="">Todas</option><option value="infrastructure">Infraestrutura</option><option value="superstructure">Superestrutura</option></select></label>
+          <label class="field"><span>Status</span><select data-filter="status"><option value="">Todos</option><option value="planning">Planejamento</option><option value="executing">Em execução</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>
+          <label class="field"><span>Situação de prazo</span><select data-filter="deadline"><option value="">Todas</option><option value="late">Em atraso</option><option value="ontime">No prazo</option><option value="ahead">Adiantado</option></select></label>
+          <label class="field"><span>Tipo de intervalo</span><select data-filter="service"><option value="">Todos</option></select></label>
+          <label class="field"><span>Data inicial</span><input data-filter="dateFrom" type="date"></label>
+          <label class="field"><span>Data final</span><input data-filter="dateTo" type="date"></label>
+          <label class="field portal-search"><span>Local ou título</span><input data-filter="query" type="search" placeholder="Buscar trecho, local ou serviço"></label>
+        </div>
+      </section>
+
+      <section data-view="delays">
+        <header class="portal-section-heading"><div><p class="section-kicker">Prioridade operacional</p><h2>Intervalos com maiores atrasos</h2><p>Somente intervalos em execução com desvio positivo, do maior para o menor.</p></div><span class="result-count" data-result-count="delays">0 resultados</span></header>
+        <div class="interval-card-grid" id="delay-cards"></div>
+      </section>
+
+      <section data-view="running" hidden>
+        <header class="portal-section-heading"><div><p class="section-kicker">Operação ao vivo</p><h2>Intervalos em execução</h2><p>Frentes independentes, agrupadas por Infraestrutura e Superestrutura.</p></div><span class="result-count" data-result-count="running">0 resultados</span></header>
+        <section class="running-group"><div class="group-title"><span class="type-mark infra">I</span><div><h3>Infraestrutura</h3><p>Coordenações e frentes de infraestrutura</p></div></div><div class="interval-card-grid" id="infra-cards"></div></section>
+        <section class="running-group"><div class="group-title"><span class="type-mark super">S</span><div><h3>Superestrutura</h3><p>Coordenações e frentes de superestrutura</p></div></div><div class="interval-card-grid" id="super-cards"></div></section>
+      </section>
+
+      <section data-view="history" hidden>
+        <header class="portal-section-heading"><div><p class="section-kicker">Rastreabilidade</p><h2>Histórico de intervalos</h2><p>Planos concluídos permanecem disponíveis com execução, métricas e comentários.</p></div><span class="result-count" data-result-count="history">0 resultados</span></header>
+        <div class="interval-card-grid" id="history-cards"></div>
+      </section>
+
+      <section data-view="overview" hidden>
+        <header class="portal-section-heading"><div><p class="section-kicker">Indicadores do escopo</p><h2>Dashboard geral</h2><p>Métricas calculadas apenas sobre os dados permitidos para o perfil selecionado.</p></div><span class="result-count" data-result-count="overview">0 intervalos</span></header>
+        <div class="overview-kpis" id="overview-kpis"></div>
+        <div class="overview-grid">
+          <article class="chart-card"><div class="chart-heading"><div><p class="section-kicker">Distribuição</p><h2>Por classificação</h2></div></div><div class="portal-bars" id="classification-chart"></div></article>
+          <article class="chart-card"><div class="chart-heading"><div><p class="section-kicker">Pontualidade</p><h2>Dentro e fora do prazo</h2></div></div><div class="portal-bars" id="punctuality-chart"></div></article>
+          <article class="chart-card chart-card-wide"><div class="chart-heading"><div><p class="section-kicker">Tipos de intervalo</p><h2>Volume por serviço</h2></div></div><div class="portal-bars" id="service-chart"></div></article>
+          <article class="chart-card chart-card-wide"><div class="chart-heading"><div><p class="section-kicker">Tendência recente</p><h2>Desvio médio por intervalo</h2></div></div><div class="trend-list" id="trend-chart"></div></article>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <dialog class="interval-detail-dialog" id="interval-detail"><div id="interval-detail-content"></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <footer class="site-footer"><img src="assets/rumo-logo-blue.png" alt="Rumo"><span>Gestão de Intervalo · Operação com clareza e segurança</span></footer>
+</body>
+</html>

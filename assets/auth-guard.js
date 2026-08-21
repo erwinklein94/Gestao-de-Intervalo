@@ -8,7 +8,9 @@
     if (!token) location.replace(loginPage.href);
     else {
       const encoded = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-      window.__GESTAO_USER_ID__ = JSON.parse(atob(encoded)).sub;
+      const claims = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")));
+      if (!claims.sub || (claims.exp && claims.exp * 1000 <= Date.now())) throw new Error("Sessão expirada");
+      window.__GESTAO_USER_ID__ = claims.sub;
       document.documentElement.classList.add("auth-checking");
     }
   } catch (error) {
