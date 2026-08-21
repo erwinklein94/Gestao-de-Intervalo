@@ -690,7 +690,13 @@
     return !SINGLE_CLASSIFICATION_ROLES.includes(role);
   }
 
+  // Editor administra o sistema e nao responde por classificacao alguma.
+  function hasClassification(role) {
+    return role !== "editor";
+  }
+
   function profileClassifications(profile) {
+    if (!hasClassification(profile?.role)) return [];
     const list = Array.isArray(profile?.coordinator_types) ? profile.coordinator_types : [];
     const known = list.filter((entry) => CLASSIFICATION_ORDER.includes(entry));
     if (known.length) return CLASSIFICATION_ORDER.filter((entry) => known.includes(entry));
@@ -719,7 +725,10 @@
     if (!field) return;
     const previous = selectedClassifications(form);
     const selected = previous.length ? previous : fallback;
-    field.innerHTML = classificationFieldMarkup(form.role.value, selected, required);
+    // O campo e removido do DOM para o Editor: um select required apenas
+    // escondido continua participando da validacao e travaria o envio.
+    field.hidden = !hasClassification(form.role.value);
+    field.innerHTML = field.hidden ? "" : classificationFieldMarkup(form.role.value, selected, required);
   }
 
   function classificationChips(profile) {
@@ -741,6 +750,7 @@
   function orgNodeMarkup(profile, childrenByManager) {
     const reports = childrenByManager.get(profile.id) || [];
     const extras = extraManagerNames(profile);
+    const chips = classificationChips(profile);
     const details = [
       reports.length ? `<b>${reports.length}</b> subordinado${reports.length > 1 ? "s" : ""} direto${reports.length > 1 ? "s" : ""}` : "",
       extras.length ? `Também sob ${escapeHtml(extras.join(", "))}` : ""
@@ -750,7 +760,7 @@
         <span class="org-node-role">${escapeHtml(ROLE_LABELS[profile.role] || profile.role)}</span>
         <strong>${escapeHtml(profile.full_name || "Sem nome")}</strong>
         <span class="org-node-email">${escapeHtml(profile.email)}</span>
-        <span class="org-node-chips">${classificationChips(profile)}</span>
+        ${chips ? `<span class="org-node-chips">${chips}</span>` : ""}
         ${details ? `<span class="org-node-meta">${details}</span>` : ""}
         ${profile.enabled ? "" : '<span class="org-node-flag">Conta inativa</span>'}
       </article>
@@ -798,7 +808,7 @@
     const rows = members.filter((profile) => !query || `${profile.full_name} ${profile.email}`.toLocaleLowerCase("pt-BR").includes(query));
     $("#admin-users").innerHTML = rows.length ? rows.map((profile) => {
       const hierarchy = hierarchyRole(profile.role);
-      return `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Função</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label data-classification-field>${classificationFieldMarkup(profile.role, profileClassifications(profile))}</label><label data-edit-subordinates class="admin-hierarchy-field" ${hierarchy ? "" : "hidden"}><span data-subordinates-label>${escapeHtml(hierarchy?.label || "Subordinados diretos")}</span><select name="subordinateIds" multiple size="4">${subordinateOptions(profile.role, profile.id)}</select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`;
+      return `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Função</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label data-classification-field ${hasClassification(profile.role) ? "" : "hidden"}>${hasClassification(profile.role) ? classificationFieldMarkup(profile.role, profileClassifications(profile)) : ""}</label><label data-edit-subordinates class="admin-hierarchy-field" ${hierarchy ? "" : "hidden"}><span data-subordinates-label>${escapeHtml(hierarchy?.label || "Subordinados diretos")}</span><select name="subordinateIds" multiple size="4">${subordinateOptions(profile.role, profile.id)}</select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`;
     }).join("") : emptyMarkup("Nenhuma conta corresponde à busca.");
     $$(".user-admin-row").forEach((form) => {
       const profile = members.find((candidate) => candidate.id === form.dataset.userId);
@@ -815,7 +825,9 @@
         event.preventDefault(); const feedback = $(".auth-feedback", form);
         feedback.textContent = "Salvando…";
         const classifications = selectedClassifications(form);
-        if (!classifications.length) { feedback.textContent = "Selecione ao menos uma classificação."; return; }
+        if (hasClassification(form.role.value) && !classifications.length) {
+          feedback.textContent = "Selecione ao menos uma classificação."; return;
+        }
         const { error } = await baseClient.rpc("update_site_user_profile", {
           p_target_user_id: form.dataset.userId,
           p_full_name: form.fullName.value.trim(),
@@ -840,7 +852,9 @@
     $("#admin-user-form").addEventListener("submit", async (event) => {
       event.preventDefault(); const form = event.currentTarget; const feedback = $("#admin-user-feedback");
       const classifications = selectedClassifications(form);
-      if (!classifications.length) { feedback.textContent = "Selecione ao menos uma classificação."; return; }
+      if (hasClassification(form.role.value) && !classifications.length) {
+        feedback.textContent = "Selecione ao menos uma classificação."; return;
+      }
       feedback.textContent = "Criando conta…";
       const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, classifications, subordinateIds: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [] } });
       if (error || data?.error) { feedback.textContent = data?.error || error.message; return; }
