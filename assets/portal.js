@@ -771,14 +771,16 @@
   function renderOrgChart() {
     const root = $("#admin-org-chart");
     if (!root) return;
-    const byId = new Map(members.map((profile) => [profile.id, profile]));
+    // O Editor administra o sistema e nao ocupa posicao na hierarquia.
+    const ranked = members.filter((profile) => profile.role !== "editor");
+    const byId = new Map(ranked.map((profile) => [profile.id, profile]));
     const childrenByManager = new Map();
     const roots = [];
     const rank = (profile) => {
       const position = ORG_ROLE_ORDER.indexOf(profile.role);
       return position === -1 ? ORG_ROLE_ORDER.length : position;
     };
-    members.forEach((profile) => {
+    ranked.forEach((profile) => {
       const supervisor = profile.manager_id && byId.has(profile.manager_id) ? profile.manager_id : null;
       if (!supervisor) { roots.push(profile); return; }
       if (!childrenByManager.has(supervisor)) childrenByManager.set(supervisor, []);
