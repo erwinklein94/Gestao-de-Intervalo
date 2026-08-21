@@ -2540,11 +2540,20 @@
   }
 
   function sharedPage() {
-    const token = new URLSearchParams(location.search).get("token") || "";
+    const params = new URLSearchParams(location.search);
+    const token = params.get("token") || "";
+    const requestedPlanId = params.get("plan") || "";
+    const requestedView = params.get("view") || "plan";
+    const demoPersonaId = params.get("persona") || "";
+    const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const internalMode = Boolean(requestedPlanId);
+    const demoMode = internalMode && params.get("dataset") === "demo";
     const loading = $("#shared-loading");
     const errorPanel = $("#shared-error");
     const content = $("#shared-content");
     let sharedPlan = null;
+    let internalClient = null;
+    let internalUserVerified = false;
     let refreshTimer = null;
     let clockTimer = null;
 
@@ -2595,7 +2604,15 @@
       $("#shared-title").textContent = plan.title || "Intervalo sem nome";
       $("#shared-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Coordenação: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
       $("#shared-updated").textContent = `Atualizado às ${new Date(metadata.fetched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
-      $("#shared-expiry").textContent = `Link válido até ${new Date(metadata.share.expires_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`;
+      if (metadata.access_mode === "profile") {
+        $("#shared-access-title").textContent = "Acesso conforme o seu perfil";
+        $("#shared-access-description").textContent = "Página completa somente para consulta, com os mesmos limites de acesso da visão gerencial.";
+        $("#shared-expiry").textContent = demoMode ? "Ambiente de demonstração" : "Sessão autenticada";
+      } else {
+        $("#shared-access-title").textContent = "Acesso somente para consulta";
+        $("#shared-access-description").textContent = "Este link não permite alterar planejamento, horários ou registros. Solicite ao coordenador um novo link caso este expire.";
+        $("#shared-expiry").textContent = `Link válido até ${new Date(metadata.share.expires_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`;
+      }
       $("#shared-plan-summary").innerHTML = [
         ["Título", plan.title || "—"], ["Tipo", plan.serviceType || "—"], ["Data", plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
         ["Local", plan.location || "—"], ["Coordenador", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${plan.windowStart}–${plan.windowEnd}` : "—"]
@@ -2730,26 +2747,65 @@
       content.hidden = false;
     }
 
+    async function loadInternalPlan() {
+      if (!window.supabase?.createClient) throw new Error("Biblioteca de autenticação indisponível.");
+      if (!UUID_PATTERN.test(requestedPlanId)) throw new Error("O endereço não contém um intervalo válido.");
+      if (demoMode && !UUID_PATTERN.test(demoPersonaId)) throw new Error("A persona de demonstração não é válida.");
+      if (!internalClient) {
+        const headers = demoMode ? { "x-dataset-context": "demo", "x-demo-persona-id": demoPersonaId } : {};
+        internalClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+          global: { headers }
+        });
+      }
+      if (!internalUserVerified) {
+        const { data: { user }, error: userError } = await internalClient.auth.getUser();
+        if (userError || !user) throw new Error("Sua sessão expirou. Entre novamente no sistema e abra o acompanhamento pela visão gerencial.");
+        internalUserVerified = true;
+      }
+      const { data: plan, error } = await internalClient
+        .from("interval_plans")
+        .select("*,interval_steps(*),interval_comments(*)")
+        .eq("id", requestedPlanId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!plan) throw new Error("Este intervalo não está disponível para o seu perfil.");
+      renderSharedPlan(databaseToPlan(plan), {
+        access_mode: "profile",
+        fetched_at: new Date().toISOString(),
+        comments: (plan.interval_comments || []).filter((comment) => !comment.deleted_at)
+      });
+    }
+
     async function loadSharedPlan(showLoading = false) {
       if (showLoading) { loading.hidden = false; errorPanel.hidden = true; content.hidden = true; }
-      if (!/^[A-Za-z0-9_-]{43,128}$/.test(token)) { showError("O endereço está incompleto ou não contém um código de acesso válido."); return; }
       try {
+        if (internalMode) {
+          await loadInternalPlan();
+          return;
+        }
+        if (!/^[A-Za-z0-9_-]{43,128}$/.test(token)) { showError("O endereço está incompleto ou não contém um código de acesso válido."); return; }
         const response = await fetch(`${SUPABASE_URL}/functions/v1/interval-share`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }), cache: "no-store" });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) { showError(payload.error || "O link expirou, foi revogado ou não existe."); clearInterval(refreshTimer); return; }
         renderSharedPlan(databaseToPlan(payload.plan), payload);
       } catch (error) {
         console.warn("Falha ao atualizar acompanhamento.", error);
-        if (!sharedPlan) showError("Não foi possível conectar ao acompanhamento. Verifique sua internet e tente novamente.");
+        if (!sharedPlan) showError(error.message || "Não foi possível conectar ao acompanhamento. Verifique sua internet e tente novamente.");
         else $("#shared-updated").textContent = "Sem conexão · tentando novamente";
       }
     }
 
-    $$('[data-shared-tab]').forEach((button) => button.addEventListener("click", () => {
-      const tab = button.dataset.sharedTab;
-      $$('[data-shared-tab]').forEach((item) => { item.classList.toggle("active", item === button); item.setAttribute("aria-selected", String(item === button)); });
+    function activateSharedView(tab) {
+      $$('[data-shared-tab]').forEach((item) => {
+        const active = item.dataset.sharedTab === tab;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-selected", String(active));
+      });
       $$('[data-shared-view]').forEach((view) => { view.hidden = view.dataset.sharedView !== tab; });
-    }));
+    }
+    $$('[data-shared-tab]').forEach((button) => button.addEventListener("click", () => activateSharedView(button.dataset.sharedTab)));
+    activateSharedView(["plan", "execution", "dashboard"].includes(requestedView) ? requestedView : "plan");
     $("#shared-retry").addEventListener("click", () => loadSharedPlan(true));
     loadSharedPlan(true);
     refreshTimer = setInterval(() => loadSharedPlan(false), 10000);

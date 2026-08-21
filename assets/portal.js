@@ -402,6 +402,17 @@
     feedback.textContent = "Link válido por 3 dias copiado.";
   }
 
+  function fullTrackingUrl(plan, view = "plan") {
+    const link = new URL("acompanhar.html", location.href);
+    link.searchParams.set("plan", plan.id);
+    link.searchParams.set("view", ["plan", "execution", "dashboard"].includes(view) ? view : "plan");
+    if (demoMode) {
+      link.searchParams.set("dataset", "demo");
+      link.searchParams.set("persona", effectiveProfile.id);
+    }
+    return link.href;
+  }
+
   function openPlanDetail(planId, initialTab = "plan") {
     const plan = plans.find((candidate) => candidate.id === planId);
     if (!plan) return;
@@ -410,10 +421,11 @@
     const shareAllowed = !demoMode
       && ["editor", "coordinator"].includes(actualProfile.role)
       && plan.user_id === currentUser.id;
-    root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Página de acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link de acompanhamento</button><span class="auth-feedback"></span></div>' : ""}</div>`;
+    root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Prévia do acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header><div class="detail-full-page-bar"><span><strong>Quer ver todos os detalhes?</strong><small>Abra o acompanhamento completo com plano, execução e dashboard.</small></span><a class="button button-secondary" data-full-tracking-link href="${escapeHtml(fullTrackingUrl(plan, initialTab))}">Abrir página completa <i aria-hidden="true">↗</i></a></div><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link público temporário</button><span class="auth-feedback"></span></div>' : ""}</div>`;
     const activate = (tab) => {
       $$('[data-detail-tab]', root).forEach((button) => { const active = button.dataset.detailTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); });
       $$('[data-detail-view]', root).forEach((view) => { view.hidden = view.dataset.detailView !== tab; });
+      $('[data-full-tracking-link]', root).href = fullTrackingUrl(plan, tab);
     };
     activate(initialTab);
     $('[data-detail-close]', root).addEventListener("click", () => dialog.close());

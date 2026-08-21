@@ -805,6 +805,12 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .detail-dialog-header h2 { margin: 0; color: var(--blue); font-size: 25px; }
 .detail-dialog-header > div > span { color: var(--muted); font-size: 11px; }
 .detail-dialog-header > button { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 9px; color: var(--blue); background: var(--surface); font-size: 22px; cursor: pointer; }
+.detail-full-page-bar { flex: 0 0 auto; padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); background: var(--success-soft); }
+.detail-full-page-bar > span { min-width: 0; display: grid; gap: 2px; }
+.detail-full-page-bar strong { color: var(--blue); font-size: 11px; }
+.detail-full-page-bar small { color: var(--muted); font-size: 9px; }
+.detail-full-page-bar .button { flex: 0 0 auto; min-height: 40px; padding-inline: 15px; text-decoration: none; }
+.detail-full-page-bar .button i { font-size: 13px; font-style: normal; }
 .detail-tabs { flex: 0 0 58px; min-height: 58px; display: flex; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .detail-dialog-body { flex: 1 1 auto; min-height: 0; padding: 26px 28px max(34px, env(safe-area-inset-bottom)); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .detail-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
@@ -1413,6 +1419,9 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .detail-dialog-header { padding: 14px; gap: 10px; }
   .detail-dialog-header h2 { font-size: 18px; line-height: 1.2; overflow-wrap: anywhere; }
   .detail-dialog-header > button { flex: 0 0 40px; }
+  .detail-full-page-bar { padding: 8px 10px; gap: 8px; }
+  .detail-full-page-bar small { display: none; }
+  .detail-full-page-bar .button { min-height: 42px; padding-inline: 11px; font-size: 10px; }
   .detail-tabs { flex: 0 0 auto; }
   .detail-dialog-body {
     padding: 14px 14px max(24px, env(safe-area-inset-bottom));

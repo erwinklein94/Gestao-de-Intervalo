@@ -36,6 +36,13 @@ includesAll(management, [
   'id="interval-detail"',
   'id="interval-detail-content"'
 ], "estrutura da visão gerencial");
+includesAll(read("assets/portal.js"), [
+  "data-full-tracking-link",
+  "Abrir página completa",
+  "function fullTrackingUrl",
+  'link.searchParams.set("plan", plan.id)',
+  'link.searchParams.set("view",'
+], "atalho da prévia para o acompanhamento completo");
 
 assert.deepEqual(attributeValues(management, "data-view-button"), ["delays", "running", "history", "overview"]);
 assert.deepEqual(attributeValues(management, "data-view"), ["delays", "running", "history", "overview"]);
@@ -103,7 +110,14 @@ includesAll(execution, [
 const shared = read("acompanhar.html");
 assert.deepEqual(attributeValues(shared, "data-shared-tab"), ["plan", "execution", "dashboard"]);
 assert.deepEqual(attributeValues(shared, "data-shared-view"), ["plan", "execution", "dashboard"]);
-includesAll(shared, ['id="shared-plan-summary"', 'id="shared-planning-notes"', 'id="shared-planned-steps"', 'id="shared-comments"'], "acompanhamento público somente leitura");
+includesAll(shared, ['assets/supabase.min.js', 'id="shared-plan-summary"', 'id="shared-planning-notes"', 'id="shared-planned-steps"', 'id="shared-comments"', 'id="shared-access-title"', 'id="shared-access-description"'], "acompanhamento público e autenticado somente leitura");
+includesAll(read("app.js"), [
+  'const requestedPlanId = params.get("plan")',
+  'const requestedView = params.get("view")',
+  'async function loadInternalPlan()',
+  '.eq("id", requestedPlanId)',
+  'access_mode: "profile"'
+], "carregamento autenticado do acompanhamento completo");
 
 const styles = read("styles.css");
 includesAll(styles, [
@@ -112,6 +126,7 @@ includesAll(styles, [
   ".interval-card",
   ".interval-card.is-late",
   ".interval-detail-dialog",
+  ".detail-full-page-bar",
   ".interval-detail-dialog > div",
   "min-height: 0",
   "scrollbar-gutter: stable",
