@@ -3,7 +3,10 @@ import { createClient } from "npm:@supabase/supabase-js@2.112.3";
 
 const allowedOrigins = new Set(["https://erwinklein94.github.io", "http://localhost:4173", "http://localhost:4174", "http://localhost:8000"]);
 const roles = new Set(["director", "executive_manager", "manager", "consultant", "coordinator", "specialist"]);
-const classifications = new Set(["superstructure", "infrastructure", "modernization"]);
+const classificationOrder = ["superstructure", "infrastructure", "modernization"];
+// Coordenador e Especialista respondem por uma unica classificacao, para que o
+// intervalo criado por eles nunca fique com classificacao ambigua.
+const singleClassificationRoles = new Set(["coordinator", "specialist"]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function response(origin: string | null, body: unknown, status = 200) {
@@ -18,6 +21,15 @@ function response(origin: string | null, body: unknown, status = 200) {
 function uniqueIds(value: unknown) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map(String).filter((id) => uuidPattern.test(id)))];
+}
+
+// Aceita a lista nova (classifications) e o campo antigo (classification) de clientes em cache.
+function normalizeClassifications(body: Record<string, unknown>) {
+  const raw = Array.isArray(body.classifications)
+    ? body.classifications
+    : [body.classification].filter((entry) => entry !== undefined && entry !== null);
+  const chosen = new Set(raw.map(String));
+  return classificationOrder.filter((entry) => chosen.has(entry));
 }
 
 async function validateSubordinates(admin: ReturnType<typeof createClient>, role: string, subordinateIds: string[]) {
@@ -93,14 +105,17 @@ Deno.serve(async (request) => {
     const password = String(body.password || "");
     const fullName = String(body.fullName || "").trim();
     const role = String(body.role || "");
-    const classification = String(body.classification || "");
+    const classifications = normalizeClassifications(body);
     const subordinateIds = uniqueIds(body.subordinateIds);
     const rawSubordinateCount = Array.isArray(body.subordinateIds) ? body.subordinateIds.length : 0;
 
     if (!fullName || fullName.length > 120 || !email || email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)
-      || password.length < 8 || password.length > 256 || !roles.has(role) || !classifications.has(classification)
+      || password.length < 8 || password.length > 256 || !roles.has(role) || !classifications.length
       || subordinateIds.length !== rawSubordinateCount) {
       return response(origin, { error: "Revise nome, e-mail, senha, função e classificação informados." }, 400);
+    }
+    if (singleClassificationRoles.has(role) && classifications.length > 1) {
+      return response(origin, { error: "Coordenador e Especialista respondem por uma única classificação." }, 400);
     }
     if (!await validateSubordinates(admin, role, subordinateIds)) {
       return response(origin, { error: "Um ou mais subordinados selecionados não estão disponíveis para esta função." }, 400);
@@ -115,8 +130,8 @@ Deno.serve(async (request) => {
     try {
       const { data: profile, error: profileError } = await admin.from("user_profiles").upsert({
         id: created.user.id, email, full_name: fullName, role, enabled: true, manager_id: null, sub_id: null,
-        coordinator_type: classification, profile_needs_review: false,
-      }, { onConflict: "id" }).select("id,email,full_name,role,enabled,manager_id,coordinator_type,organization_member_id").single();
+        coordinator_types: classifications, profile_needs_review: false,
+      }, { onConflict: "id" }).select("id,email,full_name,role,enabled,manager_id,coordinator_type,coordinator_types,organization_member_id").single();
       if (profileError || !profile) throw profileError || new Error("missing_profile");
       await replaceDirectReports(admin, created.user.id, role, subordinateIds);
       return response(origin, { action: "created", user: { id: created.user.id, email: created.user.email, email_confirmed: Boolean(created.user.email_confirmed_at) }, profile }, 201);

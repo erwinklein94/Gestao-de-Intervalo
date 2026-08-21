@@ -13,6 +13,9 @@
   };
   const READ_ONLY_ROLES = ["director", "executive_manager", "consultant", "manager"];
   const TYPE_LABELS = { infrastructure: "Infraestrutura", superstructure: "Superestrutura", modernization: "Modernização" };
+  const CLASSIFICATION_ORDER = ["superstructure", "infrastructure", "modernization"];
+  const SINGLE_CLASSIFICATION_ROLES = ["coordinator", "specialist"];
+  const ORG_ROLE_ORDER = ["editor", "director", "executive_manager", "consultant", "manager", "coordinator", "specialist"];
   const STATUS_LABELS = { planning: "Planejamento", executing: "Em execução", completed: "Concluído", cancelled: "Cancelado" };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -643,7 +646,7 @@
     setState("Atualizando cadastros…", "syncing");
     const [profilesResult, assignmentsResult] = await Promise.all([
       baseClient.from("user_profiles")
-        .select("id,email,full_name,role,enabled,manager_id,coordinator_type,profile_needs_review,organization_member_id,created_at")
+        .select("id,email,full_name,role,enabled,manager_id,coordinator_type,coordinator_types,profile_needs_review,organization_member_id,created_at")
         .order("created_at", { ascending: false }),
       baseClient.from("manager_operator_assignments").select("manager_member_id,operator_member_id")
     ]);
@@ -683,6 +686,103 @@
     return Array.from(select?.selectedOptions || [], (option) => option.value).filter(Boolean);
   }
 
+  function allowsManyClassifications(role) {
+    return !SINGLE_CLASSIFICATION_ROLES.includes(role);
+  }
+
+  function profileClassifications(profile) {
+    const list = Array.isArray(profile?.coordinator_types) ? profile.coordinator_types : [];
+    const known = list.filter((entry) => CLASSIFICATION_ORDER.includes(entry));
+    if (known.length) return CLASSIFICATION_ORDER.filter((entry) => known.includes(entry));
+    return profile?.coordinator_type ? [profile.coordinator_type] : ["infrastructure"];
+  }
+
+  // Coordenador e Especialista respondem por uma unica classificacao, para que o
+  // intervalo criado por eles nunca fique ambiguo. As demais funcoes acumulam.
+  function classificationFieldMarkup(role, selected, required = false) {
+    const many = allowsManyClassifications(role);
+    const chosen = many ? selected : selected.slice(0, 1);
+    const options = CLASSIFICATION_ORDER
+      .map((value) => `<option value="${value}" ${chosen.includes(value) ? "selected" : ""}>${escapeHtml(TYPE_LABELS[value])}</option>`)
+      .join("");
+    return `<span>${many ? "Classificações" : "Classificação"}${required ? " *" : ""}</span><select name="classification" required ${many ? 'multiple size="3"' : ""}>${options}</select>${many ? '<small class="field-help">Selecione uma ou mais. No computador, use Ctrl para combinar.</small>' : ""}`;
+  }
+
+  function selectedClassifications(form) {
+    const select = form.classification;
+    const chosen = select?.multiple ? selectedIds(select) : [select?.value].filter(Boolean);
+    return CLASSIFICATION_ORDER.filter((entry) => chosen.includes(entry));
+  }
+
+  function refreshClassificationField(form, fallback, required = false) {
+    const field = $("[data-classification-field]", form);
+    if (!field) return;
+    const previous = selectedClassifications(form);
+    const selected = previous.length ? previous : fallback;
+    field.innerHTML = classificationFieldMarkup(form.role.value, selected, required);
+  }
+
+  function classificationChips(profile) {
+    return profileClassifications(profile)
+      .map((entry) => `<i class="org-chip org-chip-${entry}">${escapeHtml(TYPE_LABELS[entry])}</i>`)
+      .join("");
+  }
+
+  function extraManagerNames(profile) {
+    if (!SINGLE_CLASSIFICATION_ROLES.includes(profile.role) || !profile.organization_member_id) return [];
+    const primary = members.find((candidate) => candidate.id === profile.manager_id);
+    return managerAssignments
+      .filter((assignment) => assignment.operator_member_id === profile.organization_member_id)
+      .map((assignment) => members.find((candidate) => candidate.organization_member_id === assignment.manager_member_id))
+      .filter((manager) => manager && manager.organization_member_id !== primary?.organization_member_id)
+      .map((manager) => manager.full_name || manager.email);
+  }
+
+  function orgNodeMarkup(profile, childrenByManager) {
+    const reports = childrenByManager.get(profile.id) || [];
+    const extras = extraManagerNames(profile);
+    const details = [
+      reports.length ? `<b>${reports.length}</b> subordinado${reports.length > 1 ? "s" : ""} direto${reports.length > 1 ? "s" : ""}` : "",
+      extras.length ? `Também sob ${escapeHtml(extras.join(", "))}` : ""
+    ].filter(Boolean).join(" · ");
+    return `<li>
+      <article class="org-node ${profile.enabled ? "" : "is-disabled"}" data-role="${escapeHtml(profile.role)}">
+        <span class="org-node-role">${escapeHtml(ROLE_LABELS[profile.role] || profile.role)}</span>
+        <strong>${escapeHtml(profile.full_name || "Sem nome")}</strong>
+        <span class="org-node-email">${escapeHtml(profile.email)}</span>
+        <span class="org-node-chips">${classificationChips(profile)}</span>
+        ${details ? `<span class="org-node-meta">${details}</span>` : ""}
+        ${profile.enabled ? "" : '<span class="org-node-flag">Conta inativa</span>'}
+      </article>
+      ${reports.length ? `<ul>${reports.map((child) => orgNodeMarkup(child, childrenByManager)).join("")}</ul>` : ""}
+    </li>`;
+  }
+
+  function renderOrgChart() {
+    const root = $("#admin-org-chart");
+    if (!root) return;
+    const byId = new Map(members.map((profile) => [profile.id, profile]));
+    const childrenByManager = new Map();
+    const roots = [];
+    const rank = (profile) => {
+      const position = ORG_ROLE_ORDER.indexOf(profile.role);
+      return position === -1 ? ORG_ROLE_ORDER.length : position;
+    };
+    members.forEach((profile) => {
+      const supervisor = profile.manager_id && byId.has(profile.manager_id) ? profile.manager_id : null;
+      if (!supervisor) { roots.push(profile); return; }
+      if (!childrenByManager.has(supervisor)) childrenByManager.set(supervisor, []);
+      childrenByManager.get(supervisor).push(profile);
+    });
+    const sortBranch = (list) => list.sort((a, b) =>
+      rank(a) - rank(b) || (a.full_name || a.email).localeCompare(b.full_name || b.email, "pt-BR"));
+    sortBranch(roots);
+    childrenByManager.forEach(sortBranch);
+    root.innerHTML = roots.length
+      ? `<ul class="org-tree">${roots.map((profile) => orgNodeMarkup(profile, childrenByManager)).join("")}</ul>`
+      : emptyMarkup("Nenhum perfil cadastrado.");
+  }
+
   function updateCreateHierarchyFields() {
     const form = $("#admin-user-form");
     const hierarchy = hierarchyRole(form.role.value);
@@ -690,6 +790,7 @@
     field.hidden = !hierarchy;
     $("[data-subordinates-label]", field).textContent = hierarchy?.label || "Subordinados diretos";
     form.subordinateIds.innerHTML = subordinateOptions(form.role.value);
+    refreshClassificationField(form, ["infrastructure"], true);
   }
 
   function renderAdminUsers() {
@@ -697,30 +798,34 @@
     const rows = members.filter((profile) => !query || `${profile.full_name} ${profile.email}`.toLocaleLowerCase("pt-BR").includes(query));
     $("#admin-users").innerHTML = rows.length ? rows.map((profile) => {
       const hierarchy = hierarchyRole(profile.role);
-      return `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Função</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label><span>Classificação</span><select name="classification" required><option value="superstructure" ${profile.coordinator_type === "superstructure" ? "selected" : ""}>Superestrutura</option><option value="infrastructure" ${profile.coordinator_type === "infrastructure" ? "selected" : ""}>Infraestrutura</option><option value="modernization" ${profile.coordinator_type === "modernization" ? "selected" : ""}>Modernização</option></select></label><label data-edit-subordinates class="admin-hierarchy-field" ${hierarchy ? "" : "hidden"}><span data-subordinates-label>${escapeHtml(hierarchy?.label || "Subordinados diretos")}</span><select name="subordinateIds" multiple size="4">${subordinateOptions(profile.role, profile.id)}</select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`;
+      return `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Função</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label data-classification-field>${classificationFieldMarkup(profile.role, profileClassifications(profile))}</label><label data-edit-subordinates class="admin-hierarchy-field" ${hierarchy ? "" : "hidden"}><span data-subordinates-label>${escapeHtml(hierarchy?.label || "Subordinados diretos")}</span><select name="subordinateIds" multiple size="4">${subordinateOptions(profile.role, profile.id)}</select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`;
     }).join("") : emptyMarkup("Nenhuma conta corresponde à busca.");
     $$(".user-admin-row").forEach((form) => {
+      const profile = members.find((candidate) => candidate.id === form.dataset.userId);
       const updateHierarchyFields = () => {
         const hierarchy = hierarchyRole(form.role.value);
         const field = $("[data-edit-subordinates]", form);
         field.hidden = !hierarchy;
         $("[data-subordinates-label]", field).textContent = hierarchy?.label || "Subordinados diretos";
         form.subordinateIds.innerHTML = subordinateOptions(form.role.value, form.dataset.userId);
+        refreshClassificationField(form, profileClassifications(profile));
       };
       form.role.addEventListener("change", updateHierarchyFields);
       form.addEventListener("submit", async (event) => {
         event.preventDefault(); const feedback = $(".auth-feedback", form);
         feedback.textContent = "Salvando…";
+        const classifications = selectedClassifications(form);
+        if (!classifications.length) { feedback.textContent = "Selecione ao menos uma classificação."; return; }
         const { error } = await baseClient.rpc("update_site_user_profile", {
           p_target_user_id: form.dataset.userId,
           p_full_name: form.fullName.value.trim(),
           p_role: form.role.value,
           p_enabled: form.enabled.disabled ? true : form.enabled.checked,
           p_subordinate_ids: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [],
-          p_classification: form.classification.value
+          p_classifications: classifications
         });
         if (error) { feedback.textContent = error.message; return; }
-        feedback.textContent = "Salvo."; await loadAdminData(); renderAdminUsers();
+        feedback.textContent = "Salvo."; await loadAdminData(); renderAdminUsers(); renderOrgChart();
       });
     });
   }
@@ -730,13 +835,16 @@
     updateCreateHierarchyFields();
     $("#admin-user-form").role.addEventListener("change", updateCreateHierarchyFields);
     renderAdminUsers();
+    renderOrgChart();
     $("#user-search").addEventListener("input", renderAdminUsers);
     $("#admin-user-form").addEventListener("submit", async (event) => {
       event.preventDefault(); const form = event.currentTarget; const feedback = $("#admin-user-feedback");
+      const classifications = selectedClassifications(form);
+      if (!classifications.length) { feedback.textContent = "Selecione ao menos uma classificação."; return; }
       feedback.textContent = "Criando conta…";
-      const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, classification: form.classification.value, subordinateIds: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [] } });
+      const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, classifications, subordinateIds: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [] } });
       if (error || data?.error) { feedback.textContent = data?.error || error.message; return; }
-      feedback.textContent = "Conta criada e habilitada."; form.reset(); form.role.value = "coordinator"; await loadAdminData(); updateCreateHierarchyFields(); renderAdminUsers();
+      feedback.textContent = "Conta criada e habilitada."; form.reset(); form.role.value = "coordinator"; await loadAdminData(); updateCreateHierarchyFields(); renderAdminUsers(); renderOrgChart();
     });
   }
 

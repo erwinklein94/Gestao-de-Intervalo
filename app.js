@@ -2927,7 +2927,7 @@
 
     const [{ data: directory }, { data: managerLinks }] = await Promise.all([
       cloudClient.from("organization_members")
-        .select("id,full_name,role,manager_id,coordinator_type")
+        .select("id,full_name,role,manager_id,coordinator_type,coordinator_types")
         .eq("enabled", true),
       cloudClient.from("manager_operator_assignments")
         .select("manager_member_id,operator_member_id")
@@ -2943,7 +2943,11 @@
     $("#account-detail-manager").textContent = isOperatorRole(currentProfile.role)
       ? managerNames.join(", ") || manager?.full_name || "Sem gestor direto definido"
       : manager?.full_name || "Sem gestor direto definido";
-    $("#account-detail-type").textContent = ownMember?.coordinator_type === "infrastructure" ? "Infraestrutura" : ownMember?.coordinator_type === "superstructure" ? "Superestrutura" : ownMember?.coordinator_type === "modernization" ? "Modernização" : "Cadastro pendente de revisão";
+    const classificationLabels = { infrastructure: "Infraestrutura", superstructure: "Superestrutura", modernization: "Modernização" };
+    const ownClassifications = (Array.isArray(ownMember?.coordinator_types) && ownMember.coordinator_types.length
+      ? ownMember.coordinator_types
+      : [ownMember?.coordinator_type]).map((entry) => classificationLabels[entry]).filter(Boolean);
+    $("#account-detail-type").textContent = ownClassifications.join(" · ") || "Cadastro pendente de revisão";
 
     await renderAccountHistory();
 

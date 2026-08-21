@@ -4,7 +4,7 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
   <script src="assets/auth-guard.js"></script><meta name="description" content="Administração de usuários e hierarquia organizacional.">
   <title>Gestão de Intervalo | Administração</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
-<link rel="stylesheet" href="styles.css?v=20260821-8"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260821-7" defer></script>
+<link rel="stylesheet" href="styles.css?v=20260821-9"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260821-8" defer></script>
 </head>
 <body data-page="admin">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -20,10 +20,14 @@
             <label class="field"><span>E-mail *</span><input name="email" type="email" required></label>
             <label class="field"><span>Senha inicial *</span><input name="password" type="password" minlength="8" required></label>
             <label class="field"><span>Função *</span><select name="role" required><option value="director">Diretor</option><option value="executive_manager">Gerente Executivo</option><option value="manager">Gerente</option><option value="consultant">Consultor</option><option value="coordinator" selected>Coordenador</option><option value="specialist">Especialista</option></select></label>
-            <label class="field"><span>Classificação *</span><select name="classification" required><option value="superstructure">Superestrutura</option><option value="infrastructure" selected>Infraestrutura</option><option value="modernization">Modernização</option></select></label>
+            <label class="field" data-classification-field><span>Classificação *</span><select name="classification" required><option value="superstructure">Superestrutura</option><option value="infrastructure" selected>Infraestrutura</option><option value="modernization">Modernização</option></select></label>
             <label class="field admin-hierarchy-field" data-subordinates-field hidden><span data-subordinates-label>Subordinados diretos</span><select name="subordinateIds" multiple size="5" aria-describedby="admin-hierarchy-help"></select><small class="field-help" id="admin-hierarchy-help">Selecione quantos forem necessários. No computador, use Ctrl para combinar opções.</small></label>
             <div class="admin-form-actions"><button class="button button-secondary" type="submit">Criar conta</button><span class="auth-feedback" id="admin-user-feedback"></span></div>
           </form>
+        </article>
+        <article class="chart-card org-chart-card">
+          <div class="chart-heading"><div><p class="section-kicker">Hierarquia</p><h2>Organograma</h2><p>Cada card mostra função, classificações e quem reporta a quem.</p></div><div class="org-chart-legend"><i class="org-chip org-chip-superstructure">Superestrutura</i><i class="org-chip org-chip-infrastructure">Infraestrutura</i><i class="org-chip org-chip-modernization">Modernização</i></div></div>
+          <div class="org-chart" id="admin-org-chart"></div>
         </article>
         <header class="portal-section-heading"><div><p class="section-kicker">Contas reais</p><h2>Usuários e relações</h2><p>Gerentes Executivos agrupam Gerentes; Gerentes agrupam Coordenadores e Especialistas.</p></div><label class="field compact-search"><span>Buscar</span><input id="user-search" type="search" placeholder="Nome ou e-mail"></label></header>
         <div class="admin-list" id="admin-users"></div>
