@@ -33,6 +33,10 @@ includesAll(management, [
   'id="punctuality-chart"',
   'id="service-chart"',
   'id="trend-chart"',
+  'id="export-management-xlsx"',
+  'id="export-management-pdf"',
+  'id="portal-print-title"',
+  'assets/jszip.min.js',
   'id="interval-detail"',
   'id="interval-detail-content"'
 ], "estrutura da visão gerencial");
@@ -43,6 +47,12 @@ includesAll(read("assets/portal.js"), [
   'link.searchParams.set("plan", plan.id)',
   'link.searchParams.set("view",'
 ], "atalho da prévia para o acompanhamento completo");
+includesAll(read("assets/portal.js"), [
+  "async function exportManagementToXlsx",
+  "function exportManagementToPdf",
+  'type="dataBar"',
+  "selectedFilterSummary()"
+], "exportações do escopo gerencial filtrado");
 
 assert.deepEqual(attributeValues(management, "data-view-button"), ["delays", "running", "history", "overview"]);
 assert.deepEqual(attributeValues(management, "data-view"), ["delays", "running", "history", "overview"]);
@@ -96,7 +106,7 @@ const account = read("conta.html");
 includesAll(account, ['id="account-history"', 'id="account-admin-link"', 'id="account-examples"', "gestao.html?view=history", "SUBs sob responsabilidade"], "histórico e atalhos da Minha Conta");
 
 const planning = read("index.html");
-includesAll(planning, ['name="subId"', "SUB responsável"], "seleção da SUB no planejamento");
+includesAll(planning, ['name="subId"', "SUB responsável", 'id="export-button"', 'id="export-plan-pdf"'], "seleção da SUB e exportações do planejamento");
 
 const execution = read("executar.html");
 includesAll(execution, [
@@ -104,19 +114,28 @@ includesAll(execution, [
   'id="execution-comments"',
   'id="execution-comment-form"',
   'id="execution-comment-feedback"',
-  'id="execution-comments-locked"'
+  'id="execution-comments-locked"',
+  'id="export-execution-xlsx"',
+  'id="print-button"',
+  'assets/jszip.min.js'
 ], "comentários da execução");
+
+const dashboard = read("dashboard.html");
+includesAll(dashboard, ['id="export-dashboard-xlsx"', 'id="export-dashboard-pdf"', 'assets/jszip.min.js'], "exportações do dashboard");
 
 const shared = read("acompanhar.html");
 assert.deepEqual(attributeValues(shared, "data-shared-tab"), ["plan", "execution", "dashboard"]);
 assert.deepEqual(attributeValues(shared, "data-shared-view"), ["plan", "execution", "dashboard"]);
-includesAll(shared, ['assets/supabase.min.js', 'id="shared-plan-summary"', 'id="shared-planning-notes"', 'id="shared-planned-steps"', 'id="shared-comments"', 'id="shared-access-title"', 'id="shared-access-description"'], "acompanhamento público e autenticado somente leitura");
+includesAll(shared, ['assets/supabase.min.js', 'assets/jszip.min.js', 'id="export-shared-xlsx"', 'id="export-shared-pdf"', 'id="shared-plan-summary"', 'id="shared-planning-notes"', 'id="shared-planned-steps"', 'id="shared-comments"', 'id="shared-access-title"', 'id="shared-access-description"'], "acompanhamento público e autenticado somente leitura");
 includesAll(read("app.js"), [
   'const requestedPlanId = params.get("plan")',
   'const requestedView = params.get("view")',
   'async function loadInternalPlan()',
   '.eq("id", requestedPlanId)',
-  'access_mode: "profile"'
+  'access_mode: "profile"',
+  "function exportPageToPdf",
+  "async function exportPlanFromButton",
+  'type="dataBar"'
 ], "carregamento autenticado do acompanhamento completo");
 
 const styles = read("styles.css");
@@ -127,6 +146,10 @@ includesAll(styles, [
   ".interval-card.is-late",
   ".interval-detail-dialog",
   ".detail-full-page-bar",
+  ".page-export-bar",
+  "body.portal-printing",
+  "body.shared-printing",
+  "body.planning-printing",
   ".interval-detail-dialog > div",
   "min-height: 0",
   "scrollbar-gutter: stable",

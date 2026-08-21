@@ -17,7 +17,26 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+  const escapeXml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&apos;", '"': "&quot;" })[character]);
   const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  function excelColumn(index) {
+    let result = "";
+    let value = index;
+    while (value > 0) {
+      value--;
+      result = String.fromCharCode(65 + (value % 26)) + result;
+      value = Math.floor(value / 26);
+    }
+    return result;
+  }
+
+  function excelCell(column, row, value, style = 5) {
+    const reference = `${excelColumn(column)}${row}`;
+    if (value === null || value === undefined || value === "") return `<c r="${reference}" s="${style}"/>`;
+    if (typeof value === "number" && Number.isFinite(value)) return `<c r="${reference}" s="${style}"><v>${value}</v></c>`;
+    return `<c r="${reference}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+  }
 
   function timeToMinutes(value) {
     const match = /^(\d{2}):(\d{2})/.exec(value || "");
@@ -116,7 +135,7 @@
   }
 
   if (window.__GESTAO_TEST_MODE__) {
-    window.__GESTAO_PORTAL_TEST_API__ = { timeToMinutes, alignTime, intervalMetrics, filterPlans, roleScopeDescription, roleCapabilities };
+    window.__GESTAO_PORTAL_TEST_API__ = { timeToMinutes, alignTime, intervalMetrics, filterPlans, roleScopeDescription, roleCapabilities, managementSummary, exportManagementToXlsx };
     return;
   }
 
@@ -333,6 +352,117 @@
     setCount("overview", filtered.length, "intervalo");
   }
 
+  function selectedFilterSummary() {
+    const entries = $$('[data-filter]').map((field) => {
+      const label = field.closest("label")?.querySelector("span")?.textContent?.trim() || "Filtro";
+      const value = field.tagName === "SELECT" ? field.selectedOptions[0]?.textContent?.trim() : field.value.trim();
+      const empty = !field.value || ["Todos", "Todas"].includes(value);
+      return empty ? null : `${label}: ${value}`;
+    }).filter(Boolean);
+    return entries.length ? entries.join(" · ") : "Sem filtros adicionais · todo o escopo autorizado";
+  }
+
+  function managementSummary(filtered) {
+    const completed = filtered.filter((plan) => plan.status === "completed");
+    const metrics = completed.map((plan) => intervalMetrics(plan));
+    const late = metrics.filter((metric) => metric.variance > 0).length;
+    const ahead = metrics.filter((metric) => metric.variance < 0).length;
+    const onTime = metrics.filter((metric) => metric.variance === 0).length;
+    const averageDelayValues = metrics.map((metric) => metric.variance).filter((value) => Number.isFinite(value) && value > 0);
+    const averageDelay = averageDelayValues.length ? Math.round(averageDelayValues.reduce((sum, value) => sum + value, 0) / averageDelayValues.length) : 0;
+    const classification = [
+      ["Infraestrutura", filtered.filter((plan) => plan.coordinator_type === "infrastructure").length],
+      ["Superestrutura", filtered.filter((plan) => plan.coordinator_type === "superstructure").length]
+    ];
+    const punctuality = [["No prazo", onTime], ["Adiantado", ahead], ["Em atraso", late]];
+    const services = Object.entries(filtered.reduce((result, plan) => {
+      const key = plan.service_type || "Não informado";
+      result[key] = (result[key] || 0) + 1;
+      return result;
+    }, {})).sort((a, b) => b[1] - a[1]);
+    const kpis = [
+      ["Total de intervalos", filtered.length],
+      ["Em execução", filtered.filter((plan) => plan.status === "executing").length],
+      ["Concluídos", completed.length],
+      ["Dentro do prazo", onTime + ahead],
+      ["Fora do prazo", late],
+      ["Atraso médio (min)", averageDelay]
+    ];
+    return { classification, punctuality, services, kpis };
+  }
+
+  async function exportManagementToXlsx(filtered) {
+    if (typeof JSZip === "undefined") throw new Error("Gerador de Excel indisponível");
+    const summary = managementSummary(filtered);
+    const chartRows = Math.max(summary.classification.length, summary.punctuality.length, summary.services.length, summary.kpis.length, 1);
+    const dataHeaderRow = 8 + chartRows;
+    const dataStartRow = dataHeaderRow + 1;
+    const rows = [];
+    rows.push(`<row r="1" ht="30" customHeight="1">${excelCell(1, 1, "GESTÃO DE INTERVALO - VISÃO GERENCIAL", 1)}</row>`);
+    rows.push(`<row r="2">${excelCell(1, 2, `Gerado em ${new Date().toLocaleString("pt-BR")}`, 5)}</row>`);
+    rows.push(`<row r="3" ht="30" customHeight="1">${excelCell(1, 3, selectedFilterSummary(), 9)}</row>`);
+    rows.push(`<row r="5" ht="24" customHeight="1">${excelCell(1, 5, "RESUMO E GRÁFICOS", 2)}</row>`);
+    rows.push(`<row r="6">${excelCell(1, 6, "Classificação", 4)}${excelCell(2, 6, "Quantidade", 4)}${excelCell(4, 6, "Pontualidade", 4)}${excelCell(5, 6, "Quantidade", 4)}${excelCell(7, 6, "Tipo de intervalo", 4)}${excelCell(8, 6, "Quantidade", 4)}${excelCell(10, 6, "Indicador", 4)}${excelCell(11, 6, "Valor", 4)}</row>`);
+    for (let index = 0; index < chartRows; index++) {
+      const row = index + 7;
+      const classification = summary.classification[index] || [];
+      const punctuality = summary.punctuality[index] || [];
+      const service = summary.services[index] || [];
+      const kpi = summary.kpis[index] || [];
+      rows.push(`<row r="${row}">${excelCell(1, row, classification[0])}${excelCell(2, row, classification[1])}${excelCell(4, row, punctuality[0])}${excelCell(5, row, punctuality[1])}${excelCell(7, row, service[0])}${excelCell(8, row, service[1])}${excelCell(10, row, kpi[0])}${excelCell(11, row, kpi[1])}</row>`);
+    }
+    rows.push(`<row r="${dataHeaderRow - 1}" ht="24" customHeight="1">${excelCell(1, dataHeaderRow - 1, "DADOS DOS INTERVALOS", 2)}</row>`);
+    const headers = ["Título", "Data", "Status", "Situação do prazo", "Desvio (min)", "Progresso (%)", "Gerente", "Coordenador", "SUB", "Classificação", "Tipo", "Local", "Janela"];
+    rows.push(`<row r="${dataHeaderRow}" ht="28" customHeight="1">${headers.map((header, index) => excelCell(index + 1, dataHeaderRow, header, 4)).join("")}</row>`);
+    filtered.forEach((plan, index) => {
+      const row = dataStartRow + index;
+      const metrics = intervalMetrics(plan);
+      const deadline = metrics.variance == null || metrics.variance === 0 ? "No prazo" : metrics.variance > 0 ? "Em atraso" : "Adiantado";
+      const values = [plan.title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, plan.subCode, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${(plan.window_start || "—").slice(0, 5)}-${(plan.window_end || "—").slice(0, 5)}`];
+      rows.push(`<row r="${row}" ht="25" customHeight="1">${values.map((value, column) => excelCell(column + 1, row, value, [0, 10, 11].includes(column) ? 9 : 5)).join("")}</row>`);
+    });
+    const lastRow = Math.max(dataHeaderRow, dataStartRow + filtered.length - 1);
+    const barRange = (column, count, priority, color) => count ? `<conditionalFormatting sqref="${column}7:${column}${6 + count}"><cfRule type="dataBar" priority="${priority}"><dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/><color rgb="${color}"/></dataBar></cfRule></conditionalFormatting>` : "";
+    const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${dataHeaderRow}" topLeftCell="A${dataStartRow}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="6" width="16" customWidth="1"/><col min="7" max="8" width="25" customWidth="1"/><col min="9" max="10" width="18" customWidth="1"/><col min="11" max="13" width="24" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A${dataHeaderRow}:M${lastRow}"/><mergeCells count="4"><mergeCell ref="A1:M1"/><mergeCell ref="A3:M3"/><mergeCell ref="A5:M5"/><mergeCell ref="A${dataHeaderRow - 1}:M${dataHeaderRow - 1}"/></mergeCells>${barRange("B", summary.classification.length, 1, "FF003865")}${barRange("E", summary.punctuality.length, 2, "FF22A884")}${barRange("H", summary.services.length, 3, "FF32A6E6")}</worksheet>`;
+    const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Verdana"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font></fonts><fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF003865"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF32A6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE5EBEE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9F8F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF0ED"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF6D1"/></patternFill></fill></fills><borders count="2"><border/><border><left style="thin"><color rgb="FFCAD6DD"/></left><right style="thin"><color rgb="FFCAD6DD"/></right><top style="thin"><color rgb="FFCAD6DD"/></top><bottom style="thin"><color rgb="FFCAD6DD"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0"/><xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0"/><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0"><alignment wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
+    zip.folder("_rels").file(".rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
+    const xl = zip.folder("xl");
+    xl.file("workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Resumo e dados" sheetId="1" r:id="rId1"/></sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`);
+    xl.folder("_rels").file("workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+    xl.folder("worksheets").file("sheet1.xml", sheetXml);
+    xl.file("styles.xml", stylesXml);
+    const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", compression: "DEFLATE" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `visao-gerencial-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    return blob;
+  }
+
+  function exportManagementToPdf(button) {
+    const activeButton = $('[data-view-button].active');
+    const viewLabel = activeButton?.textContent?.trim() || "Visão gerencial";
+    $("#portal-print-title").textContent = `Visão gerencial - ${viewLabel}`;
+    $("#portal-print-filters").textContent = `${ROLE_LABELS[effectiveProfile.role] || effectiveProfile.role} · ${selectedFilterSummary()} · ${new Date().toLocaleString("pt-BR")}`;
+    const previousTitle = document.title;
+    document.title = `visao-gerencial-${viewLabel.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+    document.body.classList.add("portal-printing");
+    button.disabled = true;
+    button.textContent = "Preparando PDF…";
+    const restore = () => {
+      document.title = previousTitle;
+      document.body.classList.remove("portal-printing");
+      button.disabled = false;
+      button.textContent = "Exportar PDF";
+      window.removeEventListener("afterprint", restore);
+    };
+    window.addEventListener("afterprint", restore);
+    setTimeout(() => window.print(), 80);
+  }
+
   function renderManagement() {
     const filtered = filterPlans(plans, currentFilters());
     const delays = filtered.filter((plan) => plan.status === "executing" && intervalMetrics(plan).variance > 0).sort((a, b) => intervalMetrics(b).variance - intervalMetrics(a).variance);
@@ -483,6 +613,22 @@
     $$('[data-view-button]').forEach((button) => button.addEventListener("click", () => activateManagementView(button.dataset.viewButton)));
     $$("[data-filter]").forEach((field) => field.addEventListener(field.type === "search" ? "input" : "change", renderManagement));
     $("#clear-filters").addEventListener("click", () => { $$("[data-filter]").forEach((field) => { field.value = ""; }); renderManagement(); });
+    $("#export-management-xlsx").addEventListener("click", async () => {
+      const button = $("#export-management-xlsx");
+      button.disabled = true;
+      button.textContent = "Gerando planilha…";
+      try {
+        await exportManagementToXlsx(filterPlans(plans, currentFilters()));
+        showToast("Planilha do escopo atual exportada.");
+      } catch (error) {
+        console.error(error);
+        showToast("Não foi possível gerar a planilha.");
+      } finally {
+        button.disabled = false;
+        button.textContent = "Exportar Excel";
+      }
+    });
+    $("#export-management-pdf").addEventListener("click", () => exportManagementToPdf($("#export-management-pdf")));
     $(".management-workspace").addEventListener("click", (event) => { const card = event.target.closest("[data-plan-detail]"); if (card) openPlanDetail(card.dataset.planDetail); });
     $("#interval-detail").addEventListener("click", (event) => { if (event.target === event.currentTarget) event.currentTarget.close(); });
 

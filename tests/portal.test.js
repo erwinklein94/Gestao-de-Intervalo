@@ -24,6 +24,7 @@ const {
   alignTime,
   intervalMetrics,
   filterPlans,
+  managementSummary,
   roleScopeDescription,
   roleCapabilities
 } = api;
@@ -225,6 +226,12 @@ assert.deepEqual(ids(filterPlans(plans, {
   deadline: "late",
   query: "ponte"
 })), ["late-infra"]);
+
+const exportSummary = managementSummary(plans);
+assert.deepEqual(JSON.parse(JSON.stringify(exportSummary.classification)), [["Infraestrutura", 2], ["Superestrutura", 1]]);
+assert.equal(exportSummary.services.reduce((total, [, count]) => total + count, 0), 3);
+assert.equal(exportSummary.kpis.find(([label]) => label === "Total de intervalos")[1], 3);
+assert.equal(exportSummary.kpis.find(([label]) => label === "Fora do prazo")[1], 1);
 
 assert.equal(roleScopeDescription("director"), roleScopeDescription("consultant"));
 assert.equal(roleScopeDescription("executive_manager"), roleScopeDescription("director"));

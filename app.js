@@ -1132,7 +1132,7 @@
     });
     const lastRow = Math.max(9, dataRows.length + 9);
     const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="9" topLeftCell="A10" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="38" customWidth="1"/><col min="3" max="4" width="18" customWidth="1"/><col min="5" max="5" width="24" customWidth="1"/><col min="6" max="7" width="17" customWidth="1"/><col min="8" max="9" width="22" customWidth="1"/><col min="10" max="10" width="16" customWidth="1"/><col min="11" max="11" width="52" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A9:K${lastRow}"/><mergeCells count="17"><mergeCell ref="A1:K1"/><mergeCell ref="A3:C3"/><mergeCell ref="D3:F3"/><mergeCell ref="G3:H3"/><mergeCell ref="I3:K3"/><mergeCell ref="A4:C4"/><mergeCell ref="D4:F4"/><mergeCell ref="G4:H4"/><mergeCell ref="I4:K4"/><mergeCell ref="A5:C5"/><mergeCell ref="D5:F5"/><mergeCell ref="G5:H5"/><mergeCell ref="I5:K5"/><mergeCell ref="A6:C6"/><mergeCell ref="D6:K6"/><mergeCell ref="A7:C7"/><mergeCell ref="D7:K7"/></mergeCells></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="9" topLeftCell="A10" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="38" customWidth="1"/><col min="3" max="4" width="18" customWidth="1"/><col min="5" max="5" width="24" customWidth="1"/><col min="6" max="7" width="17" customWidth="1"/><col min="8" max="9" width="22" customWidth="1"/><col min="10" max="10" width="16" customWidth="1"/><col min="11" max="11" width="52" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A9:K${lastRow}"/><mergeCells count="17"><mergeCell ref="A1:K1"/><mergeCell ref="A3:C3"/><mergeCell ref="D3:F3"/><mergeCell ref="G3:H3"/><mergeCell ref="I3:K3"/><mergeCell ref="A4:C4"/><mergeCell ref="D4:F4"/><mergeCell ref="G4:H4"/><mergeCell ref="I4:K4"/><mergeCell ref="A5:C5"/><mergeCell ref="D5:F5"/><mergeCell ref="G5:H5"/><mergeCell ref="I5:K5"/><mergeCell ref="A6:C6"/><mergeCell ref="D6:K6"/><mergeCell ref="A7:C7"/><mergeCell ref="D7:K7"/></mergeCells>${lastRow >= 10 ? `<conditionalFormatting sqref="E10:E${lastRow}"><cfRule type="dataBar" priority="1"><dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/><color rgb="FF003865"/></dataBar></cfRule></conditionalFormatting><conditionalFormatting sqref="H10:H${lastRow}"><cfRule type="dataBar" priority="2"><dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/><color rgb="FF22A884"/></dataBar></cfRule></conditionalFormatting>` : ""}</worksheet>`;
     const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Verdana"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font></fonts><fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF003865"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF32A6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE5EBEE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9F8F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF0ED"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF6D1"/></patternFill></fill></fills><borders count="2"><border/><border><left style="thin"><color rgb="FFCAD6DD"/></left><right style="thin"><color rgb="FFCAD6DD"/></right><top style="thin"><color rgb="FFCAD6DD"/></top><bottom style="thin"><color rgb="FFCAD6DD"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0"/><xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFont="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
     const zip = new JSZip();
@@ -1151,6 +1151,44 @@
     link.download = `${(plan.title || "plano-intervalo").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase()}.xlsx`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    return blob;
+  }
+
+  function fileSlug(value) {
+    return String(value || "relatorio").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase();
+  }
+
+  function exportPageToPdf(button, fileName, idleLabel, printClass = "exporting-pdf") {
+    const previousTitle = document.title;
+    document.title = fileSlug(fileName);
+    document.body.classList.add(printClass);
+    button.disabled = true;
+    button.textContent = "Preparando PDF…";
+    const restore = () => {
+      document.title = previousTitle;
+      document.body.classList.remove(printClass);
+      button.disabled = false;
+      button.textContent = idleLabel;
+      window.removeEventListener("afterprint", restore);
+    };
+    window.addEventListener("afterprint", restore);
+    setTimeout(() => window.print(), 80);
+  }
+
+  async function exportPlanFromButton(button, plan, idleLabel = "Exportar Excel") {
+    button.disabled = true;
+    button.textContent = "Gerando planilha…";
+    try {
+      await exportPlanToXlsx(plan);
+      showToast("Planilha Excel exportada com sucesso.");
+    } catch (error) {
+      console.error(error);
+      showToast("Não foi possível gerar a planilha Excel.");
+      throw error;
+    } finally {
+      button.disabled = false;
+      button.textContent = idleLabel;
+    }
   }
 
   function planningPage() {
@@ -1586,21 +1624,9 @@
     });
 
     $("#export-button").addEventListener("click", async () => {
-      const plan = activePlan();
-      const button = $("#export-button");
-      button.disabled = true;
-      button.textContent = "Gerando planilha…";
-      try {
-        await exportPlanToXlsx(plan);
-        showToast("Planilha Excel exportada com sucesso.");
-      } catch (error) {
-        console.error(error);
-        showToast("Não foi possível gerar a planilha Excel.");
-      } finally {
-        button.disabled = false;
-        button.textContent = "Exportar Excel (.xlsx)";
-      }
+      try { await exportPlanFromButton($("#export-button"), activePlan(), "Exportar Excel (.xlsx)"); } catch (_) { /* feedback exibido */ }
     });
+    $("#export-plan-pdf").addEventListener("click", () => exportPageToPdf($("#export-plan-pdf"), `planejamento-${activePlan().title || "intervalo"}`, "Exportar PDF", "planning-printing"));
 
     renderForm();
     configureCoordinatorField();
@@ -2032,7 +2058,10 @@
       renderComments();
       scheduleCloudSync(true);
     });
-    $("#print-button").addEventListener("click", () => window.print());
+    $("#export-execution-xlsx").addEventListener("click", async () => {
+      try { await exportPlanFromButton($("#export-execution-xlsx"), plan); } catch (_) { /* feedback exibido */ }
+    });
+    $("#print-button").addEventListener("click", () => exportPageToPdf($("#print-button"), `execucao-${plan.title || "intervalo"}`, "Exportar PDF", "execution-printing"));
 
     function renderPage() {
       plan = activePlan();
@@ -2227,22 +2256,10 @@
       render();
     });
 
-    $("#export-dashboard-pdf").addEventListener("click", () => {
-      const button = $("#export-dashboard-pdf");
-      const previousTitle = document.title;
-      const planName = (activePlan()?.title || "intervalo").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase();
-      document.title = `dashboard-${planName}`;
-      button.disabled = true;
-      button.textContent = "Preparando PDF…";
-      const restore = () => {
-        document.title = previousTitle;
-        button.disabled = false;
-        button.textContent = "Exportar PDF";
-        window.removeEventListener("afterprint", restore);
-      };
-      window.addEventListener("afterprint", restore);
-      setTimeout(() => window.print(), 80);
+    $("#export-dashboard-xlsx").addEventListener("click", async () => {
+      try { await exportPlanFromButton($("#export-dashboard-xlsx"), activePlan()); } catch (_) { /* feedback exibido */ }
     });
+    $("#export-dashboard-pdf").addEventListener("click", () => exportPageToPdf($("#export-dashboard-pdf"), `dashboard-${activePlan()?.title || "intervalo"}`, "Exportar PDF", "dashboard-printing"));
 
     const requestedPlan = new URLSearchParams(location.search).get("plan");
     if (requestedPlan) selectPlan(requestedPlan);
@@ -2556,6 +2573,15 @@
     let internalUserVerified = false;
     let refreshTimer = null;
     let clockTimer = null;
+
+    $("#export-shared-xlsx").addEventListener("click", async () => {
+      if (!sharedPlan) return;
+      try { await exportPlanFromButton($("#export-shared-xlsx"), sharedPlan); } catch (_) { /* estado do botão restaurado */ }
+    });
+    $("#export-shared-pdf").addEventListener("click", () => {
+      if (!sharedPlan) return;
+      exportPageToPdf($("#export-shared-pdf"), `acompanhamento-${sharedPlan.title || "intervalo"}`, "Exportar PDF", "shared-printing");
+    });
 
     function renderSharedClock() {
       const now = new Date();
@@ -3001,7 +3027,7 @@
   }
 
   if (window.__GESTAO_TEST_MODE__) {
-    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes, snapshotSignature };
+    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes, snapshotSignature, exportPlanToXlsx };
     return;
   }
 

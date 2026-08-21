@@ -8,9 +8,10 @@
   <meta name="description" content="Acompanhamento gerencial, histórico e indicadores dos intervalos.">
   <title>Gestão de Intervalo | Visão gerencial</title>
   <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=20260821-6">
+  <link rel="stylesheet" href="styles.css?v=20260821-7">
+  <script src="assets/jszip.min.js" defer></script>
   <script src="assets/supabase.min.js" defer></script>
-  <script src="assets/portal.js?v=20260821-5" defer></script>
+  <script src="assets/portal.js?v=20260821-6" defer></script>
 </head>
 <body data-page="management">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -39,7 +40,13 @@
       <button type="button" role="tab" aria-selected="false" data-view-button="overview">Dashboard geral</button>
     </nav>
 
+    <section class="page-export-bar portal-export-bar" aria-label="Exportar dados da visão gerencial">
+      <div><strong>Exportar dados do seu escopo</strong><span>Os filtros atuais e as permissões do seu perfil serão respeitados.</span></div>
+      <div class="page-export-actions"><button class="button button-ghost" id="export-management-xlsx" type="button">Exportar Excel</button><button class="button button-secondary" id="export-management-pdf" type="button">Exportar PDF</button></div>
+    </section>
+
     <section class="management-workspace">
+      <div class="portal-print-header"><img src="assets/rumo-logo-blue.png" alt="Rumo"><div><strong id="portal-print-title">Visão gerencial</strong><span id="portal-print-filters">Escopo autorizado</span></div></div>
       <section class="portal-filters" aria-labelledby="filters-title">
         <div class="portal-filters-heading"><div><p class="section-kicker">Filtros do seu escopo</p><h2 id="filters-title">Localize um intervalo</h2></div><button type="button" class="button button-ghost" id="clear-filters">Limpar filtros</button></div>
         <div class="portal-filter-grid">

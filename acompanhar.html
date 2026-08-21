@@ -8,9 +8,10 @@
   <meta name="referrer" content="no-referrer">
   <title>Acompanhamento do intervalo | Gestão de Intervalo</title>
   <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=20260821-6">
+  <link rel="stylesheet" href="styles.css?v=20260821-7">
+  <script src="assets/jszip.min.js" defer></script>
   <script src="assets/supabase.min.js" defer></script>
-  <script src="app.js?v=20260821-5" defer></script>
+  <script src="app.js?v=20260821-6" defer></script>
 </head>
 <body data-page="shared">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -45,6 +46,11 @@
           <i aria-hidden="true"></i>
           <div><strong>Atualização automática</strong><span id="shared-updated">Consultando…</span></div>
         </div>
+      </section>
+
+      <section class="page-export-bar" aria-label="Exportar acompanhamento">
+        <div><strong>Exportar acompanhamento</strong><span>Inclui dados do plano, execução e gráficos do dashboard.</span></div>
+        <div class="page-export-actions"><button class="button button-ghost" id="export-shared-xlsx" type="button">Exportar Excel</button><button class="button button-secondary" id="export-shared-pdf" type="button">Exportar PDF</button></div>
       </section>
 
       <nav class="shared-tabs" aria-label="Visualização do acompanhamento" role="tablist">
