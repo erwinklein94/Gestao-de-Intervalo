@@ -41,16 +41,27 @@
     return `<c r="${reference}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
   }
 
-  function timeToMinutes(value) {
-    const match = /^(\d{2}):(\d{2})/.exec(value || "");
-    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  // Os horarios sao timestamps de parede local ("2026-08-13T22:00:00"), entao o
+  // dia e dado e nao precisa mais ser inferido para intervalos que viram a noite.
+  function stampMinutes(value) {
+    if (!value) return null;
+    const parsed = Date.parse(String(value).replace(" ", "T"));
+    return Number.isFinite(parsed) ? parsed / 60000 : null;
   }
 
-  function alignTime(value, anchor) {
-    let minutes = timeToMinutes(value);
-    if (minutes == null) return null;
-    while (anchor != null && minutes < anchor - 720) minutes += 1440;
-    return minutes;
+  function stampClock(value) {
+    return value ? String(value).slice(11, 16) : "—";
+  }
+
+  // Mostra so a hora quando cai no dia de referencia do intervalo; fora dele,
+  // acrescenta o dia para deixar a virada explicita.
+  function stampLabel(value, referenceDate) {
+    if (!value) return "—";
+    const text = String(value).replace(" ", "T");
+    const day = text.slice(0, 10);
+    const clock = text.slice(11, 16);
+    if (!referenceDate || day === referenceDate) return clock;
+    return `${clock} ${day.slice(8, 10)}/${day.slice(5, 7)}`;
   }
 
   function formatMinutes(value) {
@@ -65,37 +76,35 @@
 
   function intervalMetrics(plan, now = new Date()) {
     const steps = [...(plan.interval_steps || [])].sort((a, b) => a.position - b.position);
-    const windowStart = timeToMinutes(plan.window_start);
-    const windowEnd = alignTime(plan.window_end, windowStart);
+    const windowEnd = stampMinutes(plan.window_end);
     const resolved = steps.filter(isResolved).length;
     const progress = steps.length ? Math.round((resolved / steps.length) * 100) : 0;
     let variance = null;
 
     if (plan.status === "completed") {
-      const actualEnds = steps.map((step) => alignTime(step.actual_end, windowStart)).filter(Number.isFinite);
+      const actualEnds = steps.map((step) => stampMinutes(step.actual_end)).filter(Number.isFinite);
       if (actualEnds.length && windowEnd != null) variance = Math.max(...actualEnds) - windowEnd;
     } else if (plan.status === "executing") {
       const milestones = [];
       steps.forEach((step) => {
-        const plannedStart = alignTime(step.planned_start, windowStart);
-        const plannedEnd = alignTime(step.planned_end, plannedStart ?? windowStart);
-        const actualStart = alignTime(step.actual_start, windowStart);
-        const actualEnd = alignTime(step.actual_end, actualStart ?? windowStart);
+        const plannedStart = stampMinutes(step.planned_start);
+        const plannedEnd = stampMinutes(step.planned_end);
+        const actualStart = stampMinutes(step.actual_start);
+        const actualEnd = stampMinutes(step.actual_end);
         if (actualEnd != null && plannedEnd != null) milestones.push({ position: step.position * 2 + 1, variance: actualEnd - plannedEnd });
         else if (actualStart != null && plannedStart != null) milestones.push({ position: step.position * 2, variance: actualStart - plannedStart });
       });
       if (milestones.length) variance = milestones.sort((a, b) => b.position - a.position)[0].variance;
-      const sameDay = plan.interval_date === new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      // Etapa aberta que ja passou do previsto: o atraso corre agora. Com
+      // timestamp nao ha mais o recorte "so se for hoje" que existia quando o
+      // dia precisava ser adivinhado.
+      const current = now.getTime() / 60000;
       const running = steps.filter((step) => step.actual_start && !step.actual_end && !isResolved(step));
-      if (sameDay && running.length) {
-        let current = now.getHours() * 60 + now.getMinutes();
-        if (windowStart != null && current < windowStart - 720) current += 1440;
-        const worst = running.map((step) => {
-          const plannedEnd = alignTime(step.planned_end, windowStart);
-          return plannedEnd == null ? null : current - plannedEnd;
-        }).filter(Number.isFinite);
-        if (worst.length) variance = Math.max(variance ?? -Infinity, ...worst);
-      }
+      const worst = running.map((step) => {
+        const plannedEnd = stampMinutes(step.planned_end);
+        return plannedEnd == null ? null : current - plannedEnd;
+      }).filter(Number.isFinite);
+      if (worst.length) variance = Math.max(variance ?? -Infinity, ...worst);
     }
 
     const deadline = variance == null || Math.abs(variance) < 1 ? "ontime" : variance > 0 ? "late" : "ahead";
@@ -138,7 +147,7 @@
   }
 
   if (window.__GESTAO_TEST_MODE__) {
-    window.__GESTAO_PORTAL_TEST_API__ = { timeToMinutes, alignTime, intervalMetrics, filterPlans, roleScopeDescription, roleCapabilities, managementSummary, exportManagementToXlsx };
+    window.__GESTAO_PORTAL_TEST_API__ = { stampMinutes, stampLabel, intervalMetrics, filterPlans, roleScopeDescription, roleCapabilities, managementSummary, exportManagementToXlsx };
     return;
   }
 
@@ -208,7 +217,8 @@
     } else if (["coordinator", "specialist"].includes(role)) {
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (role === "editor") {
-      links = [["gestao.html", "Gestão", "management"], ["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
+      // O Editor administra o sistema; nao planeja nem executa intervalos.
+      links = [["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
     } else if (roleCapabilities(role).canUseManagement) {
       links = [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
     } else {
@@ -299,7 +309,7 @@
       <strong class="interval-card-title">${escapeHtml(plan.title || "Intervalo sem título")}</strong>
       <span class="interval-card-location">${escapeHtml(plan.location || "Local não informado")} · ${date}</span>
       <span class="interval-card-people"><small>Gerente</small><b>${escapeHtml(plan.managerName)}</b><small>Responsável</small><b>${escapeHtml(plan.coordinatorName)}</b></span>
-      <span class="interval-card-tags"><i>${escapeHtml(plan.service_type || "Tipo não informado")}</i><i>${escapeHtml((plan.window_start || "—").slice(0, 5))}–${escapeHtml((plan.window_end || "—").slice(0, 5))}</i></span>
+      <span class="interval-card-tags"><i>${escapeHtml(plan.service_type || "Tipo não informado")}</i><i>${escapeHtml(stampLabel(plan.window_start, plan.interval_date))}–${escapeHtml(stampLabel(plan.window_end, plan.interval_date))}</i></span>
       <span class="interval-card-progress"><span><i style="width:${metrics.progress}%"></i></span><b>${metrics.progress}%</b></span>
       ${deadlineMarkup(metrics)}
     </button>`;
@@ -415,7 +425,7 @@
       const row = dataStartRow + index;
       const metrics = intervalMetrics(plan);
       const deadline = metrics.variance == null || metrics.variance === 0 ? "No prazo" : metrics.variance > 0 ? "Em atraso" : "Adiantado";
-      const values = [plan.title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${(plan.window_start || "—").slice(0, 5)}-${(plan.window_end || "—").slice(0, 5)}`];
+      const values = [plan.title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${stampLabel(plan.window_start, plan.interval_date)}-${stampLabel(plan.window_end, plan.interval_date)}`];
       rows.push(`<row r="${row}" ht="25" customHeight="1">${values.map((value, column) => excelCell(column + 1, row, value, [0, 9, 10].includes(column) ? 9 : 5)).join("")}</row>`);
     });
     const lastRow = Math.max(dataHeaderRow, dataStartRow + filtered.length - 1);
@@ -492,7 +502,7 @@
 
   function planTabMarkup(plan) {
     const steps = plan.interval_steps || [];
-    return `<div class="detail-summary-grid"><div><span>Título</span><strong>${escapeHtml(plan.title || "—")}</strong></div><div><span>Tipo</span><strong>${escapeHtml(plan.service_type || "—")}</strong></div><div><span>Local</span><strong>${escapeHtml(plan.location || "—")}</strong></div><div><span>Data e janela</span><strong>${escapeHtml(plan.interval_date || "—")} · ${escapeHtml((plan.window_start || "—").slice(0, 5))}–${escapeHtml((plan.window_end || "—").slice(0, 5))}</strong></div><div><span>Gerente</span><strong>${escapeHtml(plan.managerName)}</strong></div><div><span>Responsável</span><strong>${escapeHtml(plan.coordinatorName)}</strong></div><div><span>Classificação</span><strong>${escapeHtml(TYPE_LABELS[plan.coordinator_type] || "—")}</strong></div></div><article class="detail-note"><span>Observações de planejamento</span><p>${escapeHtml(plan.planning_notes || "Nenhuma observação registrada.")}</p></article><div class="detail-step-list">${steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml((step.planned_start || "—").slice(0, 5))}–${escapeHtml((step.planned_end || "—").slice(0, 5))}</small></div></article>`).join("") || emptyMarkup("Este plano não possui etapas.")}</div>`;
+    return `<div class="detail-summary-grid"><div><span>Título</span><strong>${escapeHtml(plan.title || "—")}</strong></div><div><span>Tipo</span><strong>${escapeHtml(plan.service_type || "—")}</strong></div><div><span>Local</span><strong>${escapeHtml(plan.location || "—")}</strong></div><div><span>Data e janela</span><strong>${escapeHtml(plan.interval_date || "—")} · ${escapeHtml(stampLabel(plan.window_start, plan.interval_date))}–${escapeHtml(stampLabel(plan.window_end, plan.interval_date))}</strong></div><div><span>Gerente</span><strong>${escapeHtml(plan.managerName)}</strong></div><div><span>Responsável</span><strong>${escapeHtml(plan.coordinatorName)}</strong></div><div><span>Classificação</span><strong>${escapeHtml(TYPE_LABELS[plan.coordinator_type] || "—")}</strong></div></div><article class="detail-note"><span>Observações de planejamento</span><p>${escapeHtml(plan.planning_notes || "Nenhuma observação registrada.")}</p></article><div class="detail-step-list">${steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(stampLabel(step.planned_start, plan.interval_date))}–${escapeHtml(stampLabel(step.planned_end, plan.interval_date))}</small></div></article>`).join("") || emptyMarkup("Este plano não possui etapas.")}</div>`;
   }
 
   function executionTabMarkup(plan) {
@@ -501,14 +511,14 @@
     const canComment = !demoMode
       && plan.status === "executing"
       && (actualProfile.role === "editor" || (["coordinator", "specialist"].includes(actualProfile.role) && plan.user_id === currentUser.id));
-    return `<div class="detail-status ${metrics.deadline}">${deadlineMarkup(metrics)}<strong>${metrics.progress}% concluído</strong><span>${metrics.resolved} de ${metrics.steps.length} etapas encerradas</span></div><div class="detail-step-list execution-readonly">${metrics.steps.map((step, index) => `<article><span>${isResolved(step) ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado ${escapeHtml((step.planned_start || "—").slice(0, 5))}–${escapeHtml((step.planned_end || "—").slice(0, 5))} · Realizado ${escapeHtml((step.actual_start || "—").slice(0, 5))}–${escapeHtml((step.actual_end || "—").slice(0, 5))}</small>${step.actual_notes ? `<p>${escapeHtml(String(step.actual_notes).replace(/^\[\[ETAPA_NAO_EXECUTADA\]\]\s*/, "Não executada · "))}</p>` : ""}</div></article>`).join("") || emptyMarkup("Nenhuma etapa registrada.")}</div><article class="detail-note"><span>Registro geral da execução</span><p>${escapeHtml(plan.execution_notes || "Nenhuma observação registrada.")}</p></article><section class="comments-panel"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span>${comments.filter((comment) => !comment.deleted_at).length}</span></header><div class="comments-list">${comments.map((comment) => commentMarkup(comment, plan)).join("") || emptyMarkup("Ainda não há comentários neste intervalo.")}</div>${canComment ? '<form id="detail-comment-form"><label class="field"><span>Novo comentário</span><textarea name="content" maxlength="2000" rows="3" required placeholder="Registre uma atualização relevante"></textarea></label><button class="button button-secondary" type="submit">Adicionar comentário</button><span class="auth-feedback"></span></form>' : `<p class="comments-locked">${demoMode ? "Comentários desativados no ambiente de exemplos." : "Após o encerramento, os comentários tornam-se permanentes."}</p>`}</section>`;
+    return `<div class="detail-status ${metrics.deadline}">${deadlineMarkup(metrics)}<strong>${metrics.progress}% concluído</strong><span>${metrics.resolved} de ${metrics.steps.length} etapas encerradas</span></div><div class="detail-step-list execution-readonly">${metrics.steps.map((step, index) => `<article><span>${isResolved(step) ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado ${escapeHtml(stampLabel(step.planned_start, plan.interval_date))}–${escapeHtml(stampLabel(step.planned_end, plan.interval_date))} · Realizado ${escapeHtml(stampLabel(step.actual_start, plan.interval_date))}–${escapeHtml(stampLabel(step.actual_end, plan.interval_date))}</small>${step.actual_notes ? `<p>${escapeHtml(String(step.actual_notes).replace(/^\[\[ETAPA_NAO_EXECUTADA\]\]\s*/, "Não executada · "))}</p>` : ""}</div></article>`).join("") || emptyMarkup("Nenhuma etapa registrada.")}</div><article class="detail-note"><span>Registro geral da execução</span><p>${escapeHtml(plan.execution_notes || "Nenhuma observação registrada.")}</p></article><section class="comments-panel"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span>${comments.filter((comment) => !comment.deleted_at).length}</span></header><div class="comments-list">${comments.map((comment) => commentMarkup(comment, plan)).join("") || emptyMarkup("Ainda não há comentários neste intervalo.")}</div>${canComment ? '<form id="detail-comment-form"><label class="field"><span>Novo comentário</span><textarea name="content" maxlength="2000" rows="3" required placeholder="Registre uma atualização relevante"></textarea></label><button class="button button-secondary" type="submit">Adicionar comentário</button><span class="auth-feedback"></span></form>' : `<p class="comments-locked">${demoMode ? "Comentários desativados no ambiente de exemplos." : "Após o encerramento, os comentários tornam-se permanentes."}</p>`}</section>`;
   }
 
   function dashboardTabMarkup(plan) {
     const metrics = intervalMetrics(plan);
-    const plannedTotal = metrics.steps.reduce((sum, step) => { const start = timeToMinutes(step.planned_start); const end = alignTime(step.planned_end, start); return sum + (start != null && end != null ? end - start : 0); }, 0);
-    const actualTotal = metrics.steps.reduce((sum, step) => { const start = timeToMinutes(step.actual_start); const end = alignTime(step.actual_end, start); return sum + (start != null && end != null ? end - start : 0); }, 0);
-    return `<div class="overview-kpis detail-kpis"><article class="dashboard-kpi"><span>Progresso</span><strong>${metrics.progress}%</strong><small>${metrics.resolved} de ${metrics.steps.length} etapas</small></article><article class="dashboard-kpi"><span>Tempo programado</span><strong>${formatMinutes(plannedTotal)}</strong><small>Somatório das etapas</small></article><article class="dashboard-kpi"><span>Tempo realizado</span><strong>${actualTotal ? formatMinutes(actualTotal) : "—"}</strong><small>Etapas já concluídas</small></article><article class="dashboard-kpi ${metrics.deadline === "late" ? "alert" : ""}"><span>Desvio do intervalo</span><strong>${metrics.variance == null ? "—" : `${metrics.variance > 0 ? "+" : metrics.variance < 0 ? "−" : ""}${formatMinutes(metrics.variance)}`}</strong><small>${metrics.deadline === "late" ? "Fora do prazo" : metrics.deadline === "ahead" ? "Adiantado" : "Dentro do prazo"}</small></article></div><div class="detail-progress-list">${metrics.steps.map((step) => { const start = timeToMinutes(step.planned_start); const end = alignTime(step.planned_end, start); const actualStart = timeToMinutes(step.actual_start); const actualEnd = alignTime(step.actual_end, actualStart); const planned = start != null && end != null ? end - start : 0; const actual = actualStart != null && actualEnd != null ? actualEnd - actualStart : 0; return `<div><span>${escapeHtml(step.activity_name || "Etapa")}</span><div><i style="width:${Math.min(100, planned ? actual / planned * 100 : 0)}%"></i></div><b>${actual ? formatMinutes(actual) : "Aguardando"}</b></div>`; }).join("")}</div>`;
+    const plannedTotal = metrics.steps.reduce((sum, step) => { const start = stampMinutes(step.planned_start); const end = stampMinutes(step.planned_end); return sum + (start != null && end != null ? end - start : 0); }, 0);
+    const actualTotal = metrics.steps.reduce((sum, step) => { const start = stampMinutes(step.actual_start); const end = stampMinutes(step.actual_end); return sum + (start != null && end != null ? end - start : 0); }, 0);
+    return `<div class="overview-kpis detail-kpis"><article class="dashboard-kpi"><span>Progresso</span><strong>${metrics.progress}%</strong><small>${metrics.resolved} de ${metrics.steps.length} etapas</small></article><article class="dashboard-kpi"><span>Tempo programado</span><strong>${formatMinutes(plannedTotal)}</strong><small>Somatório das etapas</small></article><article class="dashboard-kpi"><span>Tempo realizado</span><strong>${actualTotal ? formatMinutes(actualTotal) : "—"}</strong><small>Etapas já concluídas</small></article><article class="dashboard-kpi ${metrics.deadline === "late" ? "alert" : ""}"><span>Desvio do intervalo</span><strong>${metrics.variance == null ? "—" : `${metrics.variance > 0 ? "+" : metrics.variance < 0 ? "−" : ""}${formatMinutes(metrics.variance)}`}</strong><small>${metrics.deadline === "late" ? "Fora do prazo" : metrics.deadline === "ahead" ? "Adiantado" : "Dentro do prazo"}</small></article></div><div class="detail-progress-list">${metrics.steps.map((step) => { const start = stampMinutes(step.planned_start); const end = stampMinutes(step.planned_end); const actualStart = stampMinutes(step.actual_start); const actualEnd = stampMinutes(step.actual_end); const planned = start != null && end != null ? end - start : 0; const actual = actualStart != null && actualEnd != null ? actualEnd - actualStart : 0; return `<div><span>${escapeHtml(step.activity_name || "Etapa")}</span><div><i style="width:${Math.min(100, planned ? actual / planned * 100 : 0)}%"></i></div><b>${actual ? formatMinutes(actual) : "Aguardando"}</b></div>`; }).join("")}</div>`;
   }
 
   async function reloadComments(plan) {
@@ -946,6 +956,9 @@
       if (actualProfile.role !== "editor" || demoMode) { location.replace("gestao.html"); return; }
       await initializeAdmin();
     } else {
+      // A Gestao so cabe ao Editor dentro do ambiente de exemplos; na operacao
+      // real o lugar dele e a Administracao.
+      if (actualProfile.role === "editor" && !demoMode) { location.replace("admin.html"); return; }
       await initializeManagement();
     }
     document.documentElement.classList.remove("auth-checking");

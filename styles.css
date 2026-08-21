@@ -334,6 +334,10 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .schedule-table td:last-child { width: 150px; }
 .row-actions { display: flex; gap: 4px; justify-content: flex-end; }
 .sequence-select { width: 68px; min-width: 68px; padding-inline: 8px; font-weight: 700; text-align: center; }
+/* Dia da etapa: derivado da sequencia, visivel e corrigivel. */
+.day-select { width: 132px; min-width: 132px; padding-inline: 8px; }
+.day-select.is-shifted { border-color: var(--orange); color: #8a4a12; font-weight: 700; }
+html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .row-action {
   width: 32px;
   height: 32px;

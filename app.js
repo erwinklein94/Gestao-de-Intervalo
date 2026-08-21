@@ -183,6 +183,8 @@
       step.executionStatus = step.executionStatus === "skipped" || parsedNotes.skipped ? "skipped" : step.executionStatus || "pending";
       step.skipReason = step.skipReason || parsedNotes.reason;
     });
+    // Planos antigos e exemplos locais guardam so "HH:MM": ganham o dia aqui.
+    resequencePlanStamps(plan);
   }
 
   function normalizeStore(candidate) {
@@ -312,8 +314,8 @@
       coordinator: row.coordinator,
       date: row.interval_date || "",
       location: row.location,
-      windowStart: (row.window_start || "").slice(0, 5),
-      windowEnd: (row.window_end || "").slice(0, 5),
+      windowStart: stampInput(row.window_start),
+      windowEnd: stampInput(row.window_end),
       notes: row.planning_notes,
       executionNotes: row.execution_notes,
       locked: row.is_locked,
@@ -335,10 +337,10 @@
           id: step.client_id,
           databaseId: step.id,
           name: step.activity_name,
-          plannedStart: (step.planned_start || "").slice(0, 5),
-          plannedEnd: (step.planned_end || "").slice(0, 5),
-          actualStart: (step.actual_start || "").slice(0, 5),
-          actualEnd: (step.actual_end || "").slice(0, 5),
+          plannedStart: stampInput(step.planned_start),
+          plannedEnd: stampInput(step.planned_end),
+          actualStart: stampInput(step.actual_start),
+          actualEnd: stampInput(step.actual_end),
           actualNotes: parsedNotes.notes,
           executionStatus: step.status || (parsedNotes.skipped ? "skipped" : step.actual_end ? "completed" : step.actual_start ? "running" : "pending"),
           skipReason: step.skip_reason || parsedNotes.reason,
@@ -551,30 +553,122 @@
     return url.href;
   }
 
-  function nearestDay(raw, target) {
-    if (raw == null || target == null) return raw;
-    return [raw - 1440, raw, raw + 1440, raw + 2880].sort((a, b) => Math.abs(a - target) - Math.abs(b - target))[0];
+  // Os horarios sao data e hora de parede local ("2026-08-13T22:00"). O dia
+  // deixou de ser inferido: um intervalo que vira a noite carrega o dia no dado.
+  const STAMP_PATTERN = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/;
+
+  function stampParts(value) {
+    const match = STAMP_PATTERN.exec(value || "");
+    return match ? { date: match[1], clock: match[2] } : null;
+  }
+
+  function stampClock(value) {
+    return stampParts(value)?.clock || "";
+  }
+
+  function stampDate(value) {
+    return stampParts(value)?.date || "";
+  }
+
+  function stampInput(value) {
+    const parts = stampParts(value);
+    return parts ? `${parts.date}T${parts.clock}` : "";
+  }
+
+  // Minutos desde a meia-noite do dia de referencia. E como o resto do app
+  // raciocina; o que muda e que agora esse numero vem do dado, nao de palpite.
+  function stampToAbsolute(value, referenceDate) {
+    const parts = stampParts(value);
+    if (!parts || !referenceDate) return null;
+    const base = Date.parse(`${referenceDate}T00:00:00`);
+    const point = Date.parse(`${parts.date}T${parts.clock}:00`);
+    return Number.isFinite(base) && Number.isFinite(point) ? Math.round((point - base) / 60000) : null;
+  }
+
+  function absoluteToStamp(total, referenceDate) {
+    if (!Number.isFinite(total) || !referenceDate) return "";
+    const base = Date.parse(`${referenceDate}T00:00:00`);
+    if (!Number.isFinite(base)) return "";
+    const point = new Date(base + Math.round(total) * 60000);
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${point.getFullYear()}-${pad(point.getMonth() + 1)}-${pad(point.getDate())}T${pad(point.getHours())}:${pad(point.getMinutes())}`;
+  }
+
+  function stampDayOffset(value, referenceDate) {
+    const absolute = stampToAbsolute(value, referenceDate);
+    return absolute == null ? 0 : Math.floor(absolute / 1440);
+  }
+
+  // Exibicao: so a hora quando cai no dia de referencia do intervalo; fora
+  // dele, a hora seguida do dia, que e o caso dos intervalos que viram a noite.
+  let stampReferenceDate = "";
+
+  function stampShort(value, referenceDate) {
+    const parts = stampParts(value);
+    if (!parts) return "—";
+    const reference = referenceDate || stampReferenceDate;
+    return !reference || parts.date === reference
+      ? parts.clock
+      : `${parts.clock} ${parts.date.slice(8, 10)}/${parts.date.slice(5, 7)}`;
+  }
+
+  // "2026-08-14T00:31" -> "14/08 00:31", para mensagens e leitura.
+  function stampHuman(value) {
+    const parts = stampParts(value);
+    if (!parts) return "—";
+    return `${parts.date.slice(8, 10)}/${parts.date.slice(5, 7)} ${parts.clock}`;
+  }
+
+  function nowStamp() {
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  }
+
+  // O planejamento continua sendo preenchido por hora; o dia sai da sequencia.
+  // Um campo que chega como "HH:MM" puro tem o dia recalculado do zero; um que
+  // ja traz data teve o dia escolhido a mao e serve de piso para os seguintes.
+  function resequencePlanStamps(plan) {
+    if (!plan?.date) return;
+    const attach = (raw, minimum) => {
+      const parts = stampParts(raw);
+      const clock = parts ? parts.clock : (/^\d{2}:\d{2}$/.test(raw || "") ? raw : "");
+      if (!clock) return { stamp: "", absolute: null };
+      let absolute = timeToMinutes(clock);
+      if (parts) {
+        const chosen = Math.round((Date.parse(`${parts.date}T00:00:00`) - Date.parse(`${plan.date}T00:00:00`)) / 86400000);
+        if (Number.isFinite(chosen) && chosen > 0) absolute += chosen * 1440;
+      }
+      while (minimum != null && absolute < minimum) absolute += 1440;
+      return { stamp: absoluteToStamp(absolute, plan.date), absolute };
+    };
+
+    const opening = attach(plan.windowStart, null);
+    plan.windowStart = opening.stamp;
+    const closing = attach(plan.windowEnd, opening.absolute);
+    plan.windowEnd = closing.stamp;
+
+    let cursor = opening.absolute;
+    plan.steps.forEach((step) => {
+      const start = attach(step.plannedStart, cursor);
+      step.plannedStart = start.stamp;
+      const end = attach(step.plannedEnd, start.absolute);
+      step.plannedEnd = end.stamp;
+      if (start.absolute != null) cursor = start.absolute;
+    });
   }
 
   function buildTimeline(plan) {
-    const windowStart = timeToMinutes(plan.windowStart);
-    let windowEnd = timeToMinutes(plan.windowEnd);
-    if (windowStart != null && windowEnd != null && windowEnd <= windowStart) windowEnd += 1440;
-    let previousStart = windowStart;
+    // Toda renderizacao passa por aqui, entao e o ponto natural para fixar o
+    // dia de referencia usado na formatacao dos horarios.
+    stampReferenceDate = plan.date || "";
+    const windowStart = stampToAbsolute(plan.windowStart, plan.date);
+    const windowEnd = stampToAbsolute(plan.windowEnd, plan.date);
     const steps = plan.steps.map((step, index) => {
-      let start = timeToMinutes(step.plannedStart);
-      let end = timeToMinutes(step.plannedEnd);
-      if (start != null && windowStart != null) {
-        while (start < windowStart) start += 1440;
-        if (previousStart != null && start + 720 < previousStart) start += 1440;
-      }
-      if (end != null && start != null) while (end <= start) end += 1440;
-      if (start != null) previousStart = start;
-      let actualStartMinutes = nearestDay(timeToMinutes(step.actualStart), start);
-      let actualEndMinutes = nearestDay(timeToMinutes(step.actualEnd), end);
-      if (actualStartMinutes != null && actualEndMinutes != null) {
-        while (actualEndMinutes < actualStartMinutes) actualEndMinutes += 1440;
-      }
+      const start = stampToAbsolute(step.plannedStart, plan.date);
+      const end = stampToAbsolute(step.plannedEnd, plan.date);
+      const actualStartMinutes = stampToAbsolute(step.actualStart, plan.date);
+      const actualEndMinutes = stampToAbsolute(step.actualEnd, plan.date);
       return {
         ...step,
         index,
@@ -890,7 +984,7 @@
       "tip-key": `${step.id}:${extra.kind || "linha"}`,
       "tip-index": String(index + 1).padStart(2, "0"),
       "tip-name": step.name || `Etapa ${index + 1}`,
-      "tip-planned": `${step.plannedStart || "—"} – ${step.plannedEnd || "—"}`,
+      "tip-planned": `${stampShort(step.plannedStart)} – ${stampShort(step.plannedEnd)}`,
       "tip-planned-duration": step.duration == null ? "" : formatMinutes(step.duration),
       "tip-actual": extra.actualText || "",
       "tip-actual-duration": extra.actualDurationText || "",
@@ -1041,7 +1135,7 @@
     if (!plan.date) errors.push("informe a data");
     if (timeline.windowStart == null || timeline.windowEnd == null) errors.push("preencha a janela completa");
     if (plan.windowStart && plan.windowEnd && plan.windowStart === plan.windowEnd) errors.push("o início e o fim da janela não podem ser iguais");
-    if (timeline.duration != null && timeline.duration > 720) warnings.push("a janela tem mais de 12 horas; confirme se atravessa a meia-noite");
+    if (timeline.duration != null && timeline.duration > 720) warnings.push("a janela tem mais de 12 horas; confirme a duração");
     if (!plan.steps.length) errors.push("adicione ao menos uma etapa");
     timeline.steps.forEach((step, index) => {
       if (!step.name.trim() || step.start == null || step.end == null) errors.push(`complete a etapa ${index + 1}`);
@@ -1116,7 +1210,7 @@
     rows.push(`<row r="1" ht="30" customHeight="1">${excelCell(1, 1, "GESTÃO DE INTERVALO — PROGRAMADO X REALIZADO", 1)}</row>`);
     rows.push(`<row r="2" ht="8" customHeight="1"></row>`);
     rows.push(`<row r="3">${excelCell(1, 3, "Nome do plano", 3)}${excelCell(4, 3, plan.title, 5)}${excelCell(7, 3, "Data", 3)}${excelCell(9, 3, plan.date, 5)}</row>`);
-    rows.push(`<row r="4">${excelCell(1, 4, "Tipo de serviço", 3)}${excelCell(4, 4, plan.serviceType, 5)}${excelCell(7, 4, "Janela", 3)}${excelCell(9, 4, `${plan.windowStart || "—"}–${plan.windowEnd || "—"}`, 5)}</row>`);
+    rows.push(`<row r="4">${excelCell(1, 4, "Tipo de serviço", 3)}${excelCell(4, 4, plan.serviceType, 5)}${excelCell(7, 4, "Janela", 3)}${excelCell(9, 4, `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}`, 5)}</row>`);
     rows.push(`<row r="5">${excelCell(1, 5, "Responsável", 3)}${excelCell(4, 5, plan.coordinator, 5)}${excelCell(7, 5, "Local / trecho", 3)}${excelCell(9, 5, plan.location, 5)}</row>`);
     rows.push(`<row r="6" ht="34" customHeight="1">${excelCell(1, 6, "Observações do planejamento", 3)}${excelCell(4, 6, plan.notes, 9)}</row>`);
     rows.push(`<row r="7" ht="34" customHeight="1">${excelCell(1, 7, "Registro geral da execução", 3)}${excelCell(4, 7, plan.executionNotes, 9)}</row>`);
@@ -1252,9 +1346,11 @@
       ["title", "serviceType", "coordinator", "date", "location", "windowStart", "windowEnd", "notes"].forEach((name) => {
         const input = form.elements[name];
         if (input) {
+          // A janela e guardada com data, mas continua sendo preenchida por
+          // hora: o dia vem da data do intervalo e da propria sequencia.
           input.value = name === "coordinator" && input.dataset.coordinatorSelector !== undefined
             ? (plan.coordinatorMemberId || "")
-            : (plan[name] || "");
+            : (name === "windowStart" || name === "windowEnd") ? stampClock(plan[name]) : (plan[name] || "");
           input.disabled = plan.locked || (name === "coordinator" && isOperatorRole(currentProfile?.role));
         }
       });
@@ -1272,6 +1368,19 @@
       renderGantt();
     }
 
+    // O dia sai da sequencia, mas fica visivel e corrigivel: intervalos que
+    // viram a noite precisam mostrar em que dia cada etapa cai.
+    function dayPickerMarkup(plan, step, index) {
+      const offset = stampDayOffset(step.plannedStart, plan.date);
+      const options = [0, 1, 2].map((value) => {
+        const label = value === 0 ? "Mesmo dia" : `+${value} dia${value > 1 ? "s" : ""}`;
+        const date = absoluteToStamp(value * 1440, plan.date).slice(0, 10);
+        const shown = date ? `${label} · ${date.slice(8, 10)}/${date.slice(5, 7)}` : label;
+        return `<option value="${value}" ${value === offset ? "selected" : ""}>${escapeHtml(shown)}</option>`;
+      }).join("");
+      return `<select class="day-select${offset ? " is-shifted" : ""}" data-field="plannedDay" aria-label="Dia da etapa ${index + 1}" ${plan.locked ? "disabled" : ""}>${options}</select>`;
+    }
+
     function renderSteps() {
       const plan = activePlan();
       $("#planning-empty").hidden = plan.steps.length > 0;
@@ -1282,8 +1391,9 @@
           <tr data-step-id="${step.id}">
             <td><select class="sequence-select" data-field="executionOrder" aria-label="Ordem de início da etapa ${index + 1}" ${plan.locked ? "disabled" : ""}>${plan.steps.map((_, orderIndex) => `<option value="${orderIndex}" ${orderIndex === index ? "selected" : ""}>${String(orderIndex + 1).padStart(2, "0")}</option>`).join("")}</select></td>
             <td><input data-field="name" type="text" maxlength="140" aria-label="Nome da etapa ${index + 1}" value="${escapeHtml(step.name)}" placeholder="Descreva a atividade" ${plan.locked ? "disabled" : ""}></td>
-            <td><input data-field="plannedStart" type="time" aria-label="Início programado da etapa ${index + 1}" value="${escapeHtml(step.plannedStart)}" ${plan.locked ? "disabled" : ""}></td>
-            <td><input data-field="plannedEnd" type="time" aria-label="Fim programado da etapa ${index + 1}" value="${escapeHtml(step.plannedEnd)}" ${plan.locked ? "disabled" : ""}></td>
+            <td><input data-field="plannedStart" type="time" aria-label="Início programado da etapa ${index + 1}" value="${escapeHtml(stampClock(step.plannedStart))}" ${plan.locked ? "disabled" : ""}></td>
+            <td><input data-field="plannedEnd" type="time" aria-label="Fim programado da etapa ${index + 1}" value="${escapeHtml(stampClock(step.plannedEnd))}" ${plan.locked ? "disabled" : ""}></td>
+            <td>${dayPickerMarkup(plan, step, index)}</td>
             <td>${formatMinutes(timelineStep.duration)}</td>
             <td>
               <div class="row-actions">
@@ -1319,7 +1429,7 @@
       const root = $("#gantt");
       $("#window-total").textContent = timeline.duration == null
         ? "Defina a janela"
-        : `${plan.windowStart}–${plan.windowEnd} · ${formatMinutes(timeline.duration)}`;
+        : `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)} · ${formatMinutes(timeline.duration)}`;
       const validSteps = timeline.steps.filter((step) => step.start != null && step.end != null);
       if (timeline.windowStart == null || timeline.windowEnd == null || !validSteps.length) {
         root.innerHTML = '<div class="gantt-empty">Preencha a janela e os horários das etapas para visualizar a linha do tempo.</div>';
@@ -1331,7 +1441,7 @@
         return `<div class="gantt-row">
           <span class="gantt-label" title="${escapeHtml(step.name || `Etapa ${step.index + 1}`)}">${escapeHtml(step.name || `Etapa ${step.index + 1}`)}</span>
           <div class="gantt-track"><span class="gantt-bar" style="left:${left}%;width:${width}%"></span></div>
-          <span class="gantt-time">${step.plannedStart}–${step.plannedEnd}</span>
+          <span class="gantt-time">${stampShort(step.plannedStart)}–${stampShort(step.plannedEnd)}</span>
         </div>`;
       }).join("");
     }
@@ -1364,6 +1474,11 @@
       } else if (field && Object.hasOwn(plan, field)) {
         plan[field] = event.target.value;
       }
+      // Mudar a data ou a janela reposiciona o dia de todas as etapas.
+      if (["date", "windowStart", "windowEnd"].includes(field)) {
+        resequencePlanStamps(plan);
+        renderSteps();
+      }
       persist();
       renderSelector();
       renderValidation();
@@ -1389,12 +1504,34 @@
         }
         return;
       }
-      step[event.target.dataset.field] = event.target.value;
+      const field = event.target.dataset.field;
+      if (field === "plannedDay") {
+        // Dia escolhido a mao: vira data explicita e serve de piso na sequencia.
+        const clock = stampClock(step.plannedStart);
+        if (!clock) return;
+        step.plannedStart = absoluteToStamp(Number(event.target.value) * 1440 + timeToMinutes(clock), plan.date);
+        step.plannedEnd = stampClock(step.plannedEnd);
+      } else if (field === "plannedStart" || field === "plannedEnd") {
+        // Hora pura: o dia e recalculado do zero para esta etapa.
+        step[field] = event.target.value;
+      } else {
+        step[field] = event.target.value;
+      }
+      if (field.startsWith("planned")) resequencePlanStamps(plan);
       persist();
       const timelineStep = buildTimeline(plan).steps.find((item) => item.id === step.id);
-      row.children[4].textContent = formatMinutes(timelineStep.duration);
+      row.children[5].textContent = formatMinutes(timelineStep.duration);
       renderValidation();
       renderGantt();
+    });
+
+    // Redesenha so ao confirmar: em input o campo em foco seria destruido a
+    // cada tecla. E no redesenho que o dia recalculado aparece nas etapas.
+    stepsRoot.addEventListener("change", (event) => {
+      const plan = activePlan();
+      if (plan.locked) return;
+      if (!String(event.target.dataset.field || "").startsWith("planned")) return;
+      renderSteps();
     });
 
     stepsRoot.addEventListener("click", (event) => {
@@ -1437,13 +1574,16 @@
         if (index === 0) return;
         const previous = plan.steps[index - 1];
         if (!previous.plannedEnd) return;
-        const oldStart = timeToMinutes(step.plannedStart);
-        const oldEnd = timeToMinutes(step.plannedEnd);
-        const duration = oldStart != null && oldEnd != null ? (oldEnd <= oldStart ? oldEnd + 1440 : oldEnd) - oldStart : null;
+        const oldStart = stampToAbsolute(step.plannedStart, plan.date);
+        const oldEnd = stampToAbsolute(step.plannedEnd, plan.date);
+        const duration = oldStart != null && oldEnd != null ? oldEnd - oldStart : null;
         step.plannedStart = previous.plannedEnd;
-        if (duration != null) step.plannedEnd = absoluteToTime(timeToMinutes(step.plannedStart) + duration);
+        if (duration != null) {
+          step.plannedEnd = absoluteToStamp(stampToAbsolute(step.plannedStart, plan.date) + duration, plan.date);
+        }
         changed++;
       });
+      resequencePlanStamps(plan);
       persist();
       renderForm();
       showToast(changed ? "Horários encadeados com a duração preservada." : "Preencha o fim das etapas anteriores primeiro.");
@@ -1584,7 +1724,7 @@
     const content = $("#execution-content");
 
     function nowTime() {
-      return new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false });
+      return nowStamp();
     }
 
     function pendingCommentsForPlan() {
@@ -1645,7 +1785,7 @@
         return burn ? `Em andamento há ${formatMinutes(burn.elapsed)}` : "Em andamento";
       }
       if (isStartOverdue(step, nowAbs)) {
-        return `Não iniciada · deveria ter começado às ${step.plannedStart}`;
+        return `Não iniciada · deveria ter começado em ${stampShort(step.plannedStart)}`;
       }
       return "Aguardando início";
     }
@@ -1698,8 +1838,8 @@
       // Só o horário: o desvio contra o prazo da etapa já é o selo do topo,
       // e dois números diferentes no mesmo cartão confundem.
       return entry.state === "running"
-        ? `Previsão de término: ${absoluteToTime(entry.projectedEnd)} · prazo ${step.plannedEnd || "—"}`
-        : `Previsão ${absoluteToTime(entry.projectedStart)} → ${absoluteToTime(entry.projectedEnd)} · prazo ${step.plannedEnd || "—"}`;
+        ? `Previsão de término: ${absoluteToTime(entry.projectedEnd)} · prazo ${stampHuman(step.plannedEnd)}`
+        : `Previsão ${absoluteToTime(entry.projectedStart)} → ${absoluteToTime(entry.projectedEnd)} · prazo ${stampHuman(step.plannedEnd)}`;
     }
 
     function renderSteps() {
@@ -1731,18 +1871,18 @@
           <div class="execution-step-grid">
             <div class="programmed-block">
               <span class="block-label">Programado</span>
-              <div class="time-pair"><strong>${escapeHtml(step.plannedStart || "—")}</strong><span>→</span><strong>${escapeHtml(step.plannedEnd || "—")}</strong></div>
+              <div class="time-pair"><strong>${escapeHtml(stampShort(step.plannedStart))}</strong><span>→</span><strong>${escapeHtml(stampShort(step.plannedEnd))}</strong></div>
               <small>${formatMinutes(step.duration)}</small>
             </div>
             <div class="realized-block">
               <span class="block-label">Realizado</span>
               <div class="realized-times">
                 <div class="time-entry">
-                  <label>Início<input data-field="actualStart" type="time" value="${escapeHtml(step.actualStart)}" aria-label="Início realizado da etapa ${index + 1}" ${disabled}></label>
+                  <label>Início<input data-field="actualStart" type="datetime-local" value="${escapeHtml(stampInput(step.actualStart))}" aria-label="Data e hora de início realizado da etapa ${index + 1}" ${disabled}></label>
                   <button class="now-button" type="button" data-now="actualStart" ${disabled}>Agora</button>
                 </div>
                 <div class="time-entry">
-                  <label>Fim<input data-field="actualEnd" type="time" value="${escapeHtml(step.actualEnd)}" aria-label="Fim realizado da etapa ${index + 1}" ${step.actualStart && !skipped ? "" : "disabled"}></label>
+                  <label>Fim<input data-field="actualEnd" type="datetime-local" value="${escapeHtml(stampInput(step.actualEnd))}" aria-label="Data e hora de fim realizado da etapa ${index + 1}" ${step.actualStart && !skipped ? "" : "disabled"}></label>
                   <button class="now-button" type="button" data-now="actualEnd" ${step.actualStart && !skipped ? "" : "disabled"}>Agora</button>
                 </div>
               </div>
@@ -1851,7 +1991,7 @@
         : `Pelo ritmo atual · planejado ${baselineText}`;
 
       // ---------- cartões de resumo ----------
-      $("#metric-window").textContent = timeline.windowStart == null ? "—" : `${plan.windowStart}–${plan.windowEnd}`;
+      $("#metric-window").textContent = timeline.windowStart == null ? "—" : `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}`;
       $("#metric-duration").textContent = timeline.duration == null ? "Janela não definida" : `${formatMinutes(timeline.duration)} de janela`;
       $("#metric-progress").textContent = `${resolved.length} / ${steps.length}`;
       $("#progress-bar").style.width = steps.length ? `${(resolved.length / steps.length) * 100}%` : "0%";
@@ -1863,7 +2003,7 @@
         : finished ? "Concluído"
         : nextPending ? "Aguardando início" : "Aguardando";
       $("#metric-current-time").textContent = active.length
-        ? active.map((step) => `${stepLabel(step)}: desde ${step.actualStart}`).join(" · ")
+        ? active.map((step) => `${stepLabel(step)}: desde ${stampShort(step.actualStart)}`).join(" · ")
         : nextPending ? `Próxima: ${stepLabel(nextPending)} ${nextPending.plannedStart}–${nextPending.plannedEnd}` : "—";
 
       $("#metric-late").textContent = !live ? "—" : String(lateNow.length);
@@ -1921,13 +2061,13 @@
     });
 
     root.addEventListener("change", (event) => {
-      if (!event.target.matches('input[type="time"]')) return;
+      if (!event.target.matches('input[type="datetime-local"]')) return;
       const stepElement = event.target.closest("[data-step-id]");
       const step = plan.steps.find((item) => item.id === stepElement?.dataset.stepId);
       if (!step) return;
       const field = event.target.dataset.field;
-      if (!updateActualTime(step, field, event.target.value)) event.target.value = step[field] || "";
-      else if (event.target.value) showToast(`${field === "actualStart" ? "Início" : "Fim"} realizado registrado às ${event.target.value}.`);
+      if (!updateActualTime(step, field, event.target.value)) event.target.value = stampInput(step[field]);
+      else if (event.target.value) showToast(`${field === "actualStart" ? "Início" : "Fim"} realizado registrado em ${stampHuman(event.target.value)}.`);
       renderSteps();
       renderDashboard();
     });
@@ -2152,11 +2292,11 @@
           const actualTip = timelineTipData(step, index, { ...tipInfo, kind: runningStep ? "Barra em andamento" : "Barra realizada" });
           return `<div class="timeline-compare-row">
             <div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div>
-            <div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${timelineGrid}" aria-label="${escapeHtml(step.name || `Etapa ${index + 1}`)}: planejado ${escapeHtml(step.plannedStart || "—")} a ${escapeHtml(step.plannedEnd || "—")}; realizado ${escapeHtml(actualText)}">
+            <div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${timelineGrid}" aria-label="${escapeHtml(step.name || `Etapa ${index + 1}`)}: planejado ${escapeHtml(stampShort(step.plannedStart))} a ${escapeHtml(stampShort(step.plannedEnd))}; realizado ${escapeHtml(actualText)}">
               <div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${comparisonPosition(step.start)}%;width:${comparisonWidth(step.start, step.end)}%"></i></div>
               <div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${runningStep ? "running" : "complete"}" style="left:${comparisonPosition(step.actualStartMinutes)}%;width:${comparisonWidth(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div>
             </div>
-            <div class="timeline-compare-times"><span><b>P</b>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</span><span class="${runningStep ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div>
+            <div class="timeline-compare-times"><span><b>P</b>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</span><span class="${runningStep ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div>
           </div>`;
         }).join("")}${timelineAxisHtml(timelineScaleInfo.ticks, comparisonStart, comparisonDuration)}`;
       bindTimelineTooltip(timelineHost);
@@ -2190,7 +2330,7 @@
       $("#dashboard-table-body").innerHTML = timeline.steps.length ? timeline.steps.map((step) => {
         const status = statusFor(step, nowAbs);
         const scheduleDiff = status.variance;
-        return `<tr><td><strong>${escapeHtml(step.name || "Etapa sem nome")}</strong><small>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</small></td><td>${formatMinutes(step.duration)}</td><td>${step.actualDuration == null ? "—" : formatMinutes(step.actualDuration)}</td><td>${scheduleDiff == null ? "—" : `${scheduleDiff > 0 ? "+" : ""}${scheduleDiff} min`}</td><td><span class="table-status ${status.className}">${status.label}</span></td></tr>`;
+        return `<tr><td><strong>${escapeHtml(step.name || "Etapa sem nome")}</strong><small>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></td><td>${formatMinutes(step.duration)}</td><td>${step.actualDuration == null ? "—" : formatMinutes(step.actualDuration)}</td><td>${scheduleDiff == null ? "—" : `${scheduleDiff > 0 ? "+" : ""}${scheduleDiff} min`}</td><td><span class="table-status ${status.className}">${status.label}</span></td></tr>`;
       }).join("") : `<tr><td colspan="5">Nenhuma etapa cadastrada.</td></tr>`;
     }
 
@@ -2231,7 +2371,8 @@
     if (isOperatorRole(currentProfile.role)) {
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (currentProfile.role === "editor") {
-      links = [["gestao.html", "Gestão", "management"], ["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
+      // O Editor administra o sistema; nao planeja nem executa intervalos.
+      links = [["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
     } else if (READ_ONLY_MANAGEMENT_ROLES.includes(currentProfile.role)) {
       links = [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
     } else {
@@ -2241,9 +2382,16 @@
     nav.innerHTML = links.map(([href, label, target], index) => `<a href="${href}" class="${page === target ? "active" : ""}" ${page === target ? 'aria-current="page"' : ""}><span>${index + 1}</span>${escapeHtml(label)}</a>`).join("");
   }
 
+  // Para onde cada perfil vai ao entrar ou ao cair numa pagina que nao lhe cabe.
+  function landingPageForRole(role) {
+    if (role === "editor") return "admin.html";
+    return isOperatorRole(role) ? "index.html" : "gestao.html";
+  }
+
   function routeAllowedForRole() {
     if (!["planning", "execution", "dashboard"].includes(page)) return true;
-    return ["coordinator", "specialist", "editor"].includes(currentProfile?.role);
+    // O Editor administra o sistema; nao e responsavel por intervalo.
+    return isOperatorRole(currentProfile?.role);
   }
 
   function createDialog(className, content) {
@@ -2398,7 +2546,7 @@
     if (page === "login") {
       if (currentUser) {
         const { data: profile } = await cloudClient.from("user_profiles").select("role,enabled").eq("id", currentUser.id).single();
-        if (profile?.enabled) location.replace(["coordinator", "specialist", "editor"].includes(profile.role) ? "index.html" : "gestao.html");
+        if (profile?.enabled) location.replace(landingPageForRole(profile.role));
         else loginPage();
       } else loginPage();
       return;
@@ -2422,7 +2570,7 @@
     sessionStorage.removeItem("gestaoIntervaloRumo.demoPersona");
     renderRoleNavigation();
     if (!routeAllowedForRole()) {
-      location.replace("gestao.html");
+      location.replace(landingPageForRole(currentProfile?.role));
       return;
     }
 
@@ -2495,7 +2643,7 @@
         button.textContent = "Entrar no sistema";
         return;
       }
-      location.replace(["coordinator", "specialist", "editor"].includes(profile.role) ? "index.html" : "gestao.html");
+      location.replace(landingPageForRole(profile.role));
     });
   }
 
@@ -2584,10 +2732,10 @@
       }
       $("#shared-plan-summary").innerHTML = [
         ["Título", plan.title || "—"], ["Tipo", plan.serviceType || "—"], ["Data", plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
-        ["Local", plan.location || "—"], ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${plan.windowStart}–${plan.windowEnd}` : "—"]
+        ["Local", plan.location || "—"], ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—"]
       ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
       $("#shared-planning-notes").textContent = plan.notes || "Nenhuma observação registrada.";
-      $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
+      $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
       const sharedComments = metadata.comments || [];
       $("#shared-comment-count").textContent = sharedComments.length;
       $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(ROLE_LABELS[comment.author_role] || comment.author_role)}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
@@ -2618,21 +2766,21 @@
       $("#shared-forecast").textContent = absoluteToClock(forecast);
       $("#shared-forecast-note").textContent = forecast == null
         ? "Aguardando primeiro marco"
-        : `Planejado ${baselineText}${plan.windowEnd && plan.windowEnd !== baselineText ? ` · prazo final ${plan.windowEnd}` : ""}`;
+        : `Planejado ${baselineText}${plan.windowEnd && stampShort(plan.windowEnd) !== baselineText ? ` · prazo final ${stampShort(plan.windowEnd)}` : ""}`;
 
-      $("#shared-window").textContent = plan.windowStart && plan.windowEnd ? `${plan.windowStart}–${plan.windowEnd}` : "—";
+      $("#shared-window").textContent = plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—";
       $("#shared-window-note").textContent = timeline.duration == null ? "Janela não definida" : formatMinutes(timeline.duration);
       $("#shared-progress").textContent = `${resolved.length} / ${timeline.steps.length}`;
       $("#shared-progress-note").textContent = `${progress}% das etapas encerradas`;
       $("#shared-current").textContent = running.length > 1 ? `${running.length} simultâneas` : running[0]?.name || (resolved.length === timeline.steps.length && timeline.steps.length ? "Concluído" : "Aguardando");
-      $("#shared-current-note").textContent = running.length ? running.map((step) => `Desde ${step.actualStart}`).join(" · ") : "Nenhuma etapa em andamento";
+      $("#shared-current-note").textContent = running.length ? running.map((step) => `Desde ${stampShort(step.actualStart)}`).join(" · ") : "Nenhuma etapa em andamento";
 
       $("#shared-steps").innerHTML = timeline.steps.map((step, index) => {
         const stepStatus = sharedStepStatus(step, nowAbs);
-        const realized = isStepSkipped(step) ? "Não executada" : step.actualStart ? `${step.actualStart}–${step.actualEnd || "em andamento"}` : "Ainda não iniciada";
+        const realized = isStepSkipped(step) ? "Não executada" : step.actualStart ? `${stampShort(step.actualStart)}–${step.actualEnd ? stampShort(step.actualEnd) : "em andamento"}` : "Ainda não iniciada";
         return `<article class="shared-step ${stepStatus.className}">
           <header><span>${String(index + 1).padStart(2, "0")}</span><div><h3>${escapeHtml(step.name || `Etapa ${index + 1}`)}</h3><small>${stepStatus.label}</small></div>${stepStatus.variance == null ? "" : `<b>${stepStatus.variance > 0 ? "+" : ""}${stepStatus.variance} min</b>`}</header>
-          <div class="shared-step-times"><p><span>Planejado</span><strong>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</strong><small>${formatMinutes(step.duration)}</small></p><p><span>Realizado</span><strong>${escapeHtml(realized)}</strong><small>${(() => {
+          <div class="shared-step-times"><p><span>Planejado</span><strong>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</strong><small>${formatMinutes(step.duration)}</small></p><p><span>Realizado</span><strong>${escapeHtml(realized)}</strong><small>${(() => {
             if (step.actualDuration != null) return formatMinutes(step.actualDuration);
             const burn = stepDurationBurn(step, nowAbs);
             if (!burn) return "Duração em aberto";
@@ -2703,7 +2851,7 @@
         const rowTip = timelineTipData(step, index, tipInfo);
         const plannedTip = timelineTipData(step, index, { ...tipInfo, kind: "Barra planejada" });
         const actualTip = timelineTipData(step, index, { ...tipInfo, kind: isRunning ? "Barra em andamento" : "Barra realizada" });
-        return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${sharedGrid}"><div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div></div>`;
+        return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${sharedGrid}"><div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div></div>`;
       }).join("")}${timelineAxisHtml(sharedScale.ticks, comparisonStart, comparisonDuration)}`;
       bindTimelineTooltip(sharedTimelineHost);
       restorePinnedChartTooltip(sharedTimelineHost);
@@ -2958,6 +3106,10 @@
       $("small", primary).textContent = "Criar e revisar seus intervalos";
     }
     if (currentProfile.role === "editor") {
+      // Visao gerencial e Historico saem: o Editor nao acompanha intervalos da
+      // operacao real. Restam Administracao e o ambiente de exemplos.
+      $("#account-primary-link").hidden = true;
+      $("#account-history-link").hidden = true;
       $("#account-admin-link").hidden = false;
       $("#account-examples").hidden = false;
       $("#account-examples").addEventListener("click", () => {

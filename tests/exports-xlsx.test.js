@@ -97,9 +97,9 @@ test("Excel gerencial contém escopo, indicadores e gráficos filtráveis", asyn
     coordinatorName: "Coordenador teste",
     subCode: "SUB 001",
     location: "Trecho teste",
-    window_start: "08:00:00",
-    window_end: "10:00:00",
-    interval_steps: [{ position: 0, activity_name: "Atividade", planned_start: "08:00:00", planned_end: "10:00:00", actual_start: "08:00:00", actual_end: "10:15:00", status: "completed" }]
+    window_start: "2026-08-21T08:00:00",
+    window_end: "2026-08-21T10:00:00",
+    interval_steps: [{ position: 0, activity_name: "Atividade", planned_start: "2026-08-21T08:00:00", planned_end: "2026-08-21T10:00:00", actual_start: "2026-08-21T08:00:00", actual_end: "2026-08-21T10:15:00", status: "completed" }]
   }]);
   const sheet = await workbookXml(blob, "xl/worksheets/sheet1.xml");
   assert.match(sheet, /VISÃO GERENCIAL/);

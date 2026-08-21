@@ -20,8 +20,8 @@ const api = sandbox.window.__GESTAO_PORTAL_TEST_API__;
 assert.ok(api, "portal.js deve expor a API de testes no modo de teste");
 
 const {
-  timeToMinutes,
-  alignTime,
+  stampMinutes,
+  stampLabel,
   intervalMetrics,
   filterPlans,
   managementSummary,
@@ -33,8 +33,8 @@ function makeStep(overrides = {}) {
   return {
     position: 0,
     activity_name: "Etapa",
-    planned_start: "08:00:00",
-    planned_end: "09:00:00",
+    planned_start: "2026-08-21T08:00:00",
+    planned_end: "2026-08-21T09:00:00",
     actual_start: null,
     actual_end: null,
     actual_notes: "",
@@ -55,8 +55,8 @@ function makePlan(overrides = {}) {
     coordinator_member_id: "coordinator-default",
     coordinator_type: "infrastructure",
     interval_date: "2026-08-21",
-    window_start: "08:00:00",
-    window_end: "10:00:00",
+    window_start: "2026-08-21T08:00:00",
+    window_end: "2026-08-21T10:00:00",
     status: "completed",
     interval_steps: [],
     ...overrides
@@ -75,18 +75,24 @@ function ids(rows) {
   return rows.map((row) => row.id);
 }
 
-// Conversão e alinhamento de horários que atravessam a meia-noite.
-assert.equal(timeToMinutes("08:35:00"), 515);
-assert.equal(timeToMinutes("valor inválido"), null);
-assert.equal(alignTime("01:30:00", 23 * 60), 25 * 60 + 30);
-assert.equal(alignTime(null, 23 * 60), null);
+// Horários são data e hora: a virada da meia-noite vem do dado, não de palpite.
+assert.equal(stampMinutes("2026-08-21T08:35:00"), Date.parse("2026-08-21T08:35:00") / 60000);
+assert.equal(stampMinutes("valor inválido"), null);
+assert.equal(
+  stampMinutes("2026-08-22T01:30:00") - stampMinutes("2026-08-21T23:00:00"),
+  150,
+  "duas horas e meia atravessando a meia-noite"
+);
+assert.equal(stampLabel("2026-08-21T08:35:00", "2026-08-21"), "08:35");
+assert.equal(stampLabel("2026-08-22T01:30:00", "2026-08-21"), "01:30 22/08");
+assert.equal(stampLabel(null, "2026-08-21"), "—");
 
 // Intervalo concluído com atraso: o último término real governa o desvio final.
 {
   const plan = makePlan({
     interval_steps: [
-      makeStep({ position: 0, status: "completed", actual_start: "08:00:00", actual_end: "09:00:00" }),
-      makeStep({ position: 1, planned_start: "09:00:00", planned_end: "10:00:00", status: "completed", actual_start: "09:00:00", actual_end: "10:17:00" })
+      makeStep({ position: 0, status: "completed", actual_start: "2026-08-21T08:00:00", actual_end: "2026-08-21T09:00:00" }),
+      makeStep({ position: 1, planned_start: "2026-08-21T09:00:00", planned_end: "2026-08-21T10:00:00", status: "completed", actual_start: "2026-08-21T09:00:00", actual_end: "2026-08-21T10:17:00" })
     ]
   });
   const metrics = intervalMetrics(plan);
@@ -99,9 +105,9 @@ assert.equal(alignTime(null, 23 * 60), null);
 // Intervalo concluído adiantado e reconhecimento de etapa não executada.
 {
   const plan = makePlan({
-    window_end: "09:50:00",
+    window_end: "2026-08-21T09:50:00",
     interval_steps: [
-      makeStep({ position: 0, status: "completed", actual_start: "08:00:00", actual_end: "09:40:00" }),
+      makeStep({ position: 0, status: "completed", actual_start: "2026-08-21T08:00:00", actual_end: "2026-08-21T09:40:00" }),
       makeStep({ position: 1, status: "skipped" })
     ]
   });
@@ -115,15 +121,15 @@ assert.equal(alignTime(null, 23 * 60), null);
 // Janela noturna: 02:15 pertence ao dia seguinte e representa 15 min de atraso.
 {
   const plan = makePlan({
-    window_start: "22:00:00",
-    window_end: "02:00:00",
+    window_start: "2026-08-21T22:00:00",
+    window_end: "2026-08-22T02:00:00",
     interval_steps: [
       makeStep({
-        planned_start: "22:00:00",
-        planned_end: "02:00:00",
+        planned_start: "2026-08-21T22:00:00",
+        planned_end: "2026-08-22T02:00:00",
         status: "completed",
-        actual_start: "22:00:00",
-        actual_end: "02:15:00"
+        actual_start: "2026-08-21T22:00:00",
+        actual_end: "2026-08-22T02:15:00"
       })
     ]
   });
@@ -134,16 +140,38 @@ assert.equal(alignTime(null, 23 * 60), null);
 {
   const plan = makePlan({
     status: "executing",
-    interval_date: "2026-08-20",
+    interval_date: "2026-08-21",
     interval_steps: [
-      makeStep({ position: 0, planned_end: "08:30:00", status: "completed", actual_start: "08:05:00", actual_end: "08:40:00" }),
-      makeStep({ position: 1, planned_start: "08:30:00", planned_end: "09:00:00", status: "running", actual_start: "08:25:00" })
+      makeStep({ position: 0, planned_end: "2026-08-21T08:30:00", status: "completed", actual_start: "2026-08-21T08:05:00", actual_end: "2026-08-21T08:40:00" }),
+      makeStep({ position: 1, planned_start: "2026-08-21T08:30:00", planned_end: "2026-08-21T09:00:00", status: "running", actual_start: "2026-08-21T08:25:00" })
     ]
   });
-  const metrics = intervalMetrics(plan, new Date(2026, 7, 21, 10, 30));
+  // Antes do prazo da etapa aberta: quem manda é o marco mais avançado.
+  const metrics = intervalMetrics(plan, new Date(2026, 7, 21, 8, 45));
   assert.equal(metrics.progress, 50);
   assert.equal(metrics.variance, -5);
   assert.equal(metrics.deadline, "ahead");
+}
+
+// Etapa aberta que passou do prazo conta como atraso mesmo em outro dia. Com
+// hora solta isso era impossível: comparar "08:00" com agora não dizia nada
+// sobre qual dia, e a regra só valia para o dia corrente.
+{
+  const plan = makePlan({
+    status: "executing",
+    interval_date: "2026-08-20",
+    interval_steps: [
+      makeStep({
+        planned_start: "2026-08-20T22:00:00",
+        planned_end: "2026-08-21T02:00:00",
+        status: "running",
+        actual_start: "2026-08-20T22:10:00"
+      })
+    ]
+  });
+  const metrics = intervalMetrics(plan, new Date(2026, 7, 21, 3, 30));
+  assert.equal(metrics.variance, 90);
+  assert.equal(metrics.deadline, "late");
 }
 
 // Uma etapa aberta no dia corrente passa a refletir o atraso contra o próprio fim.
@@ -152,7 +180,7 @@ assert.equal(alignTime(null, 23 * 60), null);
   const plan = makePlan({
     status: "executing",
     interval_date: localDateISO(now),
-    interval_steps: [makeStep({ status: "running", actual_start: "08:00:00", planned_end: "09:00:00" })]
+    interval_steps: [makeStep({ status: "running", actual_start: "2026-08-21T08:00:00", planned_end: "2026-08-21T09:00:00" })]
   });
   const metrics = intervalMetrics(plan, now);
   assert.equal(metrics.variance, 90);
@@ -170,7 +198,7 @@ const plans = [
     manager_member_id: "manager-1",
     coordinator_member_id: "coordinator-1",
     interval_date: "2026-08-21",
-    interval_steps: [makeStep({ status: "completed", actual_start: "08:00:00", actual_end: "10:20:00" })]
+    interval_steps: [makeStep({ status: "completed", actual_start: "2026-08-21T08:00:00", actual_end: "2026-08-21T10:20:00" })]
   }),
   makePlan({
     id: "ahead-super",
@@ -183,7 +211,7 @@ const plans = [
     coordinator_member_id: "coordinator-2",
     coordinator_type: "superstructure",
     interval_date: "2026-08-20",
-    interval_steps: [makeStep({ status: "completed", actual_start: "08:00:00", actual_end: "09:50:00" })]
+    interval_steps: [makeStep({ status: "completed", actual_start: "2026-08-21T08:00:00", actual_end: "2026-08-21T09:50:00" })]
   }),
   makePlan({
     id: "planning-infra",
