@@ -483,12 +483,22 @@
 
   async function loadAdminData() {
     setState("Atualizando cadastros…", "syncing");
-    const [profileResult, subResult] = await Promise.all([
-      baseClient.from("user_profiles").select("id,email,full_name,role,enabled,manager_id,sub_id,coordinator_type,profile_needs_review,created_at").order("created_at", { ascending: false }),
-      baseClient.from("subs").select("id,code,name,operation,sort_order,active").order("sort_order")
+    const [profileResult, subResult, assignmentResult] = await Promise.all([
+      baseClient.from("user_profiles").select("id,email,full_name,role,enabled,manager_id,sub_id,coordinator_type,profile_needs_review,organization_member_id,created_at").order("created_at", { ascending: false }),
+      baseClient.from("subs").select("id,code,name,operation,sort_order,active").order("sort_order"),
+      baseClient.from("coordinator_sub_assignments").select("coordinator_member_id,sub_id")
     ]);
-    if (profileResult.error || subResult.error) throw profileResult.error || subResult.error;
-    members = profileResult.data || [];
+    if (profileResult.error || subResult.error || assignmentResult.error) throw profileResult.error || subResult.error || assignmentResult.error;
+    const assignmentsByMember = new Map();
+    (assignmentResult.data || []).forEach((assignment) => {
+      const assigned = assignmentsByMember.get(assignment.coordinator_member_id) || [];
+      assigned.push(Number(assignment.sub_id));
+      assignmentsByMember.set(assignment.coordinator_member_id, assigned);
+    });
+    members = (profileResult.data || []).map((profile) => ({
+      ...profile,
+      sub_ids: assignmentsByMember.get(profile.organization_member_id) || (profile.sub_id == null ? [] : [Number(profile.sub_id)])
+    }));
     subs = subResult.data || [];
     setState("Cadastros atualizados", "ok");
   }
@@ -497,8 +507,13 @@
     return '<option value="">Selecione</option>' + members.filter((profile) => profile.role === "manager" && profile.enabled).map((profile) => `<option value="${profile.id}" ${profile.id === selected ? "selected" : ""}>${escapeHtml(profile.full_name || profile.email)}</option>`).join("");
   }
 
-  function adminSubOptions(selected = "") {
-    return '<option value="">Selecione</option>' + subs.filter((sub) => sub.active || String(sub.id) === String(selected)).map((sub) => `<option value="${sub.id}" ${String(sub.id) === String(selected) ? "selected" : ""}>${escapeHtml(sub.code)} · ${escapeHtml(sub.name)}</option>`).join("");
+  function adminSubOptions(selectedIds = []) {
+    const selected = new Set(selectedIds.map(Number));
+    return subs.filter((sub) => sub.active || selected.has(Number(sub.id))).map((sub) => `<option value="${sub.id}" ${selected.has(Number(sub.id)) ? "selected" : ""}>${escapeHtml(sub.code)} · ${escapeHtml(sub.name)}</option>`).join("");
+  }
+
+  function selectedSubIds(select) {
+    return Array.from(select.selectedOptions, (option) => Number(option.value)).filter(Number.isSafeInteger);
   }
 
   function updateCreateCoordinatorFields() {
@@ -510,15 +525,31 @@
   function renderAdminUsers() {
     const query = $("#user-search").value.trim().toLocaleLowerCase("pt-BR");
     const rows = members.filter((profile) => !query || `${profile.full_name} ${profile.email}`.toLocaleLowerCase("pt-BR").includes(query));
-    $("#admin-users").innerHTML = rows.length ? rows.map((profile) => `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Perfil</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label data-edit-coordinator ${profile.role === "coordinator" ? "" : "hidden"}><span>Gerente</span><select name="managerId">${adminManagerOptions(profile.manager_id)}</select></label><label data-edit-coordinator ${profile.role === "coordinator" ? "" : "hidden"}><span>SUB</span><select name="subId">${adminSubOptions(profile.sub_id)}</select></label><label data-edit-coordinator ${profile.role === "coordinator" ? "" : "hidden"}><span>Classificação</span><select name="coordinatorType"><option value="infrastructure" ${profile.coordinator_type === "infrastructure" ? "selected" : ""}>Infraestrutura</option><option value="superstructure" ${profile.coordinator_type === "superstructure" ? "selected" : ""}>Superestrutura</option></select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`).join("") : emptyMarkup("Nenhuma conta corresponde à busca.");
+    $("#admin-users").innerHTML = rows.length ? rows.map((profile) => `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Perfil</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label data-edit-coordinator ${profile.role === "coordinator" ? "" : "hidden"}><span>Gerente</span><select name="managerId">${adminManagerOptions(profile.manager_id)}</select></label><label data-edit-coordinator class="admin-sub-field" ${profile.role === "coordinator" ? "" : "hidden"}><span>SUBs</span><select name="subIds" multiple size="4" title="Use Ctrl para selecionar mais de uma SUB">${adminSubOptions(profile.sub_ids)}</select></label><label data-edit-coordinator ${profile.role === "coordinator" ? "" : "hidden"}><span>Classificação</span><select name="coordinatorType"><option value="infrastructure" ${profile.coordinator_type === "infrastructure" ? "selected" : ""}>Infraestrutura</option><option value="superstructure" ${profile.coordinator_type === "superstructure" ? "selected" : ""}>Superestrutura</option></select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`).join("") : emptyMarkup("Nenhuma conta corresponde à busca.");
     $$(".user-admin-row").forEach((form) => {
-      form.role.addEventListener("change", () => { const show = form.role.value === "coordinator"; $$('[data-edit-coordinator]', form).forEach((field) => { field.hidden = !show; }); });
+      const updateCoordinatorFields = () => {
+        const show = form.role.value === "coordinator";
+        $$('[data-edit-coordinator]', form).forEach((field) => {
+          field.hidden = !show;
+          $("select", field).required = show;
+        });
+      };
+      updateCoordinatorFields();
+      form.role.addEventListener("change", updateCoordinatorFields);
       form.addEventListener("submit", async (event) => {
         event.preventDefault(); const feedback = $(".auth-feedback", form); const coordinator = form.role.value === "coordinator";
-        if (coordinator && (!form.managerId.value || !form.subId.value || !form.coordinatorType.value)) { feedback.textContent = "Gerente, SUB e classificação são obrigatórios."; return; }
+        const subIds = coordinator ? selectedSubIds(form.subIds) : [];
+        if (coordinator && (!form.managerId.value || !subIds.length || !form.coordinatorType.value)) { feedback.textContent = "Gerente, uma ou mais SUBs e classificação são obrigatórios."; return; }
         feedback.textContent = "Salvando…";
-        const payload = { full_name: form.fullName.value.trim(), role: form.role.value, enabled: form.enabled.disabled ? true : form.enabled.checked, manager_id: coordinator ? form.managerId.value : null, sub_id: coordinator ? Number(form.subId.value) : null, coordinator_type: coordinator ? form.coordinatorType.value : null, profile_needs_review: false };
-        const { error } = await baseClient.from("user_profiles").update(payload).eq("id", form.dataset.userId);
+        const { error } = await baseClient.rpc("update_site_user_profile", {
+          p_target_user_id: form.dataset.userId,
+          p_full_name: form.fullName.value.trim(),
+          p_role: form.role.value,
+          p_enabled: form.enabled.disabled ? true : form.enabled.checked,
+          p_manager_id: coordinator ? form.managerId.value : null,
+          p_sub_ids: subIds,
+          p_coordinator_type: coordinator ? form.coordinatorType.value : null
+        });
         if (error) { feedback.textContent = error.message; return; }
         feedback.textContent = "Salvo."; await loadAdminData(); renderAdminUsers();
       });
@@ -540,7 +571,7 @@
   async function initializeAdmin() {
     await loadAdminData();
     $("#admin-user-form").managerId.innerHTML = adminManagerOptions();
-    $("#admin-user-form").subId.innerHTML = adminSubOptions();
+    $("#admin-user-form").subIds.innerHTML = adminSubOptions();
     updateCreateCoordinatorFields();
     $("#admin-user-form").role.addEventListener("change", updateCreateCoordinatorFields);
     renderAdminUsers(); renderAdminSubs();
@@ -552,11 +583,12 @@
     }));
     $("#admin-user-form").addEventListener("submit", async (event) => {
       event.preventDefault(); const form = event.currentTarget; const feedback = $("#admin-user-feedback"); const coordinator = form.role.value === "coordinator";
-      if (coordinator && (!form.managerId.value || !form.subId.value || !form.coordinatorType.value)) { feedback.textContent = "Gerente, SUB e classificação são obrigatórios."; return; }
+      const subIds = coordinator ? selectedSubIds(form.subIds) : [];
+      if (coordinator && (!form.managerId.value || !subIds.length || !form.coordinatorType.value)) { feedback.textContent = "Gerente, uma ou mais SUBs e classificação são obrigatórios."; return; }
       feedback.textContent = "Criando conta…";
-      const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, managerId: coordinator ? form.managerId.value : null, subId: coordinator ? Number(form.subId.value) : null, coordinatorType: coordinator ? form.coordinatorType.value : null } });
+      const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, managerId: coordinator ? form.managerId.value : null, subIds, coordinatorType: coordinator ? form.coordinatorType.value : null } });
       if (error || data?.error) { feedback.textContent = data?.error || error.message; return; }
-      feedback.textContent = "Conta criada e habilitada."; form.reset(); form.role.value = "coordinator"; await loadAdminData(); form.managerId.innerHTML = adminManagerOptions(); form.subId.innerHTML = adminSubOptions(); updateCreateCoordinatorFields(); renderAdminUsers();
+      feedback.textContent = "Conta criada e habilitada."; form.reset(); form.role.value = "coordinator"; await loadAdminData(); form.managerId.innerHTML = adminManagerOptions(); form.subIds.innerHTML = adminSubOptions(); updateCreateCoordinatorFields(); renderAdminUsers();
     });
     $("#sub-form").addEventListener("submit", async (event) => {
       event.preventDefault(); const form = event.currentTarget; const feedback = $("#sub-feedback"); feedback.textContent = "Adicionando…";

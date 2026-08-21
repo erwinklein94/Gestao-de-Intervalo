@@ -8,7 +8,7 @@ Aplicação web para planejar, executar e acompanhar intervalos de manutenção 
 |---|---|---|
 | Fluxo operacional | Planejamento, execução, dashboard individual, conta, compartilhamento e sincronização offline | `index.html`, `executar.html`, `dashboard.html`, `conta.html`, `acompanhar.html`, `app.js` |
 | Portal gerencial | Cards, filtros, histórico, dashboard geral, acompanhamento detalhado e modo de exemplos | `gestao.html`, `assets/portal.js` |
-| Administração | Criação e edição de perfis, hierarquia Gerente → Coordenador e cadastro de SUBs | `admin.html`, `assets/portal.js` |
+| Administração | Criação e edição de perfis, hierarquia Gerente → Coordenador, atribuição de múltiplas SUBs e cadastro de SUBs | `admin.html`, `assets/portal.js` |
 | Identidade e interface | Login, proteção inicial de rotas, temas claro/escuro e estilos responsivos | `login.html`, `assets/auth-guard.js`, `styles.css` |
 | Backend | Auth, Postgres, RLS, funções SQL, auditoria, dados demonstrativos e Edge Functions | `supabase/migrations/`, `supabase/functions/` |
 | Entrega | Publicação automática do site estático | `.github/workflows/deploy-pages.yml` |
@@ -28,7 +28,7 @@ As permissões são aplicadas na navegação e novamente no banco por Row Level 
 | Coordenador | Próprios intervalos | Planejamento, execução, dashboard individual, histórico, comentários operacionais e Minha Conta |
 | Editor | Toda a operação | Visão gerencial completa, ferramentas operacionais, Administração, gestão de usuários/SUBs e modo Exemplos |
 
-Cada Coordenador deve possuir Gerente responsável, SUB e classificação `infrastructure` ou `superstructure`. O Gerente Executivo é um perfil global somente leitura e não participa da relação hierárquica Gerente → Coordenador. Perfis legados incompletos são preservados com indicação de revisão, em vez de terem dados removidos silenciosamente.
+Cada Coordenador deve possuir Gerente responsável, uma ou mais SUBs e classificação `infrastructure` ou `superstructure`. Cada intervalo continua associado a uma SUB específica dentre as atribuídas ao Coordenador. O Gerente Executivo é um perfil global somente leitura e não participa da relação hierárquica Gerente → Coordenador. Perfis legados incompletos são preservados com indicação de revisão, em vez de terem dados removidos silenciosamente.
 
 ## Páginas
 
@@ -115,6 +115,7 @@ As migrações mantêm as tabelas operacionais originais e ampliam o modelo de f
 
 - `user_profiles`: conta Auth, papel, habilitação e dados organizacionais reais.
 - `organization_members`: diretório e hierarquia por dataset, incluindo personas sem conta Auth no ambiente demonstrativo.
+- `coordinator_sub_assignments`: relação muitos-para-muitos entre cada Coordenador e as SUBs sob sua responsabilidade.
 - `subs`: catálogo administrável das 103 SUBs identificadas no mapa utilizado como fonte, mais futuras inclusões administrativas.
 - `datasets`: separação explícita entre `real` e `demo`.
 - `interval_plans` e `interval_steps`: plano, execução, status, responsáveis, revisões e etapas independentes.
@@ -164,7 +165,7 @@ A interface informa estados como **Salvo**, **Sem conexão**, **Sincronizando**,
 
 ## Migrações Supabase
 
-As migrações ficam em `supabase/migrations/` e devem ser aplicadas na ordem do timestamp. A expansão organizacional está em `20260821115809_expand_organizational_interval_management.sql`; `20260821133000_complete_sub_catalog.sql` completa o catálogo com as SUBs 100–103 sem alterar as anteriores. As migrações seguintes cobrem o índice da auditoria por autor, o bootstrap das personas demo sob RLS com privilégios do próprio chamador, a inclusão segura de `executive_manager` e o preenchimento do escopo organizacional de planos legados comprovadamente vinculados à Coordenadora cadastrada.
+As migrações ficam em `supabase/migrations/` e devem ser aplicadas na ordem do timestamp. A expansão organizacional está em `20260821115809_expand_organizational_interval_management.sql`; `20260821133000_complete_sub_catalog.sql` completa o catálogo com as SUBs 100–103 sem alterar as anteriores. As migrações seguintes cobrem o índice da auditoria por autor, o bootstrap das personas demo sob RLS com privilégios do próprio chamador, a inclusão segura de `executive_manager`, o preenchimento do escopo organizacional de planos legados e a atribuição protegida de múltiplas SUBs por Coordenador.
 
 Com a CLI autenticada e o projeto correto vinculado:
 
@@ -177,7 +178,7 @@ Revise sempre o `--dry-run`, a lista de migrações pendentes e os advisors de s
 
 ## Edge Functions
 
-- `create-site-user`: endpoint autenticado usado pela Administração. Revalida o JWT, exige Editor habilitado, valida papel/hierarquia/SUB, permite provisionamento idempotente explícito de uma conta existente e mantém a chave administrativa somente no ambiente da função.
+- `create-site-user`: endpoint autenticado usado pela Administração. Revalida o JWT, exige Editor habilitado, valida papel, hierarquia e todas as SUBs atribuídas, permite provisionamento idempotente explícito de uma conta existente e mantém a chave administrativa somente no ambiente da função.
 - `interval-share`: endpoint público por token de alta entropia. Aceita somente planos do dataset real, valida link, expiração, revogação e proprietário habilitado, e retorna uma projeção de dados somente leitura sem identificadores privados.
 
 Deploy pela CLI, preservando verificação JWT na função administrativa e desabilitando-a somente na função cujo próprio token é a credencial:

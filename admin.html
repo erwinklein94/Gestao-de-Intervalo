@@ -4,7 +4,7 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
   <script src="assets/auth-guard.js"></script><meta name="description" content="Administração de usuários, hierarquia e SUBs.">
   <title>Gestão de Intervalo | Administração</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=20260821-1"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260821-2" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20260821-3"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260821-3" defer></script>
 </head>
 <body data-page="admin">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -22,12 +22,12 @@
             <label class="field"><span>Senha inicial *</span><input name="password" type="password" minlength="8" required></label>
             <label class="field"><span>Perfil *</span><select name="role" required><option value="director">Diretor</option><option value="executive_manager">Gerente Executivo</option><option value="consultant">Consultor</option><option value="manager">Gerente</option><option value="coordinator" selected>Coordenador</option><option value="editor">Editor</option></select></label>
             <label class="field" data-coordinator-field><span>Gerente responsável *</span><select name="managerId"></select></label>
-            <label class="field" data-coordinator-field><span>SUB *</span><select name="subId"></select></label>
+            <label class="field" data-coordinator-field><span>SUBs sob responsabilidade *</span><select name="subIds" multiple size="5" aria-describedby="admin-sub-help"></select><small class="field-help" id="admin-sub-help">Selecione uma ou mais SUBs. No computador, use Ctrl para combinar opções.</small></label>
             <label class="field" data-coordinator-field><span>Classificação *</span><select name="coordinatorType"><option value="infrastructure">Infraestrutura</option><option value="superstructure">Superestrutura</option></select></label>
             <div class="admin-form-actions"><button class="button button-secondary" type="submit">Criar conta</button><span class="auth-feedback" id="admin-user-feedback"></span></div>
           </form>
         </article>
-        <header class="portal-section-heading"><div><p class="section-kicker">Contas reais</p><h2>Usuários e relações</h2><p>Coordenadores exigem Gerente, SUB e classificação.</p></div><label class="field compact-search"><span>Buscar</span><input id="user-search" type="search" placeholder="Nome ou e-mail"></label></header>
+        <header class="portal-section-heading"><div><p class="section-kicker">Contas reais</p><h2>Usuários e relações</h2><p>Coordenadores exigem Gerente, uma ou mais SUBs e classificação.</p></div><label class="field compact-search"><span>Buscar</span><input id="user-search" type="search" placeholder="Nome ou e-mail"></label></header>
         <div class="admin-list" id="admin-users"></div>
       </section>
       <section data-admin-view="subs" hidden>

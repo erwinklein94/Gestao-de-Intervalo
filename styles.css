@@ -305,6 +305,7 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; padding: 24px 28px 30px; }
 .field { display: grid; gap: 7px; }
 .field > span { color: var(--blue); font-size: 11px; font-weight: 700; }
+.field-help { color: var(--muted); font-size: 10px; line-height: 1.35; }
 .field-span-2 { grid-column: span 2; }
 .schedule-actions, .data-actions, .execution-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .validation-summary { margin: 18px 28px 0; min-height: 0; }
@@ -856,6 +857,9 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .admin-row label { min-width: 0; display: grid; gap: 4px; }
 .admin-row label > span { color: var(--muted); font-size: 8px; font-weight: 700; text-transform: uppercase; }
 .admin-row input, .admin-row select { min-width: 0; width: 100%; min-height: 38px; padding: 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-size: 10px; }
+.admin-form select[multiple], .admin-row select[multiple] { min-height: 104px; padding: 4px; }
+.admin-form select[multiple] option, .admin-row select[multiple] option { padding: 5px 7px; border-radius: 4px; }
+.admin-form select[multiple] option:checked, .admin-row select[multiple] option:checked { color: var(--white); background: var(--blue) linear-gradient(0deg, var(--blue), var(--blue)); }
 .admin-row-identity { min-width: 0; display: grid; align-self: center; }
 .admin-row-identity strong, .admin-row-identity span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-row-identity strong { color: var(--blue); }

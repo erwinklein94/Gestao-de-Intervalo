@@ -5,7 +5,7 @@ const allowedOrigins = new Set(["https://erwinklein94.github.io", "http://localh
 const roles = new Set(["director", "consultant", "executive_manager", "manager", "coordinator", "editor"]);
 const coordinatorTypes = new Set(["infrastructure", "superstructure"]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const profileColumns = "id,email,full_name,role,enabled,manager_id,sub_id,coordinator_type,profile_needs_review";
+const profileColumns = "id,email,full_name,role,enabled,manager_id,sub_id,coordinator_type,profile_needs_review,organization_member_id";
 
 function response(origin: string | null, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -56,6 +56,24 @@ async function readProfile(admin: ReturnType<typeof createClient>, userId: strin
   return await admin.from("user_profiles").select(profileColumns).eq("id", userId).maybeSingle();
 }
 
+async function readAssignments(admin: ReturnType<typeof createClient>, memberId: string | null) {
+  if (!memberId) return [];
+  const { data, error } = await admin.from("coordinator_sub_assignments").select("sub_id").eq("coordinator_member_id", memberId);
+  if (error) throw error;
+  return (data || []).map((assignment) => Number(assignment.sub_id));
+}
+
+async function replaceAssignments(admin: ReturnType<typeof createClient>, memberId: string | null, subIds: number[]) {
+  if (!memberId) throw new Error("missing_organization_member");
+  const { error: deleteError } = await admin.from("coordinator_sub_assignments").delete().eq("coordinator_member_id", memberId);
+  if (deleteError) throw deleteError;
+  if (!subIds.length) return;
+  const { error: insertError } = await admin.from("coordinator_sub_assignments").insert(
+    subIds.map((subId) => ({ coordinator_member_id: memberId, sub_id: subId })),
+  );
+  if (insertError) throw insertError;
+}
+
 async function cleanupCreatedUser(admin: ReturnType<typeof createClient>, userId: string) {
   const failures: string[] = [];
   const { error: profileError } = await admin.from("user_profiles").delete().eq("id", userId);
@@ -91,6 +109,23 @@ async function restoreExistingProfile(admin: ReturnType<typeof createClient>, us
   }
   if (failures.length) console.error("create-site-user rollback-existing", { userId, failures });
   return failures.length === 0;
+}
+
+async function restoreExistingState(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  previousProfile: Record<string, unknown> | null,
+  previousSubIds: number[],
+) {
+  const profileRestored = await restoreExistingProfile(admin, userId, previousProfile);
+  if (!profileRestored || !previousProfile?.organization_member_id) return profileRestored;
+  try {
+    await replaceAssignments(admin, String(previousProfile.organization_member_id), previousSubIds);
+    return true;
+  } catch (error) {
+    console.error("create-site-user rollback-assignments", { userId, code: error instanceof Error ? error.name : "unknown" });
+    return false;
+  }
 }
 
 function safeResult(
@@ -135,7 +170,13 @@ Deno.serve(async (request) => {
     const roleWasProvided = typeof body.role === "string" && body.role.length > 0;
     const role = roleWasProvided ? String(body.role) : "coordinator";
     const managerId = body.managerId == null || body.managerId === "" ? null : String(body.managerId);
-    const subId = body.subId == null || body.subId === "" ? null : Number(body.subId);
+    const rawSubIds = Array.isArray(body.subIds)
+      ? body.subIds
+      : body.subId == null || body.subId === "" ? [] : [body.subId];
+    const subIds = rawSubIds.map(Number);
+    const subIdsAreValid = subIds.every((subId) => Number.isSafeInteger(subId) && subId > 0)
+      && new Set(subIds).size === subIds.length;
+    const subId = subIds[0] ?? null;
     const coordinatorType = body.coordinatorType == null || body.coordinatorType === "" ? null : String(body.coordinatorType);
     const updateExisting = body.updateExisting === true;
     const existingUserId = body.existingUserId == null || body.existingUserId === "" ? null : String(body.existingUserId);
@@ -155,20 +196,22 @@ Deno.serve(async (request) => {
     }
 
     if (role === "coordinator") {
-      if (!managerId || !uuidPattern.test(managerId) || !Number.isSafeInteger(subId) || !coordinatorType || !coordinatorTypes.has(coordinatorType)) {
-        return response(origin, { error: "Coordenador exige Gerente, SUB e classificação válidos." }, 400);
+      if (!managerId || !uuidPattern.test(managerId) || !subIdsAreValid || !subIds.length || !coordinatorType || !coordinatorTypes.has(coordinatorType)) {
+        return response(origin, { error: "Coordenador exige Gerente, uma ou mais SUBs e classificação válidos." }, 400);
       }
-      const [{ data: manager }, { data: sub }, { data: realDataset }] = await Promise.all([
+      const [{ data: manager }, subResult, { data: realDataset }] = await Promise.all([
         admin.from("user_profiles").select("id,role,enabled,organization_member_id").eq("id", managerId).maybeSingle(),
-        admin.from("subs").select("id,active").eq("id", subId).maybeSingle(),
+        admin.from("subs").select("id,active").in("id", subIds),
         admin.from("datasets").select("id").eq("code", "real").eq("kind", "real").eq("active", true).maybeSingle(),
       ]);
-      if (!manager?.enabled || manager.role !== "manager" || !manager.organization_member_id || !sub?.active || !realDataset) {
-        return response(origin, { error: "O Gerente ou a SUB selecionada não está disponível." }, 400);
+      const availableSubs = subResult.data || [];
+      if (!manager?.enabled || manager.role !== "manager" || !manager.organization_member_id
+        || subResult.error || availableSubs.length !== subIds.length || availableSubs.some((sub) => !sub.active) || !realDataset) {
+        return response(origin, { error: "O Gerente ou uma das SUBs selecionadas não está disponível." }, 400);
       }
       const { data: managerMember } = await admin.from("organization_members").select("id,role,enabled").eq("id", manager.organization_member_id).eq("dataset_id", realDataset.id).maybeSingle();
       if (!managerMember?.enabled || managerMember.role !== "manager") return response(origin, { error: "O vínculo organizacional do Gerente precisa ser revisado." }, 400);
-    } else if (managerId || subId != null || coordinatorType) {
+    } else if (managerId || subIds.length || coordinatorType || !subIdsAreValid) {
       return response(origin, { error: "Somente Coordenadores podem receber Gerente, SUB e classificação." }, 400);
     }
 
@@ -183,17 +226,20 @@ Deno.serve(async (request) => {
 
       const { data: previousProfile, error: previousProfileError } = await readProfile(admin, existingUserId);
       if (previousProfileError) return response(origin, { error: "Não foi possível validar o perfil atual." }, 500);
+      const previousSubIds = await readAssignments(admin, previousProfile?.organization_member_id ? String(previousProfile.organization_member_id) : null);
 
       try {
         let { data: savedProfile, error: profileError } = await saveProfile(admin, existingUserId, email, desiredProfile);
         if (profileError || !profileMatches(savedProfile, desiredProfile)) {
           const { data: verifiedProfile } = await readProfile(admin, existingUserId);
           if (!profileMatches(verifiedProfile, desiredProfile)) {
-            await restoreExistingProfile(admin, existingUserId, previousProfile);
+            await restoreExistingState(admin, existingUserId, previousProfile, previousSubIds);
             return response(origin, { error: "O perfil existente não pôde ser atualizado." }, 500);
           }
           savedProfile = verifiedProfile;
         }
+
+        await replaceAssignments(admin, String(savedProfile.organization_member_id || ""), role === "coordinator" ? subIds : []);
 
         const authUpdate = await admin.auth.admin.updateUserById(existingUserId, {
           password,
@@ -201,7 +247,7 @@ Deno.serve(async (request) => {
           user_metadata: { ...(existingUser.user_metadata || {}), full_name: fullName },
         });
         if (authUpdate.error || !authUpdate.data.user) {
-          const rollbackComplete = await restoreExistingProfile(admin, existingUserId, previousProfile);
+          const rollbackComplete = await restoreExistingState(admin, existingUserId, previousProfile, previousSubIds);
           console.error("create-site-user update-auth-failed", {
             userId: existingUserId,
             code: authUpdate.error?.code || authUpdate.error?.status || "unknown",
@@ -212,7 +258,7 @@ Deno.serve(async (request) => {
 
         return response(origin, safeResult("updated", authUpdate.data.user, savedProfile), 200);
       } catch (updateError) {
-        const rollbackComplete = await restoreExistingProfile(admin, existingUserId, previousProfile);
+        const rollbackComplete = await restoreExistingState(admin, existingUserId, previousProfile, previousSubIds);
         console.error("create-site-user update-exception", {
           userId: existingUserId,
           code: updateError instanceof Error ? updateError.name : "unknown",
@@ -250,6 +296,8 @@ Deno.serve(async (request) => {
         }
         savedProfile = verifiedProfile;
       }
+
+      await replaceAssignments(admin, String(savedProfile.organization_member_id || ""), role === "coordinator" ? subIds : []);
 
       return response(origin, safeResult("created", created.user, savedProfile), 201);
     } catch (profileException) {

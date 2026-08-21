@@ -18,6 +18,7 @@ const share = read("supabase/functions/interval-share/index.ts");
 const commentAuthorization = read("supabase/migrations/20260821152000_restrict_comments_to_operators.sql");
 const executiveManagerMigration = read("supabase/migrations/20260821160000_add_executive_manager_role.sql");
 const coordinatorScopeBackfill = read("supabase/migrations/20260821161000_backfill_requested_coordinator_scope.sql");
+const multipleCoordinatorSubs = read("supabase/migrations/20260821170000_add_multiple_coordinator_subs.sql");
 
 function containsAll(source, values, label) {
   for (const value of values) assert.ok(source.includes(value), `${label}: ausente ${value}`);
@@ -63,9 +64,19 @@ containsAll(coordinatorScopeBackfill, [
 ], "reparo idempotente do escopo legado da Coordenadora");
 assert.ok(!coordinatorScopeBackfill.includes("lower(btrim(plan.coordinator))"), "texto livre não pode reatribuir um plano legado");
 
-for (const table of ["interval_plans", "interval_steps", "user_profiles", "datasets", "subs", "organization_members", "interval_comments", "interval_sync_receipts", "interval_audit_log"]) {
+for (const table of ["interval_plans", "interval_steps", "user_profiles", "datasets", "subs", "organization_members", "coordinator_sub_assignments", "interval_comments", "interval_sync_receipts", "interval_audit_log"]) {
   assert.ok(migration.includes(`alter table public.${table} enable row level security`), `RLS deve estar ativa em ${table}`);
 }
+containsAll(multipleCoordinatorSubs, [
+  "primary key (coordinator_member_id, sub_id)",
+  "create or replace function public.update_site_user_profile",
+  "p_sub_ids bigint[]",
+  "security invoker",
+  "Selecione uma SUB atribuida ao Coordenador",
+  "Members read Coordinator SUB assignments within scope",
+  "grant select, insert, delete on public.coordinator_sub_assignments to authenticated"
+], "vínculo múltiplo e protegido entre Coordenadores e SUBs");
+assert.ok(!multipleCoordinatorSubs.includes("grant select, insert, update, delete on public.coordinator_sub_assignments"), "atribuições não devem permitir UPDATE direto");
 assert.ok(commentAuthorization.includes("private.can_write_plan(plan.dataset_id, plan.coordinator_member_id)"), "comentários devem exigir permissão operacional");
 assert.ok(!commentAuthorization.includes("private.can_read_plan"), "permissão de leitura não pode autorizar comentários");
 
@@ -88,6 +99,9 @@ containsAll(createUser, [
   "password.length < 8",
   '"executive_manager"',
   'role === "coordinator"',
+  "coordinator_sub_assignments",
+  "subIds",
+  "new Set(subIds).size === subIds.length",
   "manager.organization_member_id",
   'managerMember.role !== "manager"',
   "profile_needs_review: false",

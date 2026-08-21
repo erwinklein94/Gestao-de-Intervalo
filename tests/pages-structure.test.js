@@ -71,7 +71,8 @@ includesAll(admin, [
   'value="coordinator"',
   'value="editor"',
   'name="managerId"',
-  'name="subId"',
+  'name="subIds"',
+  'multiple size="5"',
   'name="coordinatorType"',
   "data-coordinator-field",
   'id="admin-users"',
@@ -83,7 +84,10 @@ assert.deepEqual(attributeValues(admin, "data-admin-view"), ["users", "subs"]);
 
 // Integrações estruturais das páginas existentes que receberam as novas funções.
 const account = read("conta.html");
-includesAll(account, ['id="account-history"', 'id="account-admin-link"', 'id="account-examples"', "gestao.html?view=history"], "histórico e atalhos da Minha Conta");
+includesAll(account, ['id="account-history"', 'id="account-admin-link"', 'id="account-examples"', "gestao.html?view=history", "SUBs sob responsabilidade"], "histórico e atalhos da Minha Conta");
+
+const planning = read("index.html");
+includesAll(planning, ['name="subId"', "SUB responsável"], "seleção da SUB no planejamento");
 
 const execution = read("executar.html");
 includesAll(execution, [

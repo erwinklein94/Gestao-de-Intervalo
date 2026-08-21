@@ -1039,6 +1039,7 @@
     const warnings = [];
     if (!plan.title.trim()) errors.push("informe o nome do plano");
     if (currentProfile?.role === "editor" && !plan.coordinatorMemberId) errors.push("selecione o Coordenador responsável");
+    if (["coordinator", "editor"].includes(currentProfile?.role) && !plan.subId) errors.push("selecione a SUB responsável");
     if (!plan.date) errors.push("informe a data");
     if (timeline.windowStart == null || timeline.windowEnd == null) errors.push("preencha a janela completa");
     if (plan.windowStart && plan.windowEnd && plan.windowStart === plan.windowEnd) errors.push("o início e o fim da janela não podem ser iguais");
@@ -1158,6 +1159,29 @@
     const selector = $("#plan-selector");
     const dialog = $("#confirm-dialog");
     let coordinatorDirectory = [];
+    let planningSubs = [];
+    const coordinatorSubIds = new Map();
+
+    async function loadCoordinatorSubs() {
+      const [assignmentResult, subResult] = await Promise.all([
+        cloudClient.from("coordinator_sub_assignments").select("coordinator_member_id,sub_id"),
+        cloudClient.from("subs").select("id,code,name,active").order("sort_order")
+      ]);
+      if (assignmentResult.error || subResult.error) throw assignmentResult.error || subResult.error;
+      planningSubs = subResult.data || [];
+      (assignmentResult.data || []).forEach((assignment) => {
+        const assigned = coordinatorSubIds.get(assignment.coordinator_member_id) || [];
+        assigned.push(Number(assignment.sub_id));
+        coordinatorSubIds.set(assignment.coordinator_member_id, assigned);
+      });
+      coordinatorDirectory.forEach((member) => {
+        if (!coordinatorSubIds.has(member.id) && member.sub_id != null) coordinatorSubIds.set(member.id, [Number(member.sub_id)]);
+      });
+    }
+
+    function assignedSubIds(memberId) {
+      return coordinatorSubIds.get(memberId) || [];
+    }
 
     async function configureCoordinatorField() {
       const currentField = form.elements.coordinator;
@@ -1165,6 +1189,23 @@
       if (currentProfile.role === "coordinator") {
         currentField.readOnly = true;
         currentField.title = "O Coordenador responsável é definido pela sua conta.";
+        coordinatorDirectory = [{
+          id: currentProfile.organization_member_id,
+          full_name: currentProfile.full_name,
+          manager_id: null,
+          sub_id: currentProfile.sub_id,
+          coordinator_type: currentProfile.coordinator_type
+        }];
+        try {
+          await loadCoordinatorSubs();
+          const plan = activePlan();
+          const allowed = assignedSubIds(currentProfile.organization_member_id);
+          if (!plan.subId && allowed.length) plan.subId = allowed[0];
+          renderForm();
+        } catch (error) {
+          console.warn(error);
+          showToast("Não foi possível carregar as SUBs sob sua responsabilidade.");
+        }
         return;
       }
       if (currentProfile.role !== "editor") return;
@@ -1190,6 +1231,14 @@
         return;
       }
       coordinatorDirectory = data || [];
+      try {
+        await loadCoordinatorSubs();
+      } catch (assignmentError) {
+        console.warn(assignmentError);
+        select.innerHTML = '<option value="">Não foi possível carregar as SUBs</option>';
+        showToast("Não foi possível carregar as SUBs dos Coordenadores.");
+        return;
+      }
       select.innerHTML = '<option value="">Selecione o Coordenador</option>' + coordinatorDirectory
         .map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.full_name)}</option>`)
         .join("");
@@ -1214,6 +1263,17 @@
           input.disabled = plan.locked || (name === "coordinator" && currentProfile?.role === "coordinator");
         }
       });
+      const subSelect = form.elements.subId;
+      const allowedIds = assignedSubIds(plan.coordinatorMemberId);
+      const allowed = planningSubs.filter((sub) => sub.active && allowedIds.includes(Number(sub.id)));
+      const historical = plan.subId && !allowed.some((sub) => Number(sub.id) === Number(plan.subId))
+        ? planningSubs.find((sub) => Number(sub.id) === Number(plan.subId))
+        : null;
+      subSelect.innerHTML = '<option value="">Selecione a SUB</option>'
+        + allowed.map((sub) => `<option value="${sub.id}">${escapeHtml(sub.code)} · ${escapeHtml(sub.name)}</option>`).join("")
+        + (historical ? `<option value="${historical.id}">${escapeHtml(historical.code)} · ${escapeHtml(historical.name)} · vínculo histórico</option>` : "");
+      subSelect.value = plan.subId == null ? "" : String(plan.subId);
+      subSelect.disabled = plan.locked || !plan.coordinatorMemberId || (!allowed.length && !historical);
       $("#lock-banner").hidden = !plan.locked;
       const hasExecution = hasExecutionData(plan);
       $("#planning-revision-banner").hidden = plan.locked || !hasExecution;
@@ -1315,8 +1375,11 @@
         plan.coordinator = member?.full_name || "";
         plan.coordinatorMemberId = member?.id || null;
         plan.managerMemberId = member?.manager_id || null;
-        plan.subId = member?.sub_id || null;
+        plan.subId = assignedSubIds(member?.id)[0] || member?.sub_id || null;
         plan.coordinatorType = member?.coordinator_type || null;
+        renderForm();
+      } else if (field === "subId") {
+        plan.subId = event.target.value ? Number(event.target.value) : null;
       } else if (field && Object.hasOwn(plan, field)) {
         plan[field] = event.target.value;
       }
@@ -2842,15 +2905,20 @@
       .eq("enabled", true);
     const ownMember = (directory || []).find((member) => member.id === currentProfile.organization_member_id);
     const manager = (directory || []).find((member) => member.id === ownMember?.manager_id);
-    const { data: ownSub } = ownMember?.sub_id
-      ? await cloudClient.from("subs").select("code,name").eq("id", ownMember.sub_id).maybeSingle()
-      : { data: null };
+    const { data: ownAssignments } = ownMember
+      ? await cloudClient.from("coordinator_sub_assignments").select("sub_id").eq("coordinator_member_id", ownMember.id)
+      : { data: [] };
+    const assignedSubIds = (ownAssignments || []).map((assignment) => Number(assignment.sub_id));
+    if (!assignedSubIds.length && ownMember?.sub_id != null) assignedSubIds.push(Number(ownMember.sub_id));
+    const { data: ownSubs } = assignedSubIds.length
+      ? await cloudClient.from("subs").select("id,code,name,sort_order").in("id", assignedSubIds).order("sort_order")
+      : { data: [] };
     const coordinator = currentProfile.role === "coordinator";
     $("#account-manager-row").hidden = !coordinator;
     $("#account-sub-row").hidden = !coordinator;
     $("#account-type-row").hidden = !coordinator;
     $("#account-detail-manager").textContent = manager?.full_name || "Cadastro pendente de revisão";
-    $("#account-detail-sub").textContent = ownSub ? `${ownSub.code} · ${ownSub.name}` : "Cadastro pendente de revisão";
+    $("#account-detail-sub").textContent = ownSubs?.length ? ownSubs.map((sub) => `${sub.code} · ${sub.name}`).join("; ") : "Cadastro pendente de revisão";
     $("#account-detail-type").textContent = ownMember?.coordinator_type === "infrastructure" ? "Infraestrutura" : ownMember?.coordinator_type === "superstructure" ? "Superestrutura" : "Cadastro pendente de revisão";
 
     await renderAccountHistory();
