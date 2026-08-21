@@ -8,10 +8,10 @@
   <meta name="description" content="Acompanhamento gerencial, histórico e indicadores dos intervalos.">
   <title>Gestão de Intervalo | Visão gerencial</title>
   <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=20260821-7">
+  <link rel="stylesheet" href="styles.css?v=20260821-8">
   <script src="assets/jszip.min.js" defer></script>
   <script src="assets/supabase.min.js" defer></script>
-  <script src="assets/portal.js?v=20260821-6" defer></script>
+  <script src="assets/portal.js?v=20260821-7" defer></script>
 </head>
 <body data-page="management">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -51,9 +51,8 @@
         <div class="portal-filters-heading"><div><p class="section-kicker">Filtros do seu escopo</p><h2 id="filters-title">Localize um intervalo</h2></div><button type="button" class="button button-ghost" id="clear-filters">Limpar filtros</button></div>
         <div class="portal-filter-grid">
           <label class="field"><span>Gerente</span><select data-filter="manager"><option value="">Todos</option></select></label>
-          <label class="field"><span>Coordenador</span><select data-filter="coordinator"><option value="">Todos</option></select></label>
-          <label class="field"><span>SUB</span><select data-filter="sub"><option value="">Todas</option></select></label>
-          <label class="field"><span>Classificação</span><select data-filter="classification"><option value="">Todas</option><option value="infrastructure">Infraestrutura</option><option value="superstructure">Superestrutura</option></select></label>
+          <label class="field"><span>Coordenador / Especialista</span><select data-filter="coordinator"><option value="">Todos</option></select></label>
+          <label class="field"><span>Classificação</span><select data-filter="classification"><option value="">Todas</option><option value="superstructure">Superestrutura</option><option value="infrastructure">Infraestrutura</option><option value="modernization">Modernização</option></select></label>
           <label class="field"><span>Status</span><select data-filter="status"><option value="">Todos</option><option value="planning">Planejamento</option><option value="executing">Em execução</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>
           <label class="field"><span>Situação de prazo</span><select data-filter="deadline"><option value="">Todas</option><option value="late">Em atraso</option><option value="ontime">No prazo</option><option value="ahead">Adiantado</option></select></label>
           <label class="field"><span>Tipo de intervalo</span><select data-filter="service"><option value="">Todos</option></select></label>
@@ -69,9 +68,10 @@
       </section>
 
       <section data-view="running" hidden>
-        <header class="portal-section-heading"><div><p class="section-kicker">Operação ao vivo</p><h2>Intervalos em execução</h2><p>Frentes independentes, agrupadas por Infraestrutura e Superestrutura.</p></div><span class="result-count" data-result-count="running">0 resultados</span></header>
+        <header class="portal-section-heading"><div><p class="section-kicker">Operação ao vivo</p><h2>Intervalos em execução</h2><p>Frentes agrupadas por Superestrutura, Infraestrutura e Modernização.</p></div><span class="result-count" data-result-count="running">0 resultados</span></header>
         <section class="running-group"><div class="group-title"><span class="type-mark infra">I</span><div><h3>Infraestrutura</h3><p>Coordenações e frentes de infraestrutura</p></div></div><div class="interval-card-grid" id="infra-cards"></div></section>
         <section class="running-group"><div class="group-title"><span class="type-mark super">S</span><div><h3>Superestrutura</h3><p>Coordenações e frentes de superestrutura</p></div></div><div class="interval-card-grid" id="super-cards"></div></section>
+        <section class="running-group"><div class="group-title"><span class="type-mark modernization">M</span><div><h3>Modernização</h3><p>Especialistas e frentes de modernização</p></div></div><div class="interval-card-grid" id="modernization-cards"></div></section>
       </section>
 
       <section data-view="history" hidden>

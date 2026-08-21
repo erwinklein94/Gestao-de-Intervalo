@@ -51,10 +51,8 @@ function makePlan(overrides = {}) {
     service_type: "Manutenção",
     coordinatorName: "Coordenação padrão",
     managerName: "Gerência padrão",
-    subCode: "SUB 001",
     manager_member_id: "manager-default",
     coordinator_member_id: "coordinator-default",
-    sub_id: 1,
     coordinator_type: "infrastructure",
     interval_date: "2026-08-21",
     window_start: "08:00:00",
@@ -169,10 +167,8 @@ const plans = [
     service_type: "Renovação de linha",
     coordinatorName: "Carla Coordenação",
     managerName: "Marina Gerência",
-    subCode: "SUB 010",
     manager_member_id: "manager-1",
     coordinator_member_id: "coordinator-1",
-    sub_id: 10,
     interval_date: "2026-08-21",
     interval_steps: [makeStep({ status: "completed", actual_start: "08:00:00", actual_end: "10:20:00" })]
   }),
@@ -183,10 +179,8 @@ const plans = [
     service_type: "Drenagem",
     coordinatorName: "Carlos Operação",
     managerName: "Miguel Gerência",
-    subCode: "SUB 020",
     manager_member_id: "manager-2",
     coordinator_member_id: "coordinator-2",
-    sub_id: 20,
     coordinator_type: "superstructure",
     interval_date: "2026-08-20",
     interval_steps: [makeStep({ status: "completed", actual_start: "08:00:00", actual_end: "09:50:00" })]
@@ -198,10 +192,8 @@ const plans = [
     service_type: "Inspeção",
     coordinatorName: "Clara Campo",
     managerName: "Marina Gerência",
-    subCode: "SUB 030",
     manager_member_id: "manager-1",
     coordinator_member_id: "coordinator-3",
-    sub_id: 30,
     interval_date: "2026-08-22",
     status: "planning"
   })
@@ -209,7 +201,6 @@ const plans = [
 
 assert.deepEqual(ids(filterPlans(plans, { manager: "manager-1" })), ["late-infra", "planning-infra"]);
 assert.deepEqual(ids(filterPlans(plans, { coordinator: "coordinator-2" })), ["ahead-super"]);
-assert.deepEqual(ids(filterPlans(plans, { sub: "10" })), ["late-infra"]);
 assert.deepEqual(ids(filterPlans(plans, { classification: "superstructure" })), ["ahead-super"]);
 assert.deepEqual(ids(filterPlans(plans, { status: "planning" })), ["planning-infra"]);
 assert.deepEqual(ids(filterPlans(plans, { deadline: "late" })), ["late-infra"]);
@@ -217,7 +208,6 @@ assert.deepEqual(ids(filterPlans(plans, { deadline: "ahead" })), ["ahead-super"]
 assert.deepEqual(ids(filterPlans(plans, { service: "Drenagem" })), ["ahead-super"]);
 assert.deepEqual(ids(filterPlans(plans, { dateFrom: "2026-08-21", dateTo: "2026-08-21" })), ["late-infra"]);
 assert.deepEqual(ids(filterPlans(plans, { query: "marina gerência" })), ["late-infra", "planning-infra"]);
-assert.deepEqual(ids(filterPlans(plans, { query: "sub 020" })), ["ahead-super"]);
 
 // Filtros combinados não ampliam o escopo e continuam respeitando todos os critérios.
 assert.deepEqual(ids(filterPlans(plans, {
@@ -228,16 +218,18 @@ assert.deepEqual(ids(filterPlans(plans, {
 })), ["late-infra"]);
 
 const exportSummary = managementSummary(plans);
-assert.deepEqual(JSON.parse(JSON.stringify(exportSummary.classification)), [["Infraestrutura", 2], ["Superestrutura", 1]]);
+assert.deepEqual(JSON.parse(JSON.stringify(exportSummary.classification)), [["Superestrutura", 1], ["Infraestrutura", 2], ["Modernização", 0]]);
 assert.equal(exportSummary.services.reduce((total, [, count]) => total + count, 0), 3);
 assert.equal(exportSummary.kpis.find(([label]) => label === "Total de intervalos")[1], 3);
 assert.equal(exportSummary.kpis.find(([label]) => label === "Fora do prazo")[1], 1);
 
 assert.equal(roleScopeDescription("director"), roleScopeDescription("consultant"));
-assert.equal(roleScopeDescription("executive_manager"), roleScopeDescription("director"));
-assert.match(roleScopeDescription("director"), /Toda a operação/);
-assert.match(roleScopeDescription("manager"), /Somente Coordenadores vinculados/);
+assert.notEqual(roleScopeDescription("executive_manager"), roleScopeDescription("director"));
+assert.match(roleScopeDescription("director"), /Todos os Coordenadores e Especialistas/);
+assert.match(roleScopeDescription("executive_manager"), /Gerentes sob sua gestão/);
+assert.match(roleScopeDescription("manager"), /Coordenadores e Especialistas vinculados/);
 assert.match(roleScopeDescription("coordinator"), /Seus próprios intervalos/);
+assert.equal(roleScopeDescription("specialist"), roleScopeDescription("coordinator"));
 assert.match(roleScopeDescription("editor"), /acesso às ferramentas administrativas/);
 
 assert.deepEqual(JSON.parse(JSON.stringify(roleCapabilities("director"))), {
@@ -248,10 +240,12 @@ assert.deepEqual(JSON.parse(JSON.stringify(roleCapabilities("director"))), {
   readOnly: true
 });
 assert.deepEqual(JSON.parse(JSON.stringify(roleCapabilities("consultant"))), JSON.parse(JSON.stringify(roleCapabilities("director"))));
-assert.deepEqual(JSON.parse(JSON.stringify(roleCapabilities("executive_manager"))), JSON.parse(JSON.stringify(roleCapabilities("director"))));
+assert.equal(roleCapabilities("executive_manager").organizationWide, false);
+assert.equal(roleCapabilities("executive_manager").readOnly, true);
 assert.equal(roleCapabilities("manager").organizationWide, false);
 assert.equal(roleCapabilities("manager").readOnly, true);
 assert.equal(roleCapabilities("coordinator").canOperateIntervals, true);
+assert.equal(roleCapabilities("specialist").canOperateIntervals, true);
 assert.equal(roleCapabilities("coordinator").canAdminister, false);
 assert.equal(roleCapabilities("editor").canAdminister, true);
 assert.equal(roleCapabilities("editor").readOnly, false);

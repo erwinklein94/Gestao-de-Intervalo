@@ -27,6 +27,7 @@ includesAll(management, [
   'id="delay-cards"',
   'id="infra-cards"',
   'id="super-cards"',
+  'id="modernization-cards"',
   'id="history-cards"',
   'id="overview-kpis"',
   'id="classification-chart"',
@@ -60,7 +61,6 @@ assert.match(management, /class="management-tabs"[^>]*role="tablist"/, "áreas g
 assert.deepEqual(attributeValues(management, "data-filter"), [
   "manager",
   "coordinator",
-  "sub",
   "classification",
   "status",
   "deadline",
@@ -87,26 +87,24 @@ includesAll(admin, [
   'value="consultant"',
   'value="manager"',
   'value="coordinator"',
-  'value="editor"',
-  'name="managerId"',
-  'name="subIds"',
+  'value="specialist"',
+  'name="classification"',
+  'value="modernization"',
+  'name="subordinateIds"',
   'multiple size="5"',
-  'name="coordinatorType"',
-  "data-coordinator-field",
-  'id="admin-users"',
-  'id="sub-form"',
-  'id="admin-subs"'
+  "data-subordinates-field",
+  'id="admin-users"'
 ], "estrutura da administração");
-assert.deepEqual(attributeValues(admin, "data-admin-tab"), ["users", "subs"]);
-assert.deepEqual(attributeValues(admin, "data-admin-view"), ["users", "subs"]);
-assert.match(admin, /class="admin-tabs"[^>]*role="tablist"/, "áreas administrativas devem ser um conjunto acessível de botões");
+assert.ok(!admin.includes("SUB"), "administração não deve expor cadastro de SUB");
 
 // Integrações estruturais das páginas existentes que receberam as novas funções.
 const account = read("conta.html");
-includesAll(account, ['id="account-history"', 'id="account-admin-link"', 'id="account-examples"', "gestao.html?view=history", "SUBs sob responsabilidade"], "histórico e atalhos da Minha Conta");
+includesAll(account, ['id="account-history"', 'id="account-admin-link"', 'id="account-examples"', "gestao.html?view=history", "Perfis, funções e hierarquia"], "histórico e atalhos da Minha Conta");
+assert.ok(!account.includes("SUB"), "Minha Conta não deve exibir SUB");
 
 const planning = read("index.html");
-includesAll(planning, ['name="subId"', "SUB responsável", 'id="export-button"', 'id="export-plan-pdf"'], "seleção da SUB e exportações do planejamento");
+includesAll(planning, ['name="coordinator"', 'id="export-button"', 'id="export-plan-pdf"'], "responsável e exportações do planejamento");
+assert.ok(!planning.includes("SUB"), "planejamento não deve exigir SUB");
 
 const execution = read("executar.html");
 includesAll(execution, [

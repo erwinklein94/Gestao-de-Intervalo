@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
   <script src="assets/auth-guard.js"></script><meta name="description" content="Dados da conta autenticada.">
-  <title>Gestão de Intervalo | Minha Conta</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css?v=20260821-7">
-  <script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260821-6" defer></script>
+  <title>Gestão de Intervalo | Minha Conta</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css?v=20260821-8">
+  <script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260821-7" defer></script>
 </head>
 <body data-page="account">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -18,13 +18,13 @@
         <section class="account-profile-card chart-card">
           <div class="chart-heading"><div><p class="section-kicker">Dados do perfil</p><h2>Informações organizacionais</h2></div></div>
           <div class="account-details">
-            <div><span>Nome</span><strong id="account-detail-name">—</strong></div><div><span>E-mail</span><strong id="account-detail-email">—</strong></div><div><span>Perfil</span><strong id="account-detail-role">—</strong></div><div><span>Situação</span><strong id="account-detail-enabled">—</strong></div><div id="account-manager-row"><span>Gerente responsável</span><strong id="account-detail-manager">—</strong></div><div id="account-sub-row"><span>SUBs sob responsabilidade</span><strong id="account-detail-sub">—</strong></div><div id="account-type-row"><span>Classificação</span><strong id="account-detail-type">—</strong></div>
+            <div><span>Nome</span><strong id="account-detail-name">—</strong></div><div><span>E-mail</span><strong id="account-detail-email">—</strong></div><div><span>Função</span><strong id="account-detail-role">—</strong></div><div><span>Situação</span><strong id="account-detail-enabled">—</strong></div><div id="account-manager-row"><span>Gestor responsável</span><strong id="account-detail-manager">—</strong></div><div id="account-type-row"><span>Classificação</span><strong id="account-detail-type">—</strong></div>
           </div>
         </section>
         <section class="chart-card"><div class="chart-heading"><div><p class="section-kicker">Histórico pessoal</p><h2>Seus intervalos planejados e executados</h2></div></div><div class="history-list" id="account-history"></div></section>
         <section class="account-shortcuts chart-card">
           <div class="chart-heading"><div><p class="section-kicker">Acessos permitidos</p><h2>Atalhos</h2></div></div>
-          <div class="account-shortcut-grid"><a class="account-shortcut" id="account-primary-link" href="gestao.html"><span>↗</span><strong>Visão gerencial</strong><small>Acompanhar intervalos no seu escopo</small></a><a class="account-shortcut" href="gestao.html?view=history"><span>↗</span><strong>Histórico</strong><small>Consultar registros concluídos</small></a><a class="account-shortcut" id="account-admin-link" href="admin.html" hidden><span>⚙</span><strong>Administração</strong><small>Perfis, hierarquia e SUBs</small></a><button class="account-shortcut" id="account-examples" type="button" hidden><span>◇</span><strong>Exemplos</strong><small>Abrir dados demonstrativos isolados</small></button></div>
+          <div class="account-shortcut-grid"><a class="account-shortcut" id="account-primary-link" href="gestao.html"><span>↗</span><strong>Visão gerencial</strong><small>Acompanhar intervalos no seu escopo</small></a><a class="account-shortcut" href="gestao.html?view=history"><span>↗</span><strong>Histórico</strong><small>Consultar registros concluídos</small></a><a class="account-shortcut" id="account-admin-link" href="admin.html" hidden><span>⚙</span><strong>Administração</strong><small>Perfis, funções e hierarquia</small></a><button class="account-shortcut" id="account-examples" type="button" hidden><span>◇</span><strong>Exemplos</strong><small>Abrir dados demonstrativos isolados</small></button></div>
         </section>
         <section class="account-session"><div><strong>Sessão atual</strong><span>Ao sair, dados pendentes continuam preservados neste dispositivo.</span></div><button class="button button-ghost" id="account-sign-out" type="button">Sair da conta</button></section>
       </div>

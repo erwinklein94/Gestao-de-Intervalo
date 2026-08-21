@@ -784,6 +784,7 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .type-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; font-weight: 700; }
 .type-mark.infra { color: var(--blue); background: #dff1fb; }
 .type-mark.super { color: #653579; background: #f1e3f5; }
+.type-mark.modernization { color: #805d00; background: #fff2bd; }
 .portal-empty { grid-column: 1 / -1; min-height: 150px; padding: 28px; display: grid; place-content: center; text-align: center; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); background: var(--white); }
 .portal-empty strong { color: var(--blue); }
 .portal-empty span { margin-top: 5px; font-size: 11px; }

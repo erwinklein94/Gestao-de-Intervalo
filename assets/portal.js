@@ -9,10 +9,10 @@
   const ROLE_LABELS = {
     director: "Diretor", executive_manager: "Gerente Executivo",
     consultant: "Consultor", manager: "Gerente",
-    coordinator: "Coordenador", editor: "Editor"
+    coordinator: "Coordenador", specialist: "Especialista", editor: "Editor"
   };
-  const READ_ONLY_GLOBAL_ROLES = ["director", "executive_manager", "consultant"];
-  const TYPE_LABELS = { infrastructure: "Infraestrutura", superstructure: "Superestrutura" };
+  const READ_ONLY_ROLES = ["director", "executive_manager", "consultant", "manager"];
+  const TYPE_LABELS = { infrastructure: "Infraestrutura", superstructure: "Superestrutura", modernization: "Modernização" };
   const STATUS_LABELS = { planning: "Planejamento", executing: "Em execução", completed: "Concluído", cancelled: "Cancelado" };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -105,32 +105,32 @@
       const metrics = intervalMetrics(plan);
       if (filters.manager && plan.manager_member_id !== filters.manager) return false;
       if (filters.coordinator && plan.coordinator_member_id !== filters.coordinator) return false;
-      if (filters.sub && String(plan.sub_id || "") !== filters.sub) return false;
       if (filters.classification && plan.coordinator_type !== filters.classification) return false;
       if (filters.status && plan.status !== filters.status) return false;
       if (filters.deadline && metrics.deadline !== filters.deadline) return false;
       if (filters.service && plan.service_type !== filters.service) return false;
       if (filters.dateFrom && (!plan.interval_date || plan.interval_date < filters.dateFrom)) return false;
       if (filters.dateTo && (!plan.interval_date || plan.interval_date > filters.dateTo)) return false;
-      if (query && ![plan.title, plan.location, plan.service_type, plan.coordinatorName, plan.managerName, plan.subCode].join(" ").toLocaleLowerCase("pt-BR").includes(query)) return false;
+      if (query && ![plan.title, plan.location, plan.service_type, plan.coordinatorName, plan.managerName].join(" ").toLocaleLowerCase("pt-BR").includes(query)) return false;
       return true;
     });
   }
 
   function roleScopeDescription(role) {
-    if (role === "manager") return "Somente Coordenadores vinculados à sua gestão e seus respectivos intervalos.";
-    if (role === "coordinator") return "Seus próprios intervalos, do planejamento ao histórico.";
-    if (READ_ONLY_GLOBAL_ROLES.includes(role)) return "Toda a operação cadastrada, em modo somente leitura.";
+    if (role === "executive_manager") return "Gerentes sob sua gestão e todos os intervalos de seus Coordenadores e Especialistas.";
+    if (role === "manager") return "Coordenadores e Especialistas vinculados à sua gestão e seus respectivos intervalos.";
+    if (["coordinator", "specialist"].includes(role)) return "Seus próprios intervalos, do planejamento ao histórico.";
+    if (["director", "consultant"].includes(role)) return "Todos os Coordenadores e Especialistas, em modo somente leitura.";
     return "Visão completa da operação e acesso às ferramentas administrativas.";
   }
 
   function roleCapabilities(role) {
     return {
-      canUseManagement: ["director", "executive_manager", "consultant", "manager", "coordinator", "editor"].includes(role),
-      canOperateIntervals: ["coordinator", "editor"].includes(role),
+      canUseManagement: ["director", "executive_manager", "consultant", "manager", "coordinator", "specialist", "editor"].includes(role),
+      canOperateIntervals: ["coordinator", "specialist", "editor"].includes(role),
       canAdminister: role === "editor",
-      organizationWide: [...READ_ONLY_GLOBAL_ROLES, "editor"].includes(role),
-      readOnly: [...READ_ONLY_GLOBAL_ROLES, "manager"].includes(role)
+      organizationWide: ["director", "consultant", "editor"].includes(role),
+      readOnly: READ_ONLY_ROLES.includes(role)
     };
   }
 
@@ -148,7 +148,6 @@
   let personas = [];
   let plans = [];
   let members = [];
-  let subs = [];
   let toastTimer;
 
   function initializeTheme() {
@@ -202,7 +201,7 @@
     let links;
     if (demoMode) {
       links = [["gestao.html", "Gestão", "management"]];
-    } else if (role === "coordinator") {
+    } else if (["coordinator", "specialist"].includes(role)) {
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (role === "editor") {
       links = [["gestao.html", "Gestão", "management"], ["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
@@ -237,17 +236,13 @@
 
   function decoratePlans(rows) {
     const memberMap = new Map(members.map((member) => [member.id, member]));
-    const subMap = new Map(subs.map((sub) => [String(sub.id), sub]));
     return (rows || []).map((plan) => {
       const coordinator = memberMap.get(plan.coordinator_member_id);
       const manager = memberMap.get(plan.manager_member_id);
-      const sub = subMap.get(String(plan.sub_id || ""));
       return {
         ...plan,
         coordinatorName: coordinator?.full_name || plan.coordinator || "Não informado",
         managerName: manager?.full_name || "Não informado",
-        subCode: sub?.code || "Sem SUB",
-        subName: sub?.name || "",
         interval_steps: (plan.interval_steps || []).sort((a, b) => a.position - b.position),
         interval_comments: (plan.interval_comments || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
       };
@@ -256,16 +251,14 @@
 
   async function loadScopedData() {
     setState("Atualizando dados…", "syncing");
-    const memberColumns = "id,dataset_id,code,full_name,role,enabled,manager_id,sub_id,coordinator_type,profile_needs_review";
-    const [memberResult, subResult, planResult] = await Promise.all([
+    const memberColumns = "id,dataset_id,code,full_name,role,enabled,manager_id,coordinator_type,profile_needs_review";
+    const [memberResult, planResult] = await Promise.all([
       dataClient.from("organization_members").select(memberColumns).eq("enabled", true).order("full_name"),
-      dataClient.from("subs").select("id,code,name,operation,sort_order,active").order("sort_order"),
       dataClient.from("interval_plans").select("*,interval_steps(*),interval_comments(*)").order("interval_date", { ascending: false })
     ]);
-    const error = memberResult.error || subResult.error || planResult.error;
+    const error = memberResult.error || planResult.error;
     if (error) throw error;
     members = memberResult.data || [];
-    subs = subResult.data || [];
     plans = decoratePlans(planResult.data);
     setState("Atualizado agora", "ok");
   }
@@ -276,12 +269,10 @@
 
   function populateFilters() {
     const managers = members.filter((member) => member.role === "manager" && plans.some((plan) => plan.manager_member_id === member.id));
-    const coordinators = members.filter((member) => member.role === "coordinator" && plans.some((plan) => plan.coordinator_member_id === member.id));
-    const usedSubs = subs.filter((sub) => plans.some((plan) => String(plan.sub_id) === String(sub.id)));
+    const coordinators = members.filter((member) => ["coordinator", "specialist"].includes(member.role) && plans.some((plan) => plan.coordinator_member_id === member.id));
     const services = [...new Set(plans.map((plan) => plan.service_type).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
     $('[data-filter="manager"]').innerHTML = '<option value="">Todos</option>' + optionMarkup(managers, "id", (row) => row.full_name);
     $('[data-filter="coordinator"]').innerHTML = '<option value="">Todos</option>' + optionMarkup(coordinators, "id", (row) => row.full_name);
-    $('[data-filter="sub"]').innerHTML = '<option value="">Todas</option>' + optionMarkup(usedSubs, "id", (row) => `${row.code} · ${row.name}`);
     $('[data-filter="service"]').innerHTML = '<option value="">Todos</option>' + services.map((service) => `<option value="${escapeHtml(service)}">${escapeHtml(service)}</option>`).join("");
   }
 
@@ -303,8 +294,8 @@
       <span class="interval-card-top"><b>${escapeHtml(STATUS_LABELS[plan.status] || plan.status)}</b><i>${escapeHtml(TYPE_LABELS[plan.coordinator_type] || "Sem classificação")}</i></span>
       <strong class="interval-card-title">${escapeHtml(plan.title || "Intervalo sem título")}</strong>
       <span class="interval-card-location">${escapeHtml(plan.location || "Local não informado")} · ${date}</span>
-      <span class="interval-card-people"><small>Gerente</small><b>${escapeHtml(plan.managerName)}</b><small>Coordenador</small><b>${escapeHtml(plan.coordinatorName)}</b></span>
-      <span class="interval-card-tags"><i>${escapeHtml(plan.subCode)}</i><i>${escapeHtml(plan.service_type || "Tipo não informado")}</i><i>${escapeHtml((plan.window_start || "—").slice(0, 5))}–${escapeHtml((plan.window_end || "—").slice(0, 5))}</i></span>
+      <span class="interval-card-people"><small>Gerente</small><b>${escapeHtml(plan.managerName)}</b><small>Responsável</small><b>${escapeHtml(plan.coordinatorName)}</b></span>
+      <span class="interval-card-tags"><i>${escapeHtml(plan.service_type || "Tipo não informado")}</i><i>${escapeHtml((plan.window_start || "—").slice(0, 5))}–${escapeHtml((plan.window_end || "—").slice(0, 5))}</i></span>
       <span class="interval-card-progress"><span><i style="width:${metrics.progress}%"></i></span><b>${metrics.progress}%</b></span>
       ${deadlineMarkup(metrics)}
     </button>`;
@@ -333,6 +324,7 @@
     const within = ahead + onTime;
     const infra = filtered.filter((plan) => plan.coordinator_type === "infrastructure").length;
     const superstructure = filtered.filter((plan) => plan.coordinator_type === "superstructure").length;
+    const modernization = filtered.filter((plan) => plan.coordinator_type === "modernization").length;
     const average = completedMetrics.filter((metric) => metric.variance != null).reduce((sum, metric, _, all) => sum + metric.variance / all.length, 0);
     const kpis = [
       ["Total de intervalos", filtered.length, "No período e filtros atuais"],
@@ -343,7 +335,7 @@
       ["Adiantamentos", ahead, "Intervalos concluídos antes do prazo"]
     ];
     $("#overview-kpis").innerHTML = kpis.map(([label, value, note], index) => `<article class="dashboard-kpi ${index === 3 && late ? "alert" : ""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></article>`).join("");
-    renderBars($("#classification-chart"), [{ label: "Infraestrutura", value: infra }, { label: "Superestrutura", value: superstructure }]);
+    renderBars($("#classification-chart"), [{ label: "Superestrutura", value: superstructure }, { label: "Infraestrutura", value: infra }, { label: "Modernização", value: modernization }]);
     renderBars($("#punctuality-chart"), [{ label: "Dentro do prazo", value: within }, { label: "Fora do prazo", value: late }], "deadline-tone");
     const serviceCounts = Object.entries(filtered.reduce((result, plan) => { const key = plan.service_type || "Não informado"; result[key] = (result[key] || 0) + 1; return result; }, {})).sort((a, b) => b[1] - a[1]);
     renderBars($("#service-chart"), serviceCounts.map(([label, value]) => ({ label, value })));
@@ -371,8 +363,9 @@
     const averageDelayValues = metrics.map((metric) => metric.variance).filter((value) => Number.isFinite(value) && value > 0);
     const averageDelay = averageDelayValues.length ? Math.round(averageDelayValues.reduce((sum, value) => sum + value, 0) / averageDelayValues.length) : 0;
     const classification = [
+      ["Superestrutura", filtered.filter((plan) => plan.coordinator_type === "superstructure").length],
       ["Infraestrutura", filtered.filter((plan) => plan.coordinator_type === "infrastructure").length],
-      ["Superestrutura", filtered.filter((plan) => plan.coordinator_type === "superstructure").length]
+      ["Modernização", filtered.filter((plan) => plan.coordinator_type === "modernization").length]
     ];
     const punctuality = [["No prazo", onTime], ["Adiantado", ahead], ["Em atraso", late]];
     const services = Object.entries(filtered.reduce((result, plan) => {
@@ -412,18 +405,18 @@
       rows.push(`<row r="${row}">${excelCell(1, row, classification[0])}${excelCell(2, row, classification[1])}${excelCell(4, row, punctuality[0])}${excelCell(5, row, punctuality[1])}${excelCell(7, row, service[0])}${excelCell(8, row, service[1])}${excelCell(10, row, kpi[0])}${excelCell(11, row, kpi[1])}</row>`);
     }
     rows.push(`<row r="${dataHeaderRow - 1}" ht="24" customHeight="1">${excelCell(1, dataHeaderRow - 1, "DADOS DOS INTERVALOS", 2)}</row>`);
-    const headers = ["Título", "Data", "Status", "Situação do prazo", "Desvio (min)", "Progresso (%)", "Gerente", "Coordenador", "SUB", "Classificação", "Tipo", "Local", "Janela"];
+    const headers = ["Título", "Data", "Status", "Situação do prazo", "Desvio (min)", "Progresso (%)", "Gerente", "Responsável", "Classificação", "Tipo", "Local", "Janela"];
     rows.push(`<row r="${dataHeaderRow}" ht="28" customHeight="1">${headers.map((header, index) => excelCell(index + 1, dataHeaderRow, header, 4)).join("")}</row>`);
     filtered.forEach((plan, index) => {
       const row = dataStartRow + index;
       const metrics = intervalMetrics(plan);
       const deadline = metrics.variance == null || metrics.variance === 0 ? "No prazo" : metrics.variance > 0 ? "Em atraso" : "Adiantado";
-      const values = [plan.title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, plan.subCode, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${(plan.window_start || "—").slice(0, 5)}-${(plan.window_end || "—").slice(0, 5)}`];
-      rows.push(`<row r="${row}" ht="25" customHeight="1">${values.map((value, column) => excelCell(column + 1, row, value, [0, 10, 11].includes(column) ? 9 : 5)).join("")}</row>`);
+      const values = [plan.title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${(plan.window_start || "—").slice(0, 5)}-${(plan.window_end || "—").slice(0, 5)}`];
+      rows.push(`<row r="${row}" ht="25" customHeight="1">${values.map((value, column) => excelCell(column + 1, row, value, [0, 9, 10].includes(column) ? 9 : 5)).join("")}</row>`);
     });
     const lastRow = Math.max(dataHeaderRow, dataStartRow + filtered.length - 1);
     const barRange = (column, count, priority, color) => count ? `<conditionalFormatting sqref="${column}7:${column}${6 + count}"><cfRule type="dataBar" priority="${priority}"><dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/><color rgb="${color}"/></dataBar></cfRule></conditionalFormatting>` : "";
-    const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${dataHeaderRow}" topLeftCell="A${dataStartRow}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="6" width="16" customWidth="1"/><col min="7" max="8" width="25" customWidth="1"/><col min="9" max="10" width="18" customWidth="1"/><col min="11" max="13" width="24" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A${dataHeaderRow}:M${lastRow}"/><mergeCells count="4"><mergeCell ref="A1:M1"/><mergeCell ref="A3:M3"/><mergeCell ref="A5:M5"/><mergeCell ref="A${dataHeaderRow - 1}:M${dataHeaderRow - 1}"/></mergeCells>${barRange("B", summary.classification.length, 1, "FF003865")}${barRange("E", summary.punctuality.length, 2, "FF22A884")}${barRange("H", summary.services.length, 3, "FF32A6E6")}</worksheet>`;
+    const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${dataHeaderRow}" topLeftCell="A${dataStartRow}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="6" width="16" customWidth="1"/><col min="7" max="8" width="25" customWidth="1"/><col min="9" max="10" width="18" customWidth="1"/><col min="11" max="12" width="24" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A${dataHeaderRow}:L${lastRow}"/><mergeCells count="4"><mergeCell ref="A1:L1"/><mergeCell ref="A3:L3"/><mergeCell ref="A5:L5"/><mergeCell ref="A${dataHeaderRow - 1}:L${dataHeaderRow - 1}"/></mergeCells>${barRange("B", summary.classification.length, 1, "FF003865")}${barRange("E", summary.punctuality.length, 2, "FF22A884")}${barRange("H", summary.services.length, 3, "FF32A6E6")}</worksheet>`;
     const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Verdana"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font></fonts><fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF003865"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF32A6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE5EBEE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9F8F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF0ED"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF6D1"/></patternFill></fill></fills><borders count="2"><border/><border><left style="thin"><color rgb="FFCAD6DD"/></left><right style="thin"><color rgb="FFCAD6DD"/></right><top style="thin"><color rgb="FFCAD6DD"/></top><bottom style="thin"><color rgb="FFCAD6DD"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0"/><xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0"/><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0"><alignment wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
     const zip = new JSZip();
     zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
@@ -471,8 +464,10 @@
     $("#delay-cards").innerHTML = delays.length ? delays.map(cardMarkup).join("") : emptyMarkup("Nenhuma execução atrasada corresponde aos filtros.");
     const infra = running.filter((plan) => plan.coordinator_type === "infrastructure");
     const superstructure = running.filter((plan) => plan.coordinator_type === "superstructure");
+    const modernization = running.filter((plan) => plan.coordinator_type === "modernization");
     $("#infra-cards").innerHTML = infra.length ? infra.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Infraestrutura em execução.");
     $("#super-cards").innerHTML = superstructure.length ? superstructure.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Superestrutura em execução.");
+    $("#modernization-cards").innerHTML = modernization.length ? modernization.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Modernização em execução.");
     $("#history-cards").innerHTML = history.length ? history.map(cardMarkup).join("") : emptyMarkup("Nenhum intervalo concluído corresponde aos filtros.");
     setCount("delays", delays.length);
     setCount("running", running.length);
@@ -483,7 +478,7 @@
 
   function commentMarkup(comment, plan) {
     const canDelete = !demoMode
-      && ["coordinator", "editor"].includes(actualProfile.role)
+      && ["coordinator", "specialist", "editor"].includes(actualProfile.role)
       && plan.status === "executing"
       && !comment.deleted_at
       && comment.author_user_id === currentUser.id;
@@ -493,7 +488,7 @@
 
   function planTabMarkup(plan) {
     const steps = plan.interval_steps || [];
-    return `<div class="detail-summary-grid"><div><span>Título</span><strong>${escapeHtml(plan.title || "—")}</strong></div><div><span>Tipo</span><strong>${escapeHtml(plan.service_type || "—")}</strong></div><div><span>Local</span><strong>${escapeHtml(plan.location || "—")}</strong></div><div><span>Data e janela</span><strong>${escapeHtml(plan.interval_date || "—")} · ${escapeHtml((plan.window_start || "—").slice(0, 5))}–${escapeHtml((plan.window_end || "—").slice(0, 5))}</strong></div><div><span>Gerente</span><strong>${escapeHtml(plan.managerName)}</strong></div><div><span>Coordenador</span><strong>${escapeHtml(plan.coordinatorName)}</strong></div><div><span>SUB</span><strong>${escapeHtml(plan.subCode)}</strong></div><div><span>Classificação</span><strong>${escapeHtml(TYPE_LABELS[plan.coordinator_type] || "—")}</strong></div></div><article class="detail-note"><span>Observações de planejamento</span><p>${escapeHtml(plan.planning_notes || "Nenhuma observação registrada.")}</p></article><div class="detail-step-list">${steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml((step.planned_start || "—").slice(0, 5))}–${escapeHtml((step.planned_end || "—").slice(0, 5))}</small></div></article>`).join("") || emptyMarkup("Este plano não possui etapas.")}</div>`;
+    return `<div class="detail-summary-grid"><div><span>Título</span><strong>${escapeHtml(plan.title || "—")}</strong></div><div><span>Tipo</span><strong>${escapeHtml(plan.service_type || "—")}</strong></div><div><span>Local</span><strong>${escapeHtml(plan.location || "—")}</strong></div><div><span>Data e janela</span><strong>${escapeHtml(plan.interval_date || "—")} · ${escapeHtml((plan.window_start || "—").slice(0, 5))}–${escapeHtml((plan.window_end || "—").slice(0, 5))}</strong></div><div><span>Gerente</span><strong>${escapeHtml(plan.managerName)}</strong></div><div><span>Responsável</span><strong>${escapeHtml(plan.coordinatorName)}</strong></div><div><span>Classificação</span><strong>${escapeHtml(TYPE_LABELS[plan.coordinator_type] || "—")}</strong></div></div><article class="detail-note"><span>Observações de planejamento</span><p>${escapeHtml(plan.planning_notes || "Nenhuma observação registrada.")}</p></article><div class="detail-step-list">${steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml((step.planned_start || "—").slice(0, 5))}–${escapeHtml((step.planned_end || "—").slice(0, 5))}</small></div></article>`).join("") || emptyMarkup("Este plano não possui etapas.")}</div>`;
   }
 
   function executionTabMarkup(plan) {
@@ -501,7 +496,7 @@
     const comments = plan.interval_comments || [];
     const canComment = !demoMode
       && plan.status === "executing"
-      && (actualProfile.role === "editor" || (actualProfile.role === "coordinator" && plan.user_id === currentUser.id));
+      && (actualProfile.role === "editor" || (["coordinator", "specialist"].includes(actualProfile.role) && plan.user_id === currentUser.id));
     return `<div class="detail-status ${metrics.deadline}">${deadlineMarkup(metrics)}<strong>${metrics.progress}% concluído</strong><span>${metrics.resolved} de ${metrics.steps.length} etapas encerradas</span></div><div class="detail-step-list execution-readonly">${metrics.steps.map((step, index) => `<article><span>${isResolved(step) ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado ${escapeHtml((step.planned_start || "—").slice(0, 5))}–${escapeHtml((step.planned_end || "—").slice(0, 5))} · Realizado ${escapeHtml((step.actual_start || "—").slice(0, 5))}–${escapeHtml((step.actual_end || "—").slice(0, 5))}</small>${step.actual_notes ? `<p>${escapeHtml(String(step.actual_notes).replace(/^\[\[ETAPA_NAO_EXECUTADA\]\]\s*/, "Não executada · "))}</p>` : ""}</div></article>`).join("") || emptyMarkup("Nenhuma etapa registrada.")}</div><article class="detail-note"><span>Registro geral da execução</span><p>${escapeHtml(plan.execution_notes || "Nenhuma observação registrada.")}</p></article><section class="comments-panel"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span>${comments.filter((comment) => !comment.deleted_at).length}</span></header><div class="comments-list">${comments.map((comment) => commentMarkup(comment, plan)).join("") || emptyMarkup("Ainda não há comentários neste intervalo.")}</div>${canComment ? '<form id="detail-comment-form"><label class="field"><span>Novo comentário</span><textarea name="content" maxlength="2000" rows="3" required placeholder="Registre uma atualização relevante"></textarea></label><button class="button button-secondary" type="submit">Adicionar comentário</button><span class="auth-feedback"></span></form>' : `<p class="comments-locked">${demoMode ? "Comentários desativados no ambiente de exemplos." : "Após o encerramento, os comentários tornam-se permanentes."}</p>`}</section>`;
   }
 
@@ -549,7 +544,7 @@
     const dialog = $("#interval-detail");
     const root = $("#interval-detail-content");
     const shareAllowed = !demoMode
-      && ["editor", "coordinator"].includes(actualProfile.role)
+      && ["editor", "coordinator", "specialist"].includes(actualProfile.role)
       && plan.user_id === currentUser.id;
     root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Prévia do acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header><div class="detail-full-page-bar"><span><strong>Quer ver todos os detalhes?</strong><small>Abra o acompanhamento completo com plano, execução e dashboard.</small></span><a class="button button-secondary" data-full-tracking-link href="${escapeHtml(fullTrackingUrl(plan, initialTab))}">Abrir página completa <i aria-hidden="true">↗</i></a></div><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link público temporário</button><span class="auth-feedback"></span></div>' : ""}</div>`;
     const activate = (tab) => {
@@ -645,72 +640,69 @@
 
   async function loadAdminData() {
     setState("Atualizando cadastros…", "syncing");
-    const [profileResult, subResult, assignmentResult] = await Promise.all([
-      baseClient.from("user_profiles").select("id,email,full_name,role,enabled,manager_id,sub_id,coordinator_type,profile_needs_review,organization_member_id,created_at").order("created_at", { ascending: false }),
-      baseClient.from("subs").select("id,code,name,operation,sort_order,active").order("sort_order"),
-      baseClient.from("coordinator_sub_assignments").select("coordinator_member_id,sub_id")
-    ]);
-    if (profileResult.error || subResult.error || assignmentResult.error) throw profileResult.error || subResult.error || assignmentResult.error;
-    const assignmentsByMember = new Map();
-    (assignmentResult.data || []).forEach((assignment) => {
-      const assigned = assignmentsByMember.get(assignment.coordinator_member_id) || [];
-      assigned.push(Number(assignment.sub_id));
-      assignmentsByMember.set(assignment.coordinator_member_id, assigned);
-    });
-    members = (profileResult.data || []).map((profile) => ({
-      ...profile,
-      sub_ids: assignmentsByMember.get(profile.organization_member_id) || (profile.sub_id == null ? [] : [Number(profile.sub_id)])
-    }));
-    subs = subResult.data || [];
+    const { data, error } = await baseClient.from("user_profiles")
+      .select("id,email,full_name,role,enabled,manager_id,coordinator_type,profile_needs_review,organization_member_id,created_at")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    members = data || [];
     setState("Cadastros atualizados", "ok");
   }
 
-  function adminManagerOptions(selected = "") {
-    return '<option value="">Selecione</option>' + members.filter((profile) => profile.role === "manager" && profile.enabled).map((profile) => `<option value="${profile.id}" ${profile.id === selected ? "selected" : ""}>${escapeHtml(profile.full_name || profile.email)}</option>`).join("");
+  function hierarchyRole(role) {
+    if (role === "executive_manager") return { roles: ["manager"], label: "Gerentes sob gestão" };
+    if (role === "manager") return { roles: ["coordinator", "specialist"], label: "Coordenadores e Especialistas sob gestão" };
+    return null;
   }
 
-  function adminSubOptions(selectedIds = []) {
-    const selected = new Set(selectedIds.map(Number));
-    return subs.filter((sub) => sub.active || selected.has(Number(sub.id))).map((sub) => `<option value="${sub.id}" ${selected.has(Number(sub.id)) ? "selected" : ""}>${escapeHtml(sub.code)} · ${escapeHtml(sub.name)}</option>`).join("");
+  function subordinateOptions(role, supervisorId = "") {
+    const hierarchy = hierarchyRole(role);
+    if (!hierarchy) return "";
+    return members
+      .filter((profile) => hierarchy.roles.includes(profile.role) && profile.enabled && profile.id !== supervisorId)
+      .sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, "pt-BR"))
+      .map((profile) => `<option value="${profile.id}" ${profile.manager_id === supervisorId ? "selected" : ""}>${escapeHtml(profile.full_name || profile.email)} · ${escapeHtml(ROLE_LABELS[profile.role])}</option>`)
+      .join("");
   }
 
-  function selectedSubIds(select) {
-    return Array.from(select.selectedOptions, (option) => Number(option.value)).filter(Number.isSafeInteger);
+  function selectedIds(select) {
+    return Array.from(select?.selectedOptions || [], (option) => option.value).filter(Boolean);
   }
 
-  function updateCreateCoordinatorFields() {
+  function updateCreateHierarchyFields() {
     const form = $("#admin-user-form");
-    const coordinator = form.role.value === "coordinator";
-    $$('[data-coordinator-field]', form).forEach((field) => { field.hidden = !coordinator; $("select", field).required = coordinator; });
+    const hierarchy = hierarchyRole(form.role.value);
+    const field = $("[data-subordinates-field]", form);
+    field.hidden = !hierarchy;
+    $("[data-subordinates-label]", field).textContent = hierarchy?.label || "Subordinados diretos";
+    form.subordinateIds.innerHTML = subordinateOptions(form.role.value);
   }
 
   function renderAdminUsers() {
     const query = $("#user-search").value.trim().toLocaleLowerCase("pt-BR");
     const rows = members.filter((profile) => !query || `${profile.full_name} ${profile.email}`.toLocaleLowerCase("pt-BR").includes(query));
-    $("#admin-users").innerHTML = rows.length ? rows.map((profile) => `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Perfil</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label data-edit-coordinator ${profile.role === "coordinator" ? "" : "hidden"}><span>Gerente</span><select name="managerId">${adminManagerOptions(profile.manager_id)}</select></label><label data-edit-coordinator class="admin-sub-field" ${profile.role === "coordinator" ? "" : "hidden"}><span>SUBs</span><select name="subIds" multiple size="4" title="Use Ctrl para selecionar mais de uma SUB">${adminSubOptions(profile.sub_ids)}</select></label><label data-edit-coordinator ${profile.role === "coordinator" ? "" : "hidden"}><span>Classificação</span><select name="coordinatorType"><option value="infrastructure" ${profile.coordinator_type === "infrastructure" ? "selected" : ""}>Infraestrutura</option><option value="superstructure" ${profile.coordinator_type === "superstructure" ? "selected" : ""}>Superestrutura</option></select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`).join("") : emptyMarkup("Nenhuma conta corresponde à busca.");
+    $("#admin-users").innerHTML = rows.length ? rows.map((profile) => {
+      const hierarchy = hierarchyRole(profile.role);
+      return `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Função</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label><span>Classificação</span><select name="classification" required><option value="superstructure" ${profile.coordinator_type === "superstructure" ? "selected" : ""}>Superestrutura</option><option value="infrastructure" ${profile.coordinator_type === "infrastructure" ? "selected" : ""}>Infraestrutura</option><option value="modernization" ${profile.coordinator_type === "modernization" ? "selected" : ""}>Modernização</option></select></label><label data-edit-subordinates class="admin-hierarchy-field" ${hierarchy ? "" : "hidden"}><span data-subordinates-label>${escapeHtml(hierarchy?.label || "Subordinados diretos")}</span><select name="subordinateIds" multiple size="4">${subordinateOptions(profile.role, profile.id)}</select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`;
+    }).join("") : emptyMarkup("Nenhuma conta corresponde à busca.");
     $$(".user-admin-row").forEach((form) => {
-      const updateCoordinatorFields = () => {
-        const show = form.role.value === "coordinator";
-        $$('[data-edit-coordinator]', form).forEach((field) => {
-          field.hidden = !show;
-          $("select", field).required = show;
-        });
+      const updateHierarchyFields = () => {
+        const hierarchy = hierarchyRole(form.role.value);
+        const field = $("[data-edit-subordinates]", form);
+        field.hidden = !hierarchy;
+        $("[data-subordinates-label]", field).textContent = hierarchy?.label || "Subordinados diretos";
+        form.subordinateIds.innerHTML = subordinateOptions(form.role.value, form.dataset.userId);
       };
-      updateCoordinatorFields();
-      form.role.addEventListener("change", updateCoordinatorFields);
+      form.role.addEventListener("change", updateHierarchyFields);
       form.addEventListener("submit", async (event) => {
-        event.preventDefault(); const feedback = $(".auth-feedback", form); const coordinator = form.role.value === "coordinator";
-        const subIds = coordinator ? selectedSubIds(form.subIds) : [];
-        if (coordinator && (!form.managerId.value || !subIds.length || !form.coordinatorType.value)) { feedback.textContent = "Gerente, uma ou mais SUBs e classificação são obrigatórios."; return; }
+        event.preventDefault(); const feedback = $(".auth-feedback", form);
         feedback.textContent = "Salvando…";
         const { error } = await baseClient.rpc("update_site_user_profile", {
           p_target_user_id: form.dataset.userId,
           p_full_name: form.fullName.value.trim(),
           p_role: form.role.value,
           p_enabled: form.enabled.disabled ? true : form.enabled.checked,
-          p_manager_id: coordinator ? form.managerId.value : null,
-          p_sub_ids: subIds,
-          p_coordinator_type: coordinator ? form.coordinatorType.value : null
+          p_subordinate_ids: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [],
+          p_classification: form.classification.value
         });
         if (error) { feedback.textContent = error.message; return; }
         feedback.textContent = "Salvo."; await loadAdminData(); renderAdminUsers();
@@ -718,49 +710,18 @@
     });
   }
 
-  function renderAdminSubs() {
-    const query = $("#sub-search").value.trim().toLocaleLowerCase("pt-BR");
-    const rows = subs.filter((sub) => !query || `${sub.code} ${sub.name} ${sub.operation || ""}`.toLocaleLowerCase("pt-BR").includes(query));
-    $("#admin-subs").innerHTML = rows.length ? rows.map((sub) => `<form class="admin-row sub-admin-row" data-sub-id="${sub.id}"><label><span>Código</span><input name="code" value="${escapeHtml(sub.code)}" required maxlength="30"></label><label><span>Nome</span><input name="name" value="${escapeHtml(sub.name)}" required maxlength="120"></label><label><span>Operação</span><input name="operation" value="${escapeHtml(sub.operation || "")}" maxlength="120"></label><label><span>Ordem</span><input name="sortOrder" type="number" min="0" value="${sub.sort_order}"></label><label class="admin-enabled"><span>Ativa</span><input name="active" type="checkbox" ${sub.active ? "checked" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`).join("") : emptyMarkup("Nenhuma SUB corresponde à busca.");
-    $$(".sub-admin-row").forEach((form) => form.addEventListener("submit", async (event) => {
-      event.preventDefault(); const feedback = $(".auth-feedback", form); feedback.textContent = "Salvando…";
-      const { error } = await baseClient.from("subs").update({ code: form.code.value.trim().toUpperCase(), name: form.name.value.trim(), operation: form.operation.value.trim() || null, sort_order: Number(form.sortOrder.value), active: form.active.checked }).eq("id", form.dataset.subId);
-      if (error) { feedback.textContent = error.message; return; }
-      feedback.textContent = "Salva."; await loadAdminData(); renderAdminSubs();
-    }));
-  }
-
   async function initializeAdmin() {
     await loadAdminData();
-    $("#admin-user-form").managerId.innerHTML = adminManagerOptions();
-    $("#admin-user-form").subIds.innerHTML = adminSubOptions();
-    updateCreateCoordinatorFields();
-    $("#admin-user-form").role.addEventListener("change", updateCreateCoordinatorFields);
-    renderAdminUsers(); renderAdminSubs();
+    updateCreateHierarchyFields();
+    $("#admin-user-form").role.addEventListener("change", updateCreateHierarchyFields);
+    renderAdminUsers();
     $("#user-search").addEventListener("input", renderAdminUsers);
-    $("#sub-search").addEventListener("input", renderAdminSubs);
-    $$('[data-admin-tab]').forEach((button) => button.addEventListener("click", () => {
-      $$('[data-admin-tab]').forEach((candidate) => {
-        const active = candidate === button;
-        candidate.classList.toggle("active", active);
-        candidate.setAttribute("aria-selected", String(active));
-      });
-      $$('[data-admin-view]').forEach((view) => { view.hidden = view.dataset.adminView !== button.dataset.adminTab; });
-    }));
     $("#admin-user-form").addEventListener("submit", async (event) => {
-      event.preventDefault(); const form = event.currentTarget; const feedback = $("#admin-user-feedback"); const coordinator = form.role.value === "coordinator";
-      const subIds = coordinator ? selectedSubIds(form.subIds) : [];
-      if (coordinator && (!form.managerId.value || !subIds.length || !form.coordinatorType.value)) { feedback.textContent = "Gerente, uma ou mais SUBs e classificação são obrigatórios."; return; }
+      event.preventDefault(); const form = event.currentTarget; const feedback = $("#admin-user-feedback");
       feedback.textContent = "Criando conta…";
-      const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, managerId: coordinator ? form.managerId.value : null, subIds, coordinatorType: coordinator ? form.coordinatorType.value : null } });
+      const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, classification: form.classification.value, subordinateIds: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [] } });
       if (error || data?.error) { feedback.textContent = data?.error || error.message; return; }
-      feedback.textContent = "Conta criada e habilitada."; form.reset(); form.role.value = "coordinator"; await loadAdminData(); form.managerId.innerHTML = adminManagerOptions(); form.subIds.innerHTML = adminSubOptions(); updateCreateCoordinatorFields(); renderAdminUsers();
-    });
-    $("#sub-form").addEventListener("submit", async (event) => {
-      event.preventDefault(); const form = event.currentTarget; const feedback = $("#sub-feedback"); feedback.textContent = "Adicionando…";
-      const { error } = await baseClient.from("subs").insert({ code: form.code.value.trim().toUpperCase(), name: form.name.value.trim(), operation: form.operation.value.trim() || null, sort_order: Number(form.sortOrder.value), active: true, source_document: "Cadastro administrativo", source_page: 1 });
-      if (error) { feedback.textContent = error.message; return; }
-      feedback.textContent = "SUB adicionada."; form.reset(); await loadAdminData(); renderAdminSubs();
+      feedback.textContent = "Conta criada e habilitada."; form.reset(); form.role.value = "coordinator"; await loadAdminData(); updateCreateHierarchyFields(); renderAdminUsers();
     });
   }
 
@@ -771,7 +732,7 @@
     const { data: { session } } = await baseClient.auth.getSession();
     currentUser = session?.user;
     if (!currentUser) { location.replace("login.html"); return; }
-    const { data: profile, error } = await baseClient.from("user_profiles").select("id,email,full_name,role,enabled,manager_id,sub_id,coordinator_type,organization_member_id").eq("id", currentUser.id).single();
+    const { data: profile, error } = await baseClient.from("user_profiles").select("id,email,full_name,role,enabled,manager_id,coordinator_type,organization_member_id").eq("id", currentUser.id).single();
     if (error || !profile?.enabled) { await baseClient.auth.signOut(); location.replace("login.html?status=disabled"); return; }
     actualProfile = profile;
     await configureContext();

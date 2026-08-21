@@ -28,8 +28,9 @@
   let deviceId = "";
   let syncRetryTimer = null;
   const dirtyPlanIds = new Set();
-  const ROLE_LABELS = { director: "Diretor", executive_manager: "Gerente Executivo", consultant: "Consultor", manager: "Gerente", coordinator: "Coordenador", editor: "Editor" };
+  const ROLE_LABELS = { director: "Diretor", executive_manager: "Gerente Executivo", consultant: "Consultor", manager: "Gerente", coordinator: "Coordenador", specialist: "Especialista", editor: "Editor" };
   const READ_ONLY_MANAGEMENT_ROLES = ["director", "executive_manager", "consultant", "manager"];
+  function isOperatorRole(role) { return ["coordinator", "specialist"].includes(role); }
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -85,7 +86,7 @@
       id: uid(),
       title,
       serviceType: "",
-      coordinator: currentProfile?.role === "coordinator" ? (currentProfile.full_name || "") : "",
+      coordinator: isOperatorRole(currentProfile?.role) ? (currentProfile.full_name || "") : "",
       date: todayISO(),
       location: "",
       windowStart: "",
@@ -98,9 +99,8 @@
       updatedAt: new Date().toISOString(),
       ownerId: currentUser?.id || null,
       datasetId: null,
-      coordinatorMemberId: currentProfile?.role === "coordinator" ? (currentProfile.organization_member_id || null) : null,
+      coordinatorMemberId: isOperatorRole(currentProfile?.role) ? (currentProfile.organization_member_id || null) : null,
       managerMemberId: null,
-      subId: currentProfile?.sub_id || null,
       coordinatorType: currentProfile?.coordinator_type || null,
       status: "planning",
       completedAt: null,
@@ -166,7 +166,7 @@
     plan.datasetId = plan.datasetId || null;
     plan.coordinatorMemberId = plan.coordinatorMemberId || null;
     plan.managerMemberId = plan.managerMemberId || null;
-    plan.subId = plan.subId || null;
+    delete plan.subId;
     plan.coordinatorType = plan.coordinatorType || null;
     plan.status = plan.status || "planning";
     plan.completedAt = plan.completedAt || null;
@@ -282,7 +282,7 @@
       locked_at: plan.lockedAt || null,
       coordinator_member_id: plan.coordinatorMemberId || null,
       manager_member_id: plan.managerMemberId || null,
-      sub_id: plan.subId || null,
+      sub_id: null,
       coordinator_type: plan.coordinatorType || null
     };
   }
@@ -321,7 +321,6 @@
       isExample: row.is_example,
       coordinatorMemberId: row.coordinator_member_id,
       managerMemberId: row.manager_member_id,
-      subId: row.sub_id,
       coordinatorType: row.coordinator_type,
       status: row.status || "planning",
       completedAt: row.completed_at,
@@ -1038,8 +1037,7 @@
     const errors = [];
     const warnings = [];
     if (!plan.title.trim()) errors.push("informe o nome do plano");
-    if (currentProfile?.role === "editor" && !plan.coordinatorMemberId) errors.push("selecione o Coordenador responsável");
-    if (["coordinator", "editor"].includes(currentProfile?.role) && !plan.subId) errors.push("selecione a SUB responsável");
+    if (currentProfile?.role === "editor" && !plan.coordinatorMemberId) errors.push("selecione o Coordenador ou Especialista responsável");
     if (!plan.date) errors.push("informe a data");
     if (timeline.windowStart == null || timeline.windowEnd == null) errors.push("preencha a janela completa");
     if (plan.windowStart && plan.windowEnd && plan.windowStart === plan.windowEnd) errors.push("o início e o fim da janela não podem ser iguais");
@@ -1119,7 +1117,7 @@
     rows.push(`<row r="2" ht="8" customHeight="1"></row>`);
     rows.push(`<row r="3">${excelCell(1, 3, "Nome do plano", 3)}${excelCell(4, 3, plan.title, 5)}${excelCell(7, 3, "Data", 3)}${excelCell(9, 3, plan.date, 5)}</row>`);
     rows.push(`<row r="4">${excelCell(1, 4, "Tipo de serviço", 3)}${excelCell(4, 4, plan.serviceType, 5)}${excelCell(7, 4, "Janela", 3)}${excelCell(9, 4, `${plan.windowStart || "—"}–${plan.windowEnd || "—"}`, 5)}</row>`);
-    rows.push(`<row r="5">${excelCell(1, 5, "Coordenador(a)", 3)}${excelCell(4, 5, plan.coordinator, 5)}${excelCell(7, 5, "Local / trecho", 3)}${excelCell(9, 5, plan.location, 5)}</row>`);
+    rows.push(`<row r="5">${excelCell(1, 5, "Responsável", 3)}${excelCell(4, 5, plan.coordinator, 5)}${excelCell(7, 5, "Local / trecho", 3)}${excelCell(9, 5, plan.location, 5)}</row>`);
     rows.push(`<row r="6" ht="34" customHeight="1">${excelCell(1, 6, "Observações do planejamento", 3)}${excelCell(4, 6, plan.notes, 9)}</row>`);
     rows.push(`<row r="7" ht="34" customHeight="1">${excelCell(1, 7, "Registro geral da execução", 3)}${excelCell(4, 7, plan.executionNotes, 9)}</row>`);
     rows.push(`<row r="8" ht="8" customHeight="1"></row>`);
@@ -1197,53 +1195,20 @@
     const selector = $("#plan-selector");
     const dialog = $("#confirm-dialog");
     let coordinatorDirectory = [];
-    let planningSubs = [];
-    const coordinatorSubIds = new Map();
-
-    async function loadCoordinatorSubs() {
-      const [assignmentResult, subResult] = await Promise.all([
-        cloudClient.from("coordinator_sub_assignments").select("coordinator_member_id,sub_id"),
-        cloudClient.from("subs").select("id,code,name,active").order("sort_order")
-      ]);
-      if (assignmentResult.error || subResult.error) throw assignmentResult.error || subResult.error;
-      planningSubs = subResult.data || [];
-      (assignmentResult.data || []).forEach((assignment) => {
-        const assigned = coordinatorSubIds.get(assignment.coordinator_member_id) || [];
-        assigned.push(Number(assignment.sub_id));
-        coordinatorSubIds.set(assignment.coordinator_member_id, assigned);
-      });
-      coordinatorDirectory.forEach((member) => {
-        if (!coordinatorSubIds.has(member.id) && member.sub_id != null) coordinatorSubIds.set(member.id, [Number(member.sub_id)]);
-      });
-    }
-
-    function assignedSubIds(memberId) {
-      return coordinatorSubIds.get(memberId) || [];
-    }
 
     async function configureCoordinatorField() {
       const currentField = form.elements.coordinator;
       if (!currentField || !currentProfile) return;
-      if (currentProfile.role === "coordinator") {
+      if (isOperatorRole(currentProfile.role)) {
         currentField.readOnly = true;
-        currentField.title = "O Coordenador responsável é definido pela sua conta.";
+        currentField.title = "O responsável é definido pela sua conta.";
         coordinatorDirectory = [{
           id: currentProfile.organization_member_id,
           full_name: currentProfile.full_name,
           manager_id: null,
-          sub_id: currentProfile.sub_id,
           coordinator_type: currentProfile.coordinator_type
         }];
-        try {
-          await loadCoordinatorSubs();
-          const plan = activePlan();
-          const allowed = assignedSubIds(currentProfile.organization_member_id);
-          if (!plan.subId && allowed.length) plan.subId = allowed[0];
-          renderForm();
-        } catch (error) {
-          console.warn(error);
-          showToast("Não foi possível carregar as SUBs sob sua responsabilidade.");
-        }
+        renderForm();
         return;
       }
       if (currentProfile.role !== "editor") return;
@@ -1251,34 +1216,26 @@
       const select = document.createElement("select");
       select.name = "coordinator";
       select.dataset.coordinatorSelector = "";
-      select.setAttribute("aria-label", "Coordenador responsável");
+      select.setAttribute("aria-label", "Coordenador ou Especialista responsável");
       select.required = true;
       currentField.replaceWith(select);
-      select.innerHTML = '<option value="">Carregando Coordenadores…</option>';
+      select.innerHTML = '<option value="">Carregando responsáveis…</option>';
       select.disabled = true;
 
       const { data, error } = await cloudClient
         .from("organization_members")
-        .select("id,full_name,manager_id,sub_id,coordinator_type")
-        .eq("role", "coordinator")
+        .select("id,full_name,role,manager_id,coordinator_type")
+        .in("role", ["coordinator", "specialist"])
         .eq("enabled", true)
         .order("full_name");
       if (error) {
-        select.innerHTML = '<option value="">Não foi possível carregar os Coordenadores</option>';
-        showToast("Não foi possível carregar a hierarquia de Coordenadores.");
+        select.innerHTML = '<option value="">Não foi possível carregar os responsáveis</option>';
+        showToast("Não foi possível carregar Coordenadores e Especialistas.");
         return;
       }
       coordinatorDirectory = data || [];
-      try {
-        await loadCoordinatorSubs();
-      } catch (assignmentError) {
-        console.warn(assignmentError);
-        select.innerHTML = '<option value="">Não foi possível carregar as SUBs</option>';
-        showToast("Não foi possível carregar as SUBs dos Coordenadores.");
-        return;
-      }
-      select.innerHTML = '<option value="">Selecione o Coordenador</option>' + coordinatorDirectory
-        .map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.full_name)}</option>`)
+      select.innerHTML = '<option value="">Selecione o responsável</option>' + coordinatorDirectory
+        .map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.full_name)} · ${escapeHtml(ROLE_LABELS[member.role])}</option>`)
         .join("");
       renderForm();
     }
@@ -1298,20 +1255,9 @@
           input.value = name === "coordinator" && input.dataset.coordinatorSelector !== undefined
             ? (plan.coordinatorMemberId || "")
             : (plan[name] || "");
-          input.disabled = plan.locked || (name === "coordinator" && currentProfile?.role === "coordinator");
+          input.disabled = plan.locked || (name === "coordinator" && isOperatorRole(currentProfile?.role));
         }
       });
-      const subSelect = form.elements.subId;
-      const allowedIds = assignedSubIds(plan.coordinatorMemberId);
-      const allowed = planningSubs.filter((sub) => sub.active && allowedIds.includes(Number(sub.id)));
-      const historical = plan.subId && !allowed.some((sub) => Number(sub.id) === Number(plan.subId))
-        ? planningSubs.find((sub) => Number(sub.id) === Number(plan.subId))
-        : null;
-      subSelect.innerHTML = '<option value="">Selecione a SUB</option>'
-        + allowed.map((sub) => `<option value="${sub.id}">${escapeHtml(sub.code)} · ${escapeHtml(sub.name)}</option>`).join("")
-        + (historical ? `<option value="${historical.id}">${escapeHtml(historical.code)} · ${escapeHtml(historical.name)} · vínculo histórico</option>` : "");
-      subSelect.value = plan.subId == null ? "" : String(plan.subId);
-      subSelect.disabled = plan.locked || !plan.coordinatorMemberId || (!allowed.length && !historical);
       $("#lock-banner").hidden = !plan.locked;
       const hasExecution = hasExecutionData(plan);
       $("#planning-revision-banner").hidden = plan.locked || !hasExecution;
@@ -1413,11 +1359,8 @@
         plan.coordinator = member?.full_name || "";
         plan.coordinatorMemberId = member?.id || null;
         plan.managerMemberId = member?.manager_id || null;
-        plan.subId = assignedSubIds(member?.id)[0] || member?.sub_id || null;
         plan.coordinatorType = member?.coordinator_type || null;
         renderForm();
-      } else if (field === "subId") {
-        plan.subId = event.target.value ? Number(event.target.value) : null;
       } else if (field && Object.hasOwn(plan, field)) {
         plan[field] = event.target.value;
       }
@@ -2071,7 +2014,7 @@
       $("#execution-revision-banner").hidden = plan.locked || !hasExecutionData(plan);
       $("#execution-title").textContent = plan.title || "Intervalo sem nome";
       const dateLabel = plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Data não informada";
-      $("#execution-subtitle").textContent = [dateLabel, plan.serviceType, plan.location, plan.coordinator && `Coordenação: ${plan.coordinator}`].filter(Boolean).join(" · ");
+      $("#execution-subtitle").textContent = [dateLabel, plan.serviceType, plan.location, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ");
       if (document.activeElement !== $("#execution-notes")) $("#execution-notes").value = plan.executionNotes || "";
       $("#execution-notes").disabled = !executionAvailable;
       renderSteps();
@@ -2285,7 +2228,7 @@
     const nav = $(".primary-nav");
     if (!nav || !currentProfile) return;
     let links;
-    if (currentProfile.role === "coordinator") {
+    if (isOperatorRole(currentProfile.role)) {
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (currentProfile.role === "editor") {
       links = [["gestao.html", "Gestão", "management"], ["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
@@ -2300,7 +2243,7 @@
 
   function routeAllowedForRole() {
     if (!["planning", "execution", "dashboard"].includes(page)) return true;
-    return ["coordinator", "editor"].includes(currentProfile?.role);
+    return ["coordinator", "specialist", "editor"].includes(currentProfile?.role);
   }
 
   function createDialog(className, content) {
@@ -2455,7 +2398,7 @@
     if (page === "login") {
       if (currentUser) {
         const { data: profile } = await cloudClient.from("user_profiles").select("role,enabled").eq("id", currentUser.id).single();
-        if (profile?.enabled) location.replace(["coordinator", "editor"].includes(profile.role) ? "index.html" : "gestao.html");
+        if (profile?.enabled) location.replace(["coordinator", "specialist", "editor"].includes(profile.role) ? "index.html" : "gestao.html");
         else loginPage();
       } else loginPage();
       return;
@@ -2552,7 +2495,7 @@
         button.textContent = "Entrar no sistema";
         return;
       }
-      location.replace(["coordinator", "editor"].includes(profile.role) ? "index.html" : "gestao.html");
+      location.replace(["coordinator", "specialist", "editor"].includes(profile.role) ? "index.html" : "gestao.html");
     });
   }
 
@@ -2628,7 +2571,7 @@
       const elapsedInterval = intervalElapsedTime(timeline, nowAbs);
 
       $("#shared-title").textContent = plan.title || "Intervalo sem nome";
-      $("#shared-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Coordenação: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
+      $("#shared-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
       $("#shared-updated").textContent = `Atualizado às ${new Date(metadata.fetched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
       if (metadata.access_mode === "profile") {
         $("#shared-access-title").textContent = "Acesso conforme o seu perfil";
@@ -2641,7 +2584,7 @@
       }
       $("#shared-plan-summary").innerHTML = [
         ["Título", plan.title || "—"], ["Tipo", plan.serviceType || "—"], ["Data", plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
-        ["Local", plan.location || "—"], ["Coordenador", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${plan.windowStart}–${plan.windowEnd}` : "—"]
+        ["Local", plan.location || "—"], ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${plan.windowStart}–${plan.windowEnd}` : "—"]
       ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
       $("#shared-planning-notes").textContent = plan.notes || "Nenhuma observação registrada.";
       $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(step.plannedStart || "—")}–${escapeHtml(step.plannedEnd || "—")}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
@@ -2983,29 +2926,20 @@
     $("#account-detail-enabled").textContent = currentProfile.enabled ? "Conta habilitada" : "Conta desabilitada";
 
     const { data: directory } = await cloudClient.from("organization_members")
-      .select("id,full_name,role,manager_id,sub_id,coordinator_type")
+      .select("id,full_name,role,manager_id,coordinator_type")
       .eq("enabled", true);
     const ownMember = (directory || []).find((member) => member.id === currentProfile.organization_member_id);
     const manager = (directory || []).find((member) => member.id === ownMember?.manager_id);
-    const { data: ownAssignments } = ownMember
-      ? await cloudClient.from("coordinator_sub_assignments").select("sub_id").eq("coordinator_member_id", ownMember.id)
-      : { data: [] };
-    const assignedSubIds = (ownAssignments || []).map((assignment) => Number(assignment.sub_id));
-    if (!assignedSubIds.length && ownMember?.sub_id != null) assignedSubIds.push(Number(ownMember.sub_id));
-    const { data: ownSubs } = assignedSubIds.length
-      ? await cloudClient.from("subs").select("id,code,name,sort_order").in("id", assignedSubIds).order("sort_order")
-      : { data: [] };
-    const coordinator = currentProfile.role === "coordinator";
-    $("#account-manager-row").hidden = !coordinator;
-    $("#account-sub-row").hidden = !coordinator;
-    $("#account-type-row").hidden = !coordinator;
-    $("#account-detail-manager").textContent = manager?.full_name || "Cadastro pendente de revisão";
-    $("#account-detail-sub").textContent = ownSubs?.length ? ownSubs.map((sub) => `${sub.code} · ${sub.name}`).join("; ") : "Cadastro pendente de revisão";
-    $("#account-detail-type").textContent = ownMember?.coordinator_type === "infrastructure" ? "Infraestrutura" : ownMember?.coordinator_type === "superstructure" ? "Superestrutura" : "Cadastro pendente de revisão";
+    const operator = isOperatorRole(currentProfile.role);
+    const hasDirectManager = ["manager", "coordinator", "specialist"].includes(currentProfile.role);
+    $("#account-manager-row").hidden = !hasDirectManager;
+    $("#account-type-row").hidden = false;
+    $("#account-detail-manager").textContent = manager?.full_name || "Sem gestor direto definido";
+    $("#account-detail-type").textContent = ownMember?.coordinator_type === "infrastructure" ? "Infraestrutura" : ownMember?.coordinator_type === "superstructure" ? "Superestrutura" : ownMember?.coordinator_type === "modernization" ? "Modernização" : "Cadastro pendente de revisão";
 
     await renderAccountHistory();
 
-    if (coordinator) {
+    if (operator) {
       const primary = $("#account-primary-link");
       primary.href = "index.html";
       $("strong", primary).textContent = "Planejamento";

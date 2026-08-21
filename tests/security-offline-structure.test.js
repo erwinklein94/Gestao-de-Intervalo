@@ -16,9 +16,8 @@ const app = read("app.js");
 const createUser = read("supabase/functions/create-site-user/index.ts");
 const share = read("supabase/functions/interval-share/index.ts");
 const commentAuthorization = read("supabase/migrations/20260821152000_restrict_comments_to_operators.sql");
-const executiveManagerMigration = read("supabase/migrations/20260821160000_add_executive_manager_role.sql");
+const hierarchyMigration = read("supabase/migrations/20260821190000_remodel_profile_hierarchy.sql");
 const coordinatorScopeBackfill = read("supabase/migrations/20260821161000_backfill_requested_coordinator_scope.sql");
-const multipleCoordinatorSubs = read("supabase/migrations/20260821170000_add_multiple_coordinator_subs.sql");
 
 function containsAll(source, values, label) {
   for (const value of values) assert.ok(source.includes(value), `${label}: ausente ${value}`);
@@ -45,16 +44,23 @@ containsAll(migration, [
   "generate_series(100, 103)"
 ], "estrutura segura do banco");
 
-containsAll(executiveManagerMigration, [
-  "'director', 'executive_manager', 'consultant'",
-  "when 'executive_manager' then true",
+containsAll(hierarchyMigration, [
+  "'coordinator', 'specialist', 'editor'",
+  "when 'executive_manager' then exists",
   "create or replace function private.can_read_plan",
+  "create or replace function private.can_write_plan",
   "create or replace function private.can_read_member",
-  "'demo-executive-manager'",
+  "target_role in ('coordinator', 'specialist')",
+  "manager.manager_id = private.current_member_id()",
+  "p_subordinate_ids uuid[]",
+  "'infrastructure', 'superstructure', 'modernization'",
+  "new.sub_id := case when tg_op = 'UPDATE' then old.sub_id else null end",
+  "revoke all on public.subs, public.coordinator_sub_assignments from authenticated",
   "security invoker",
-  "revoke all on function public.list_demo_personas() from public, anon, authenticated"
-], "Gerente Executivo global e somente leitura");
-assert.ok(!executiveManagerMigration.includes("create or replace function private.can_write_plan"), "Gerente Executivo não pode receber permissão de escrita");
+  "drop trigger if exists user_profiles_sync_primary_coordinator_sub"
+], "Especialista, hierarquia gerencial e retirada de SUB");
+assert.ok(!hierarchyMigration.includes("when 'executive_manager' then true"), "Gerente Executivo não pode receber escopo global");
+assert.ok(!hierarchyMigration.includes("delete from public.coordinator_sub_assignments"), "vínculos históricos de SUB devem ser preservados");
 
 containsAll(coordinatorScopeBackfill, [
   "private.real_dataset_id()",
@@ -67,16 +73,6 @@ assert.ok(!coordinatorScopeBackfill.includes("lower(btrim(plan.coordinator))"), 
 for (const table of ["interval_plans", "interval_steps", "user_profiles", "datasets", "subs", "organization_members", "coordinator_sub_assignments", "interval_comments", "interval_sync_receipts", "interval_audit_log"]) {
   assert.ok(migration.includes(`alter table public.${table} enable row level security`), `RLS deve estar ativa em ${table}`);
 }
-containsAll(multipleCoordinatorSubs, [
-  "primary key (coordinator_member_id, sub_id)",
-  "create or replace function public.update_site_user_profile",
-  "p_sub_ids bigint[]",
-  "security invoker",
-  "Selecione uma SUB atribuida ao Coordenador",
-  "Members read Coordinator SUB assignments within scope",
-  "grant select, insert, delete on public.coordinator_sub_assignments to authenticated"
-], "vínculo múltiplo e protegido entre Coordenadores e SUBs");
-assert.ok(!multipleCoordinatorSubs.includes("grant select, insert, update, delete on public.coordinator_sub_assignments"), "atribuições não devem permitir UPDATE direto");
 assert.ok(commentAuthorization.includes("private.can_write_plan(plan.dataset_id, plan.coordinator_member_id)"), "comentários devem exigir permissão operacional");
 assert.ok(!commentAuthorization.includes("private.can_read_plan"), "permissão de leitura não pode autorizar comentários");
 
@@ -98,12 +94,11 @@ containsAll(createUser, [
   'editor.role !== "editor"',
   "password.length < 8",
   '"executive_manager"',
-  'role === "coordinator"',
-  "coordinator_sub_assignments",
-  "subIds",
-  "new Set(subIds).size === subIds.length",
-  "manager.organization_member_id",
-  'managerMember.role !== "manager"',
+  '"specialist"',
+  "classification",
+  "subordinateIds",
+  "validateSubordinates",
+  "replaceDirectReports",
   "profile_needs_review: false",
   'admin.from("user_profiles").delete()',
   'admin.from("organization_members").delete()',
@@ -114,7 +109,7 @@ containsAll(share, [
   ".eq(\"token_hash\", tokenHash)",
   '.eq("code", "real").eq("kind", "real")',
   '.eq("is_example", false)',
-  '["editor", "coordinator"].includes(ownerProfile.role)',
+  '["editor", "coordinator", "specialist"].includes(ownerProfile.role)',
   '.select("author_name,author_role,content,created_at")',
   '.is("deleted_at", null)',
   '"Cache-Control": "no-store"',

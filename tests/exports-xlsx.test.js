@@ -106,5 +106,5 @@ test("Excel gerencial contém escopo, indicadores e gráficos filtráveis", asyn
   assert.match(sheet, /RESUMO E GRÁFICOS/);
   assert.match(sheet, /DADOS DOS INTERVALOS/);
   assert.match(sheet, /type="dataBar"/);
-  assert.match(sheet, /<autoFilter ref="A\d+:M\d+"/);
+  assert.match(sheet, /<autoFilter ref="A\d+:L\d+"/);
 });
