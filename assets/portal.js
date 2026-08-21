@@ -747,24 +747,32 @@
       .map((manager) => manager.full_name || manager.email);
   }
 
-  function orgNodeMarkup(profile, childrenByManager) {
+  function orgNodeMarkup(profile, childrenByManager, parentId = null) {
     const reports = childrenByManager.get(profile.id) || [];
-    const extras = extraManagerNames(profile);
     const chips = classificationChips(profile);
-    const details = [
-      reports.length ? `<b>${reports.length}</b> subordinado${reports.length > 1 ? "s" : ""} direto${reports.length > 1 ? "s" : ""}` : "",
-      extras.length ? `Também sob ${escapeHtml(extras.join(", "))}` : ""
-    ].filter(Boolean).join(" · ");
+    // O mesmo Coordenador pode estar no escopo de varios Gerentes: ele aparece
+    // sob cada um, e a copia que nao e do gestor primario vem marcada.
+    const primary = members.find((candidate) => candidate.id === profile.manager_id);
+    const shared = Boolean(parentId && primary && primary.id !== parentId);
+    const details = reports.length
+      ? `<b>${reports.length}</b> subordinado${reports.length > 1 ? "s" : ""} direto${reports.length > 1 ? "s" : ""}`
+      : "";
+    const legend = [
+      `${profile.full_name || "Sem nome"} · ${profile.email}`,
+      shared ? `Gestor primário: ${primary.full_name || primary.email}` : "",
+      extraManagerNames(profile).length ? `Também sob ${extraManagerNames(profile).join(", ")}` : ""
+    ].filter(Boolean).join("\n");
     return `<li>
-      <article class="org-node ${profile.enabled ? "" : "is-disabled"}" data-role="${escapeHtml(profile.role)}" title="${escapeHtml(`${profile.full_name || "Sem nome"} · ${profile.email}`)}">
+      <article class="org-node ${profile.enabled ? "" : "is-disabled"}" data-role="${escapeHtml(profile.role)}" title="${escapeHtml(legend)}">
         <span class="org-node-role">${escapeHtml(ROLE_LABELS[profile.role] || profile.role)}</span>
         <strong>${escapeHtml(profile.full_name || "Sem nome")}</strong>
         <span class="org-node-email">${escapeHtml(profile.email)}</span>
         ${chips ? `<span class="org-node-chips">${chips}</span>` : ""}
         ${details ? `<span class="org-node-meta">${details}</span>` : ""}
+        ${shared ? `<span class="org-node-flag org-node-shared">Compartilhado · ${escapeHtml(primary.full_name || primary.email)}</span>` : ""}
         ${profile.enabled ? "" : '<span class="org-node-flag">Conta inativa</span>'}
       </article>
-      ${reports.length ? `<ul>${reports.map((child) => orgNodeMarkup(child, childrenByManager)).join("")}</ul>` : ""}
+      ${reports.length ? `<ul>${reports.map((child) => orgNodeMarkup(child, childrenByManager, profile.id)).join("")}</ul>` : ""}
     </li>`;
   }
 
@@ -774,17 +782,38 @@
     // O Editor administra o sistema e nao ocupa posicao na hierarquia.
     const ranked = members.filter((profile) => profile.role !== "editor");
     const byId = new Map(ranked.map((profile) => [profile.id, profile]));
+    const byMemberId = new Map(ranked
+      .filter((profile) => profile.organization_member_id)
+      .map((profile) => [profile.organization_member_id, profile]));
     const childrenByManager = new Map();
     const roots = [];
     const rank = (profile) => {
       const position = ORG_ROLE_ORDER.indexOf(profile.role);
       return position === -1 ? ORG_ROLE_ORDER.length : position;
     };
+    const addChild = (supervisorId, child) => {
+      if (!childrenByManager.has(supervisorId)) childrenByManager.set(supervisorId, []);
+      const list = childrenByManager.get(supervisorId);
+      if (!list.some((entry) => entry.id === child.id)) list.push(child);
+    };
+
+    // A arvore segue manager_operator_assignments, e nao apenas o gestor
+    // primario: um Coordenador no escopo de varios Gerentes aparece sob todos.
+    const supervisorsByOperator = new Map();
+    managerAssignments.forEach((assignment) => {
+      const manager = byMemberId.get(assignment.manager_member_id);
+      const operator = byMemberId.get(assignment.operator_member_id);
+      if (!manager || !operator) return;
+      if (!supervisorsByOperator.has(operator.id)) supervisorsByOperator.set(operator.id, new Set());
+      supervisorsByOperator.get(operator.id).add(manager.id);
+    });
+
     ranked.forEach((profile) => {
+      const supervisors = supervisorsByOperator.get(profile.id);
+      if (supervisors?.size) { supervisors.forEach((supervisorId) => addChild(supervisorId, profile)); return; }
       const supervisor = profile.manager_id && byId.has(profile.manager_id) ? profile.manager_id : null;
       if (!supervisor) { roots.push(profile); return; }
-      if (!childrenByManager.has(supervisor)) childrenByManager.set(supervisor, []);
-      childrenByManager.get(supervisor).push(profile);
+      addChild(supervisor, profile);
     });
     const sortBranch = (list) => list.sort((a, b) =>
       rank(a) - rank(b) || (a.full_name || a.email).localeCompare(b.full_name || b.email, "pt-BR"));

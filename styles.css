@@ -922,7 +922,10 @@ input:disabled, select:disabled, textarea:disabled { background: #edf1f3; color:
 .org-node-meta { margin-top: 1px; color: var(--muted); font-size: 7px; line-height: 1.3; }
 .org-node-meta b { color: var(--ink); }
 .org-node-chips { margin-top: 2px; display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; }
-.org-node-flag { width: fit-content; margin-top: 2px; padding: 1px 4px; border-radius: 4px; color: #8d5217; background: #fff1ce; font-size: 6.5px; }
+.org-node-flag { width: fit-content; max-width: 100%; margin-top: 2px; padding: 1px 4px; border-radius: 4px; color: #8d5217; background: #fff1ce; font-size: 6.5px; line-height: 1.35; }
+/* Copia do operador pendurada num Gerente que nao e o gestor primario dele. */
+.org-node-shared { color: #0b4a6f; background: #e2f0fa; }
+html[data-theme="dark"] .org-node-shared { color: #cfe8f8; background: #14405c; }
 .org-chip { padding: 1px 5px; border-radius: 999px; font-size: 6.5px; font-style: normal; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
 .org-chip-superstructure { color: #0b4a6f; background: #d7ecfa; }
 .org-chip-infrastructure { color: #0d5c48; background: #d5f0e7; }
