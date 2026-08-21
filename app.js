@@ -2925,16 +2925,24 @@
     $("#account-detail-role").textContent = roleLabel;
     $("#account-detail-enabled").textContent = currentProfile.enabled ? "Conta habilitada" : "Conta desabilitada";
 
-    const { data: directory } = await cloudClient.from("organization_members")
-      .select("id,full_name,role,manager_id,coordinator_type")
-      .eq("enabled", true);
+    const [{ data: directory }, { data: managerLinks }] = await Promise.all([
+      cloudClient.from("organization_members")
+        .select("id,full_name,role,manager_id,coordinator_type")
+        .eq("enabled", true),
+      cloudClient.from("manager_operator_assignments")
+        .select("manager_member_id,operator_member_id")
+        .eq("operator_member_id", currentProfile.organization_member_id)
+    ]);
     const ownMember = (directory || []).find((member) => member.id === currentProfile.organization_member_id);
     const manager = (directory || []).find((member) => member.id === ownMember?.manager_id);
+    const managerNames = (managerLinks || []).map((link) => (directory || []).find((member) => member.id === link.manager_member_id)?.full_name).filter(Boolean);
     const operator = isOperatorRole(currentProfile.role);
     const hasDirectManager = ["manager", "coordinator", "specialist"].includes(currentProfile.role);
     $("#account-manager-row").hidden = !hasDirectManager;
     $("#account-type-row").hidden = false;
-    $("#account-detail-manager").textContent = manager?.full_name || "Sem gestor direto definido";
+    $("#account-detail-manager").textContent = isOperatorRole(currentProfile.role)
+      ? managerNames.join(", ") || manager?.full_name || "Sem gestor direto definido"
+      : manager?.full_name || "Sem gestor direto definido";
     $("#account-detail-type").textContent = ownMember?.coordinator_type === "infrastructure" ? "Infraestrutura" : ownMember?.coordinator_type === "superstructure" ? "Superestrutura" : ownMember?.coordinator_type === "modernization" ? "Modernização" : "Cadastro pendente de revisão";
 
     await renderAccountHistory();

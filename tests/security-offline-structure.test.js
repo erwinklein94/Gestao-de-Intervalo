@@ -17,6 +17,7 @@ const createUser = read("supabase/functions/create-site-user/index.ts");
 const share = read("supabase/functions/interval-share/index.ts");
 const commentAuthorization = read("supabase/migrations/20260821152000_restrict_comments_to_operators.sql");
 const hierarchyMigration = read("supabase/migrations/20260821190000_remodel_profile_hierarchy.sql");
+const sharedManagerMigration = read("supabase/migrations/20260821193000_allow_shared_manager_scope.sql");
 const coordinatorScopeBackfill = read("supabase/migrations/20260821161000_backfill_requested_coordinator_scope.sql");
 
 function containsAll(source, values, label) {
@@ -62,6 +63,18 @@ containsAll(hierarchyMigration, [
 assert.ok(!hierarchyMigration.includes("when 'executive_manager' then true"), "Gerente Executivo não pode receber escopo global");
 assert.ok(!hierarchyMigration.includes("delete from public.coordinator_sub_assignments"), "vínculos históricos de SUB devem ser preservados");
 
+containsAll(sharedManagerMigration, [
+  "create table public.manager_operator_assignments",
+  "primary key (manager_member_id, operator_member_id)",
+  "alter table public.manager_operator_assignments enable row level security",
+  "assignment.manager_member_id = private.current_member_id()",
+  "assignment.operator_member_id = target_coordinator_id",
+  "on conflict do nothing",
+  "manager_id is null",
+  "security invoker"
+], "escopo compartilhado entre Gerentes");
+assert.ok(!sharedManagerMigration.includes("set manager_id = p_target_user_id\n+    where id = any(normalized_ids);"), "novo vínculo não pode reatribuir Coordenador de outro Gerente");
+
 containsAll(coordinatorScopeBackfill, [
   "private.real_dataset_id()",
   "lower(coordinator_auth.email) = 'raquel.klein@rumolog.com'",
@@ -70,7 +83,7 @@ containsAll(coordinatorScopeBackfill, [
 ], "reparo idempotente do escopo legado da Coordenadora");
 assert.ok(!coordinatorScopeBackfill.includes("lower(btrim(plan.coordinator))"), "texto livre não pode reatribuir um plano legado");
 
-for (const table of ["interval_plans", "interval_steps", "user_profiles", "datasets", "subs", "organization_members", "coordinator_sub_assignments", "interval_comments", "interval_sync_receipts", "interval_audit_log"]) {
+for (const table of ["interval_plans", "interval_steps", "user_profiles", "datasets", "subs", "organization_members", "coordinator_sub_assignments", "manager_operator_assignments", "interval_comments", "interval_sync_receipts", "interval_audit_log"]) {
   assert.ok(migration.includes(`alter table public.${table} enable row level security`), `RLS deve estar ativa em ${table}`);
 }
 assert.ok(commentAuthorization.includes("private.can_write_plan(plan.dataset_id, plan.coordinator_member_id)"), "comentários devem exigir permissão operacional");
@@ -99,6 +112,7 @@ containsAll(createUser, [
   "subordinateIds",
   "validateSubordinates",
   "replaceDirectReports",
+  'admin.from("manager_operator_assignments").upsert',
   "profile_needs_review: false",
   'admin.from("user_profiles").delete()',
   'admin.from("organization_members").delete()',

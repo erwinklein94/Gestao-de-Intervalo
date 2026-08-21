@@ -148,6 +148,7 @@
   let personas = [];
   let plans = [];
   let members = [];
+  let managerAssignments = [];
   let toastTimer;
 
   function initializeTheme() {
@@ -640,11 +641,16 @@
 
   async function loadAdminData() {
     setState("Atualizando cadastros…", "syncing");
-    const { data, error } = await baseClient.from("user_profiles")
-      .select("id,email,full_name,role,enabled,manager_id,coordinator_type,profile_needs_review,organization_member_id,created_at")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    members = data || [];
+    const [profilesResult, assignmentsResult] = await Promise.all([
+      baseClient.from("user_profiles")
+        .select("id,email,full_name,role,enabled,manager_id,coordinator_type,profile_needs_review,organization_member_id,created_at")
+        .order("created_at", { ascending: false }),
+      baseClient.from("manager_operator_assignments").select("manager_member_id,operator_member_id")
+    ]);
+    if (profilesResult.error) throw profilesResult.error;
+    if (assignmentsResult.error) throw assignmentsResult.error;
+    members = profilesResult.data || [];
+    managerAssignments = assignmentsResult.data || [];
     setState("Cadastros atualizados", "ok");
   }
 
@@ -657,10 +663,19 @@
   function subordinateOptions(role, supervisorId = "") {
     const hierarchy = hierarchyRole(role);
     if (!hierarchy) return "";
+    const supervisor = members.find((profile) => profile.id === supervisorId);
+    const assignedOperatorIds = new Set(managerAssignments
+      .filter((assignment) => assignment.manager_member_id === supervisor?.organization_member_id)
+      .map((assignment) => assignment.operator_member_id));
     return members
       .filter((profile) => hierarchy.roles.includes(profile.role) && profile.enabled && profile.id !== supervisorId)
       .sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, "pt-BR"))
-      .map((profile) => `<option value="${profile.id}" ${profile.manager_id === supervisorId ? "selected" : ""}>${escapeHtml(profile.full_name || profile.email)} · ${escapeHtml(ROLE_LABELS[profile.role])}</option>`)
+      .map((profile) => {
+        const selected = role === "manager"
+          ? assignedOperatorIds.has(profile.organization_member_id)
+          : profile.manager_id === supervisorId;
+        return `<option value="${profile.id}" ${selected ? "selected" : ""}>${escapeHtml(profile.full_name || profile.email)} · ${escapeHtml(ROLE_LABELS[profile.role])}</option>`;
+      })
       .join("");
   }
 

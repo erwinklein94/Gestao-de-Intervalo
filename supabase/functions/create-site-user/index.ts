@@ -31,12 +31,35 @@ async function validateSubordinates(admin: ReturnType<typeof createClient>, role
 async function replaceDirectReports(admin: ReturnType<typeof createClient>, supervisorId: string, role: string, subordinateIds: string[]) {
   const expectedRoles = role === "executive_manager" ? ["manager"] : role === "manager" ? ["coordinator", "specialist"] : [];
   if (!expectedRoles.length) return;
-  const excluded = subordinateIds.length ? `(${subordinateIds.join(",")})` : "(00000000-0000-0000-0000-000000000000)";
-  const { error: detachError } = await admin.from("user_profiles").update({ manager_id: null }).eq("manager_id", supervisorId).not("id", "in", excluded);
-  if (detachError) throw detachError;
   if (!subordinateIds.length) return;
-  const { error: attachError } = await admin.from("user_profiles").update({ manager_id: supervisorId }).in("id", subordinateIds).in("role", expectedRoles);
-  if (attachError) throw attachError;
+  if (role === "executive_manager") {
+    const { error } = await admin.from("user_profiles").update({ manager_id: supervisorId }).in("id", subordinateIds).in("role", expectedRoles);
+    if (error) throw error;
+    return;
+  }
+
+  const [{ data: supervisor, error: supervisorError }, { data: operators, error: operatorsError }] = await Promise.all([
+    admin.from("user_profiles").select("organization_member_id").eq("id", supervisorId).single(),
+    admin.from("user_profiles").select("id,organization_member_id").in("id", subordinateIds).in("role", expectedRoles),
+  ]);
+  if (supervisorError || operatorsError || !supervisor?.organization_member_id || operators?.length !== subordinateIds.length) {
+    throw supervisorError || operatorsError || new Error("missing_organization_members");
+  }
+  const { data: managerMember, error: memberError } = await admin.from("organization_members")
+    .select("dataset_id").eq("id", supervisor.organization_member_id).single();
+  if (memberError || !managerMember) throw memberError || new Error("missing_manager_member");
+  const { error: assignmentError } = await admin.from("manager_operator_assignments").upsert(
+    operators.map((operator) => ({
+      dataset_id: managerMember.dataset_id,
+      manager_member_id: supervisor.organization_member_id,
+      operator_member_id: operator.organization_member_id,
+    })),
+    { onConflict: "manager_member_id,operator_member_id" },
+  );
+  if (assignmentError) throw assignmentError;
+  const { error: primaryError } = await admin.from("user_profiles")
+    .update({ manager_id: supervisorId }).in("id", subordinateIds).is("manager_id", null);
+  if (primaryError) throw primaryError;
 }
 
 async function cleanupCreatedUser(admin: ReturnType<typeof createClient>, userId: string) {
