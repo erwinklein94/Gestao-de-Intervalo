@@ -756,7 +756,7 @@
       extras.length ? `Também sob ${escapeHtml(extras.join(", "))}` : ""
     ].filter(Boolean).join(" · ");
     return `<li>
-      <article class="org-node ${profile.enabled ? "" : "is-disabled"}" data-role="${escapeHtml(profile.role)}">
+      <article class="org-node ${profile.enabled ? "" : "is-disabled"}" data-role="${escapeHtml(profile.role)}" title="${escapeHtml(`${profile.full_name || "Sem nome"} · ${profile.email}`)}">
         <span class="org-node-role">${escapeHtml(ROLE_LABELS[profile.role] || profile.role)}</span>
         <strong>${escapeHtml(profile.full_name || "Sem nome")}</strong>
         <span class="org-node-email">${escapeHtml(profile.email)}</span>
