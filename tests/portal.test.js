@@ -227,6 +227,7 @@ assert.deepEqual(ids(filterPlans(plans, {
 })), ["late-infra"]);
 
 assert.equal(roleScopeDescription("director"), roleScopeDescription("consultant"));
+assert.equal(roleScopeDescription("executive_manager"), roleScopeDescription("director"));
 assert.match(roleScopeDescription("director"), /Toda a operação/);
 assert.match(roleScopeDescription("manager"), /Somente Coordenadores vinculados/);
 assert.match(roleScopeDescription("coordinator"), /Seus próprios intervalos/);
@@ -240,6 +241,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(roleCapabilities("director"))), {
   readOnly: true
 });
 assert.deepEqual(JSON.parse(JSON.stringify(roleCapabilities("consultant"))), JSON.parse(JSON.stringify(roleCapabilities("director"))));
+assert.deepEqual(JSON.parse(JSON.stringify(roleCapabilities("executive_manager"))), JSON.parse(JSON.stringify(roleCapabilities("director"))));
 assert.equal(roleCapabilities("manager").organizationWide, false);
 assert.equal(roleCapabilities("manager").readOnly, true);
 assert.equal(roleCapabilities("coordinator").canOperateIntervals, true);

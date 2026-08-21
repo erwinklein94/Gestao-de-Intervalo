@@ -7,9 +7,11 @@
   const DEMO_KEY = "gestaoIntervaloRumo.dataset";
   const PERSONA_KEY = "gestaoIntervaloRumo.demoPersona";
   const ROLE_LABELS = {
-    director: "Diretor", consultant: "Consultor", manager: "Gerente",
+    director: "Diretor", executive_manager: "Gerente Executivo",
+    consultant: "Consultor", manager: "Gerente",
     coordinator: "Coordenador", editor: "Editor"
   };
+  const READ_ONLY_GLOBAL_ROLES = ["director", "executive_manager", "consultant"];
   const TYPE_LABELS = { infrastructure: "Infraestrutura", superstructure: "Superestrutura" };
   const STATUS_LABELS = { planning: "Planejamento", executing: "Em execução", completed: "Concluído", cancelled: "Cancelado" };
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -99,17 +101,17 @@
   function roleScopeDescription(role) {
     if (role === "manager") return "Somente Coordenadores vinculados à sua gestão e seus respectivos intervalos.";
     if (role === "coordinator") return "Seus próprios intervalos, do planejamento ao histórico.";
-    if (["director", "consultant"].includes(role)) return "Toda a operação cadastrada, em modo somente leitura.";
+    if (READ_ONLY_GLOBAL_ROLES.includes(role)) return "Toda a operação cadastrada, em modo somente leitura.";
     return "Visão completa da operação e acesso às ferramentas administrativas.";
   }
 
   function roleCapabilities(role) {
     return {
-      canUseManagement: ["director", "consultant", "manager", "coordinator", "editor"].includes(role),
+      canUseManagement: ["director", "executive_manager", "consultant", "manager", "coordinator", "editor"].includes(role),
       canOperateIntervals: ["coordinator", "editor"].includes(role),
       canAdminister: role === "editor",
-      organizationWide: ["director", "consultant", "editor"].includes(role),
-      readOnly: ["director", "consultant", "manager"].includes(role)
+      organizationWide: [...READ_ONLY_GLOBAL_ROLES, "editor"].includes(role),
+      readOnly: [...READ_ONLY_GLOBAL_ROLES, "manager"].includes(role)
     };
   }
 
@@ -185,8 +187,10 @@
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (role === "editor") {
       links = [["gestao.html", "Gestão", "management"], ["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
-    } else {
+    } else if (roleCapabilities(role).canUseManagement) {
       links = [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
+    } else {
+      links = [["conta.html", "Minha conta", "account"]];
     }
     nav.style.setProperty("--nav-count", links.length);
     nav.innerHTML = links.map(([href, label, target], index) => `<a href="${href}" class="${page === target ? "active" : ""}" ${page === target ? 'aria-current="page"' : ""}><span>${index + 1}</span>${escapeHtml(label)}</a>`).join("");
@@ -573,6 +577,7 @@
     if (error || !profile?.enabled) { await baseClient.auth.signOut(); location.replace("login.html?status=disabled"); return; }
     actualProfile = profile;
     await configureContext();
+    if (!roleCapabilities(effectiveProfile.role).canUseManagement) { location.replace("conta.html"); return; }
     renderNavigation(effectiveProfile.role);
     if (document.body.dataset.page === "admin") {
       if (actualProfile.role !== "editor" || demoMode) { location.replace("gestao.html"); return; }

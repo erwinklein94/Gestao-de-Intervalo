@@ -22,12 +22,13 @@ As permissões são aplicadas na navegação e novamente no banco por Row Level 
 | Perfil | Escopo | Páginas e ações principais |
 |---|---|---|
 | Diretor | Toda a operação | Gestão, maiores atrasos, intervalos em execução, histórico, dashboard geral, acompanhamento somente leitura e Minha Conta |
+| Gerente Executivo | Mesmo escopo do Diretor | Mesma visão global e somente leitura dos intervalos |
 | Consultor | Mesmo escopo do Diretor | Mesma visão global e somente leitura dos intervalos |
 | Gerente | Coordenadores vinculados ao próprio Gerente | Mesmas quatro visões gerenciais, filtradas automaticamente para a própria equipe |
 | Coordenador | Próprios intervalos | Planejamento, execução, dashboard individual, histórico, comentários operacionais e Minha Conta |
 | Editor | Toda a operação | Visão gerencial completa, ferramentas operacionais, Administração, gestão de usuários/SUBs e modo Exemplos |
 
-Cada Coordenador deve possuir Gerente responsável, SUB e classificação `infrastructure` ou `superstructure`. Perfis legados incompletos são preservados com indicação de revisão, em vez de terem dados removidos silenciosamente.
+Cada Coordenador deve possuir Gerente responsável, SUB e classificação `infrastructure` ou `superstructure`. O Gerente Executivo é um perfil global somente leitura e não participa da relação hierárquica Gerente → Coordenador. Perfis legados incompletos são preservados com indicação de revisão, em vez de terem dados removidos silenciosamente.
 
 ## Páginas
 
@@ -122,11 +123,11 @@ As migrações mantêm as tabelas operacionais originais e ampliam o modelo de f
 - `interval_audit_log`: rastreabilidade das alterações relevantes de intervalos e comentários.
 - `interval_share_links`: tokens temporários e revogáveis para acompanhamento externo.
 
-As políticas RLS calculam o escopo a partir do usuário autenticado e da hierarquia: Diretor, Consultor e Editor consultam toda a operação; Gerente consulta apenas sua equipe; Coordenador consulta e altera apenas os próprios intervalos. Permissões de tabela e coluna são concedidas explicitamente, separadas das políticas de linha.
+As políticas RLS calculam o escopo a partir do usuário autenticado e da hierarquia: Diretor, Gerente Executivo, Consultor e Editor consultam toda a operação; Gerente consulta apenas sua equipe; Coordenador consulta e altera apenas os próprios intervalos. Diretor, Gerente Executivo e Consultor permanecem somente leitura. Permissões de tabela e coluna são concedidas explicitamente, separadas das políticas de linha.
 
 ## Modo Exemplos
 
-O botão **Exemplos**, disponível em Minha Conta para o Editor, abre um conjunto demonstrativo preenchido com todos os papéis, Gerentes, Coordenadores, classificações, SUBs, intervalos simultâneos, atrasados, adiantados, concluídos, comentários e dashboards.
+O botão **Exemplos**, disponível em Minha Conta para o Editor, abre um conjunto demonstrativo preenchido com todos os papéis, inclusive Gerente Executivo, Gerentes, Coordenadores, classificações, SUBs, intervalos simultâneos, atrasados, adiantados, concluídos, comentários e dashboards.
 
 O isolamento não depende de uma simples filtragem visual:
 
@@ -163,7 +164,7 @@ A interface informa estados como **Salvo**, **Sem conexão**, **Sincronizando**,
 
 ## Migrações Supabase
 
-As migrações ficam em `supabase/migrations/` e devem ser aplicadas na ordem do timestamp. A expansão organizacional está em `20260821115809_expand_organizational_interval_management.sql`; `20260821133000_complete_sub_catalog.sql` completa o catálogo com as SUBs 100–103 sem alterar as anteriores. As migrações seguintes cobrem o índice da auditoria por autor e o bootstrap das personas demo sob RLS com privilégios do próprio chamador.
+As migrações ficam em `supabase/migrations/` e devem ser aplicadas na ordem do timestamp. A expansão organizacional está em `20260821115809_expand_organizational_interval_management.sql`; `20260821133000_complete_sub_catalog.sql` completa o catálogo com as SUBs 100–103 sem alterar as anteriores. As migrações seguintes cobrem o índice da auditoria por autor, o bootstrap das personas demo sob RLS com privilégios do próprio chamador, a inclusão segura de `executive_manager` e o preenchimento do escopo organizacional de planos legados comprovadamente vinculados à Coordenadora cadastrada.
 
 Com a CLI autenticada e o projeto correto vinculado:
 
@@ -176,7 +177,7 @@ Revise sempre o `--dry-run`, a lista de migrações pendentes e os advisors de s
 
 ## Edge Functions
 
-- `create-site-user`: endpoint autenticado usado pela Administração. Revalida o JWT, exige Editor habilitado, valida papel/hierarquia/SUB e mantém a chave administrativa somente no ambiente da função.
+- `create-site-user`: endpoint autenticado usado pela Administração. Revalida o JWT, exige Editor habilitado, valida papel/hierarquia/SUB, permite provisionamento idempotente explícito de uma conta existente e mantém a chave administrativa somente no ambiente da função.
 - `interval-share`: endpoint público por token de alta entropia. Aceita somente planos do dataset real, valida link, expiração, revogação e proprietário habilitado, e retorna uma projeção de dados somente leitura sem identificadores privados.
 
 Deploy pela CLI, preservando verificação JWT na função administrativa e desabilitando-a somente na função cujo próprio token é a credencial:
@@ -206,7 +207,7 @@ Os testes de cálculo usam o runtime nativo do Node.js:
 node --test tests/*.test.js
 ```
 
-Eles validam cenários de etapas simultâneas, seleção do marco operacional, encerramento, tempo decorrido, métricas gerenciais, filtros, capacidades por perfil, estrutura das páginas, RLS, hierarquia, histórico, fila offline e Edge Functions. Antes de publicar, faça também um teste funcional com cada papel, incluindo bloqueios de rota, escopo do Gerente, edição exclusiva de Coordenador/Editor, comentários, alternância real/demo, perda e retorno da conexão e link compartilhado revogado ou expirado.
+Eles validam cenários de etapas simultâneas, seleção do marco operacional, encerramento, tempo decorrido, métricas gerenciais, filtros, capacidades por perfil, estrutura das páginas, RLS, hierarquia, histórico, fila offline e Edge Functions. Antes de publicar, faça também um teste funcional com cada papel, confirmando a equivalência entre Gerente Executivo e Diretor, bloqueios de rota, escopo do Gerente, edição exclusiva de Coordenador/Editor, comentários, alternância real/demo, perda e retorno da conexão e link compartilhado revogado ou expirado.
 
 ## Publicação no GitHub Pages
 

@@ -28,7 +28,8 @@
   let deviceId = "";
   let syncRetryTimer = null;
   const dirtyPlanIds = new Set();
-  const ROLE_LABELS = { director: "Diretor", consultant: "Consultor", manager: "Gerente", coordinator: "Coordenador", editor: "Editor" };
+  const ROLE_LABELS = { director: "Diretor", executive_manager: "Gerente Executivo", consultant: "Consultor", manager: "Gerente", coordinator: "Coordenador", editor: "Editor" };
+  const READ_ONLY_MANAGEMENT_ROLES = ["director", "executive_manager", "consultant", "manager"];
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -2208,8 +2209,10 @@
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (currentProfile.role === "editor") {
       links = [["gestao.html", "Gestão", "management"], ["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
-    } else {
+    } else if (READ_ONLY_MANAGEMENT_ROLES.includes(currentProfile.role)) {
       links = [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
+    } else {
+      links = [["conta.html", "Minha conta", "account"]];
     }
     nav.style.setProperty("--nav-count", links.length);
     nav.innerHTML = links.map(([href, label, target], index) => `<a href="${href}" class="${page === target ? "active" : ""}" ${page === target ? 'aria-current="page"' : ""}><span>${index + 1}</span>${escapeHtml(label)}</a>`).join("");

@@ -16,13 +16,15 @@ const app = read("app.js");
 const createUser = read("supabase/functions/create-site-user/index.ts");
 const share = read("supabase/functions/interval-share/index.ts");
 const commentAuthorization = read("supabase/migrations/20260821152000_restrict_comments_to_operators.sql");
+const executiveManagerMigration = read("supabase/migrations/20260821160000_add_executive_manager_role.sql");
+const coordinatorScopeBackfill = read("supabase/migrations/20260821161000_backfill_requested_coordinator_scope.sql");
 
 function containsAll(source, values, label) {
   for (const value of values) assert.ok(source.includes(value), `${label}: ausente ${value}`);
 }
 
 containsAll(migration, [
-  "'director', 'consultant', 'manager', 'coordinator', 'editor'",
+  "'director', 'executive_manager', 'consultant'",
   "create table if not exists public.datasets",
   "create table if not exists public.organization_members",
   "create table if not exists public.interval_comments",
@@ -41,6 +43,25 @@ containsAll(migration, [
   "security invoker",
   "generate_series(100, 103)"
 ], "estrutura segura do banco");
+
+containsAll(executiveManagerMigration, [
+  "'director', 'executive_manager', 'consultant'",
+  "when 'executive_manager' then true",
+  "create or replace function private.can_read_plan",
+  "create or replace function private.can_read_member",
+  "'demo-executive-manager'",
+  "security invoker",
+  "revoke all on function public.list_demo_personas() from public, anon, authenticated"
+], "Gerente Executivo global e somente leitura");
+assert.ok(!executiveManagerMigration.includes("create or replace function private.can_write_plan"), "Gerente Executivo não pode receber permissão de escrita");
+
+containsAll(coordinatorScopeBackfill, [
+  "private.real_dataset_id()",
+  "lower(coordinator_auth.email) = 'raquel.klein@rumolog.com'",
+  "manager.role = 'manager'",
+  "plan.manager_member_id is null"
+], "reparo idempotente do escopo legado da Coordenadora");
+assert.ok(!coordinatorScopeBackfill.includes("lower(btrim(plan.coordinator))"), "texto livre não pode reatribuir um plano legado");
 
 for (const table of ["interval_plans", "interval_steps", "user_profiles", "datasets", "subs", "organization_members", "interval_comments", "interval_sync_receipts", "interval_audit_log"]) {
   assert.ok(migration.includes(`alter table public.${table} enable row level security`), `RLS deve estar ativa em ${table}`);
@@ -65,6 +86,7 @@ containsAll(app, [
 containsAll(createUser, [
   'editor.role !== "editor"',
   "password.length < 8",
+  '"executive_manager"',
   'role === "coordinator"',
   "manager.organization_member_id",
   'managerMember.role !== "manager"',

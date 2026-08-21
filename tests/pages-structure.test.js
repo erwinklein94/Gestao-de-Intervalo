@@ -64,6 +64,8 @@ includesAll(admin, [
   'name="password"',
   'name="role"',
   'value="director"',
+  'value="executive_manager"',
+  'Gerente Executivo',
   'value="consultant"',
   'value="manager"',
   'value="coordinator"',
