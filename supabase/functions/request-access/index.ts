@@ -35,15 +35,33 @@ function escapeHtml(value: string) {
   ));
 }
 
+// Destinatarios: o endereco configurado em app_settings mais os Editores
+// habilitados. Nenhum deles fica no codigo -- o repositorio e publico.
+async function resolveRecipients(admin: ReturnType<typeof createClient>) {
+  const destinos = new Set<string>();
+  const doAmbiente = Deno.env.get("ACCESS_REQUEST_NOTIFY_EMAIL") || "";
+  doAmbiente.split(",").map((entry) => entry.trim()).filter(Boolean).forEach((entry) => destinos.add(entry));
+
+  const { data: ajuste } = await admin.from("app_settings")
+    .select("value").eq("key", "access_request_notify_email").maybeSingle();
+  String(ajuste?.value || "").split(",").map((entry) => entry.trim()).filter(Boolean)
+    .forEach((entry) => destinos.add(entry));
+
+  const { data: editores } = await admin.from("user_profiles")
+    .select("email").eq("role", "editor").eq("enabled", true);
+  (editores || []).forEach((editor) => { if (editor.email) destinos.add(editor.email); });
+
+  return [...destinos];
+}
+
 // O e-mail e um aviso, nao a fonte da verdade: se o envio falhar, a
 // solicitacao continua registrada e visivel na Administracao.
-async function notifyEditor(payload: {
+async function notifyEditor(destinos: string[], payload: {
   fullName: string; email: string; role: string; classifications: string[]; message: string;
 }) {
   const apiKey = Deno.env.get("RESEND_API_KEY") || "";
-  const destino = Deno.env.get("ACCESS_REQUEST_NOTIFY_EMAIL") || "";
   const remetente = Deno.env.get("ACCESS_REQUEST_FROM_EMAIL") || "onboarding@resend.dev";
-  if (!apiKey || !destino) return { sent: false, reason: "not_configured" };
+  if (!apiKey || !destinos.length) return { sent: false, reason: "not_configured" };
 
   const linha = (rotulo: string, valor: string) =>
     `<tr><td style="padding:6px 14px 6px 0;color:#627888;font-size:13px">${rotulo}</td>` +
@@ -73,7 +91,7 @@ async function notifyEditor(payload: {
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: `Gestão de Intervalo <${remetente}>`,
-        to: destino.split(",").map((entry) => entry.trim()).filter(Boolean),
+        to: destinos,
         subject: `Nova solicitação de acesso: ${payload.fullName}`,
         html,
       }),
@@ -127,7 +145,7 @@ Deno.serve(async (request) => {
       return response(origin, { error: "Não foi possível registrar a solicitação." }, 400);
     }
 
-    const notice = await notifyEditor({ fullName, email, role, classifications, message });
+    const notice = await notifyEditor(await resolveRecipients(admin), { fullName, email, role, classifications, message });
     // A resposta e sempre a mesma, tenha o e-mail existido ou nao: nao conta a
     // quem pergunta se aquele endereco ja possui conta.
     return response(origin, { status: "received", notified: notice.sent }, 201);
