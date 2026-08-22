@@ -99,6 +99,12 @@ const account = read("conta.html");
 includesAll(account, ['id="account-history"', 'id="account-password-form"', 'name="currentPassword"', 'name="newPassword"'], "histórico e troca de senha da Minha Conta");
 assert.ok(!account.includes("SUB"), "Minha Conta não deve exibir SUB");
 assert.ok(!account.includes("account-shortcut"), "Minha Conta não deve exibir atalhos");
+assert.ok(!read("app.js").includes("const roleLabel = roleLabel("), "Minha Conta não deve ocultar a função roleLabel com uma variável local");
+includesAll(read("app.js"), [
+  "const profileRoleLabel = roleLabel(currentProfile.role, currentProfile.role_gender)",
+  '$("#account-role").textContent = profileRoleLabel',
+  '$("#account-detail-role").textContent = profileRoleLabel'
+], "Minha Conta deve preencher a função flexionada sem interromper os demais dados");
 
 const planning = read("index.html");
 includesAll(planning, ['name="coordinator"', 'id="export-button"', 'id="export-plan-pdf"'], "responsável e exportações do planejamento");

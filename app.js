@@ -3149,13 +3149,13 @@
     }
     gate.hidden = true;
     content.hidden = false;
-    const roleLabel = roleLabel(currentProfile.role, currentProfile.role_gender);
+    const profileRoleLabel = roleLabel(currentProfile.role, currentProfile.role_gender);
     $("#account-name").textContent = currentProfile.full_name || "Usuário";
     $("#account-email").textContent = currentProfile.email;
-    $("#account-role").textContent = roleLabel;
+    $("#account-role").textContent = profileRoleLabel;
     $("#account-detail-name").textContent = currentProfile.full_name || "Não informado";
     $("#account-detail-email").textContent = currentProfile.email;
-    $("#account-detail-role").textContent = roleLabel;
+    $("#account-detail-role").textContent = profileRoleLabel;
     $("#account-detail-enabled").textContent = currentProfile.enabled ? "Conta habilitada" : "Conta desabilitada";
 
     const [{ data: directory }, { data: managerLinks }] = await Promise.all([
