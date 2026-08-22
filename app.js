@@ -2303,6 +2303,11 @@
     setInterval(render, 1000);
   }
 
+  async function signOutAndReturn() {
+    await cloudClient.auth.signOut();
+    location.replace("login.html");
+  }
+
   function renderAuthControls() {
     const tools = $(".header-tools");
     if (!tools || $("[data-auth-button]", tools)) return;
@@ -2310,8 +2315,10 @@
     button.type = "button";
     button.className = "auth-button";
     button.dataset.authButton = "";
-    button.textContent = currentUser ? "Minha conta" : "Entrar";
-    button.addEventListener("click", () => currentUser ? location.assign("conta.html") : openAuthDialog());
+    // Levar para a Minha conta duplicaria o item que ja existe no menu; sair da
+    // conta e o que faltava no cabecalho.
+    button.textContent = currentUser ? "Sair da conta" : "Entrar";
+    button.addEventListener("click", () => currentUser ? signOutAndReturn() : openAuthDialog());
     tools.prepend(button);
   }
 
@@ -3170,10 +3177,7 @@
     if (currentProfile.role === "editor") $("#account-history-card").hidden = true;
 
     bindPasswordChange();
-    $("#account-sign-out").addEventListener("click", async () => {
-      await cloudClient.auth.signOut();
-      location.replace("login.html");
-    });
+    $("#account-sign-out").addEventListener("click", signOutAndReturn);
   }
 
   if (window.__GESTAO_TEST_MODE__) {
