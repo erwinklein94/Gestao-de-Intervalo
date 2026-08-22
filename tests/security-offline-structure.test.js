@@ -111,6 +111,15 @@ containsAll(app, [
   'item.state = "pending"'
 ], "UUID válido em HTTP e reparo da fila local existente");
 
+containsAll(app, [
+  'setSyncState(navigator.onLine ? "Salvando…" : "Sem conexão"',
+  "if (!navigator.onLine) writeStoreLocally();",
+  "function enqueueDirtyPlans(saveRecoveryCopy = !navigator.onLine)",
+  "if (saveRecoveryCopy) saveOutbox();",
+  "/Intervalos concluidos fazem parte do historico/i",
+  'showToast("Alteração cancelada: intervalos concluídos pertencem ao histórico.")'
+], "banco primeiro quando online e contingência local apenas em falha");
+
 containsAll(createUser, [
   'editor.role !== "editor"',
   "password.length < 8",

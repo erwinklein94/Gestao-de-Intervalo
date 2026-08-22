@@ -225,7 +225,8 @@
   }
 
   function saveOutbox() {
-    localStorage.setItem(outboxStorageKey(), JSON.stringify(outbox));
+    if (outbox.length) localStorage.setItem(outboxStorageKey(), JSON.stringify(outbox));
+    else localStorage.removeItem(outboxStorageKey());
   }
 
   function setSyncState(label, state = "saved") {
@@ -248,12 +249,18 @@
 
   function persist(immediate = false) {
     const plan = activePlan();
+    if (plan?.status === "completed") {
+      setSyncState("Sincronizado", "saved");
+      showToast("Intervalos concluídos pertencem ao histórico e não podem ser alterados.");
+      loadCloudStore();
+      return;
+    }
     if (plan) plan.updatedAt = new Date().toISOString();
     store.pendingSync = Boolean(currentUser);
     if (plan) dirtyPlanIds.add(plan.id);
     localRevision += 1;
-    writeStoreLocally();
-    setSyncState(navigator.onLine ? "Salvo" : "Sem conexão", navigator.onLine ? "saved" : "offline");
+    if (!navigator.onLine) writeStoreLocally();
+    setSyncState(navigator.onLine ? "Salvando…" : "Sem conexão", navigator.onLine ? "syncing" : "offline");
     clearTimeout(saveTimer);
     saveTimer = null;
     if (immediate) scheduleCloudSync(true);
@@ -356,7 +363,7 @@
     return JSON.stringify([comparablePlan, stepsPayload]);
   }
 
-  function enqueueDirtyPlans() {
+  function enqueueDirtyPlans(saveRecoveryCopy = !navigator.onLine) {
     for (const planId of [...dirtyPlanIds]) {
       if (outbox.some((item) => item.planId === planId && item.state !== "done")) continue;
       const plan = store.plans.find((candidate) => candidate.id === planId);
@@ -371,7 +378,7 @@
         createdAt: new Date().toISOString(), state: "pending"
       });
     }
-    saveOutbox();
+    if (saveRecoveryCopy) saveOutbox();
   }
 
   async function syncStoreToCloud() {
@@ -398,13 +405,12 @@
         }
       }
 
-      enqueueDirtyPlans();
+      enqueueDirtyPlans(false);
       while (outbox.length) {
         const item = outbox[0];
         if (item.state === "conflict") throw new Error("SYNC_CONFLICT_LOCAL");
         item.state = "syncing";
         item.attempts = Number(item.attempts || 0) + 1;
-        saveOutbox();
         if (item.type === "comment_create") {
           const localPlan = store.plans.find((candidate) => candidate.id === item.planId);
           item.payload.plan_id ||= localPlan?.databaseId || null;
@@ -432,8 +438,17 @@
             saveOutbox();
             throw new Error("SYNC_CONFLICT_LOCAL");
           }
+          if (/Intervalos concluidos fazem parte do historico/i.test(error.message || "")) {
+            outbox.shift();
+            dirtyPlanIds.delete(item.planId);
+            saveOutbox();
+            store.pendingSync = dirtyPlanIds.size > 0 || outbox.length > 0;
+            await loadCloudStore();
+            setSyncState(store.pendingSync ? "Pendente de sincronização" : "Sincronizado", store.pendingSync ? "pending" : "saved");
+            showToast("Alteração cancelada: intervalos concluídos pertencem ao histórico.");
+            continue;
+          }
           item.state = "pending";
-          saveOutbox();
           throw error;
         }
         const plan = store.plans.find((candidate) => candidate.id === item.planId);
@@ -449,7 +464,7 @@
         }
         outbox.shift();
         saveOutbox();
-        enqueueDirtyPlans();
+        enqueueDirtyPlans(false);
       }
       store.pendingSync = dirtyPlanIds.size > 0 || outbox.length > 0 || store.deletedPlanIds.length > 0;
       writeStoreLocally();
@@ -457,6 +472,7 @@
     } catch (error) {
       console.error("Falha ao salvar no Supabase.", error);
       store.pendingSync = true;
+      saveOutbox();
       writeStoreLocally();
       const conflict = error.message === "SYNC_CONFLICT_LOCAL";
       setSyncState(conflict ? "Erro de sincronização" : navigator.onLine ? "Pendente de sincronização" : "Sem conexão", conflict ? "error" : navigator.onLine ? "pending" : "offline");
@@ -2086,16 +2102,18 @@
       const content = form.content.value.trim();
       const feedback = $("#execution-comment-feedback");
       if (!content) return;
-      enqueueDirtyPlans();
+      enqueueDirtyPlans(!navigator.onLine);
       const clientId = uid();
       outbox.push({
         type: "comment_create", operationId: uid(), deviceId, planId: plan.id,
         payload: { client_id: clientId, dataset_id: plan.datasetId, plan_id: plan.databaseId, author_user_id: currentUser.id, author_name: currentProfile.full_name || "Usuário", author_role: currentProfile.role, author_role_gender: currentProfile.role_gender || null, content },
         attempts: 0, createdAt: new Date().toISOString(), state: "pending"
       });
-      saveOutbox();
       store.pendingSync = true;
-      writeStoreLocally();
+      if (!navigator.onLine) {
+        saveOutbox();
+        writeStoreLocally();
+      }
       form.reset();
       feedback.textContent = navigator.onLine ? "Salvando…" : "Salvo localmente. Será enviado quando a conexão retornar.";
       comments.push(...pendingCommentsForPlan().filter((pending) => pending.client_id === clientId));
@@ -2111,9 +2129,11 @@
       const comment = comments.find((item) => item.id === row.dataset.commentId);
       if (comment) comment.deleted_at = deletedAt;
       outbox.push({ type: "comment_delete", operationId: uid(), deviceId, planId: plan.id, commentId: row.dataset.commentId, deletedAt, attempts: 0, createdAt: deletedAt, state: "pending" });
-      saveOutbox();
       store.pendingSync = true;
-      writeStoreLocally();
+      if (!navigator.onLine) {
+        saveOutbox();
+        writeStoreLocally();
+      }
       renderComments();
       scheduleCloudSync(true);
     });
