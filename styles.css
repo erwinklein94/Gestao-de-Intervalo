@@ -671,7 +671,36 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .share-dialog-actions { flex-wrap: wrap; }
 .editor-panel { margin-top: 18px; }.user-create-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; align-items: end; gap: 12px; margin-bottom: 22px; }
 .account-switch { display: flex; align-items: center; gap: 8px; cursor: pointer; }.account-switch input { position: absolute; opacity: 0; }.account-switch i { width: 38px; height: 21px; padding: 3px; border-radius: 20px; background: var(--gray); }.account-switch i::after { content:""; display:block; width:15px; height:15px; border-radius:50%; background:white; transition:.2s; }.account-switch input:checked + i { background:var(--green); }.account-switch input:checked + i::after { transform:translateX(17px); }.account-switch b { font-size:9px; }
-.login-page { min-height:100vh; background:var(--blue); }.login-layout { min-height:100vh; display:grid; grid-template-columns:minmax(480px,1.15fr) minmax(420px,.85fr); }.login-brand-panel { position:relative; padding:clamp(34px,5vw,72px); display:flex; flex-direction:column; justify-content:space-between; overflow:hidden; color:white; background:linear-gradient(145deg,#003865 0 66%,#00507f 66%); }.login-brand-panel::after { content:""; position:absolute; width:500px; height:500px; right:-180px; top:15%; border:65px solid rgba(127,224,108,.1); border-radius:50%; }.login-brand-panel > * { position:relative; z-index:1; }.login-brand-panel > img { width:118px; }.login-brand-panel h1 { margin:0; max-width:720px; font-size:clamp(42px,5.2vw,72px); line-height:1.04; letter-spacing:-.05em; }.login-brand-panel div > p:last-child { max-width:620px; color:rgba(255,255,255,.72); }.login-brand-panel small { color:rgba(255,255,255,.58); }.login-form-panel { padding:32px; display:grid; place-items:center; background:var(--surface); }.login-card { width:min(100%,480px); padding:clamp(28px,4vw,46px); display:grid; gap:18px; border:1px solid var(--line); border-radius:20px; background:var(--white); box-shadow:var(--shadow); }.login-card h2 { margin:0; color:var(--blue); font-size:28px; }.login-card > p:not(.section-kicker) { margin:0 0 5px; color:var(--muted); font-size:12px; }.login-mark { width:48px; height:48px; display:grid; place-items:center; border-radius:50%; color:var(--blue); background:var(--lime); font-size:22px; font-weight:700; }.login-submit { width:100%; margin-top:6px; }.login-feedback { min-height:20px; color:var(--danger); font-size:11px; text-align:center; }
+/* Login e solicitacao de acesso: um cartao unico centralizado. A marca ocupa
+   uma faixa, nao a tela inteira -- antes o azul dominava o viewport e o
+   formulario ficava isolado do outro lado. */
+/* Profundidade no fundo para a tela nao virar um bloco azul chapado. */
+.login-page { min-height:100vh; background:radial-gradient(1200px 680px at 16% 8%, #00537f 0%, transparent 62%), radial-gradient(900px 520px at 88% 92%, #0a6a52 0%, transparent 58%), var(--blue); }
+.login-layout { min-height:100vh; padding:clamp(16px,3vw,44px); display:grid; place-items:center; }
+.login-shell { width:min(100%,940px); display:grid; grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr); overflow:hidden; border-radius:22px; box-shadow:0 26px 64px rgba(0,18,36,.38); }
+.login-brand-panel { position:relative; padding:clamp(26px,3vw,36px); display:flex; flex-direction:column; justify-content:space-between; gap:24px; overflow:hidden; color:white; background:linear-gradient(155deg,#003865 0 60%,#00507f 60%); }
+.login-brand-panel::after { content:""; position:absolute; width:320px; height:320px; right:-140px; bottom:-90px; border:46px solid rgba(127,224,108,.12); border-radius:50%; }
+.login-brand-panel > * { position:relative; z-index:1; }
+.login-brand-panel > img { width:94px; }
+.login-brand-panel .eyebrow { margin:0 0 8px; color:rgba(255,255,255,.66); }
+.login-brand-panel h1 { margin:0; font-size:clamp(25px,2.7vw,33px); line-height:1.14; letter-spacing:-.035em; }
+.login-brand-panel div > p:last-child { margin:12px 0 0; color:rgba(255,255,255,.7); font-size:12px; line-height:1.55; }
+.login-brand-panel small { color:rgba(255,255,255,.5); font-size:10.5px; line-height:1.5; }
+.login-form-panel { padding:clamp(24px,3vw,38px); display:grid; align-content:center; background:var(--white); }
+.login-card { width:100%; display:grid; gap:14px; }
+/* display explicito vence o display:none do atributo hidden; sem isto os dois
+   formularios aparecem empilhados. */
+.login-card[hidden] { display:none; }
+.login-card-head { display:flex; align-items:center; gap:13px; }
+.login-card-head .section-kicker { margin:0 0 2px; }
+.login-card h2 { margin:0; color:var(--blue); font-size:23px; letter-spacing:-.02em; }
+.login-note { margin:-4px 0 0; color:var(--muted); font-size:11.5px; line-height:1.5; }
+/* Duas colunas na solicitacao para o formulario caber sem rolagem. */
+.login-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; }
+.login-fields .field-wide { grid-column:1 / -1; }
+.login-mark { width:40px; height:40px; flex:none; display:grid; place-items:center; border-radius:50%; color:var(--blue); background:var(--lime); font-size:19px; font-weight:700; }
+.login-submit { width:100%; margin-top:2px; }
+.login-feedback { min-height:16px; color:var(--danger); font-size:11px; text-align:center; }
 
 /* Acompanhamento compartilhado somente leitura */
 .shared-header { min-height: 76px; padding: 0 max(24px, calc((100vw - 1280px) / 2)); display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 18px; color: white; background: var(--blue); }
@@ -1140,7 +1169,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .notes-block { grid-column: span 2; }
   .dashboard-kpis { grid-template-columns: repeat(2, 1fr); }
   .dashboard-grid { grid-template-columns: 1fr; }
-  .login-layout { grid-template-columns:1fr; }.login-brand-panel { min-height:330px; }.login-brand-panel small { display:none; }
+  .login-shell { grid-template-columns:1fr; }.login-brand-panel { gap:16px; }.login-brand-panel small { display:none; }
 }
 
 @media (max-width: 720px) {
@@ -1149,7 +1178,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   select, input { min-height: 48px; font-size: 16px; }
   textarea { font-size: 16px; }
   .button, .theme-toggle, .auth-button { min-height: 44px; }
-  .login-brand-panel { min-height:260px; padding:26px 20px; }.login-brand-panel > img { width:96px; }.login-brand-panel h1 { font-size:34px; }.login-form-panel { padding:14px 10px 28px; }.login-card { padding:24px 20px; border-radius:15px; }.login-card h2 { font-size:24px; }
+  .login-layout { padding:0; }.login-shell { width:100%; border-radius:0; box-shadow:none; }.login-brand-panel { padding:22px 20px; }.login-brand-panel > img { width:82px; }.login-brand-panel h1 { font-size:24px; }.login-brand-panel div > p:last-child { display:none; }.login-form-panel { padding:24px 20px 32px; }.login-fields { grid-template-columns:1fr; }.login-card h2 { font-size:21px; }
   .site-header { padding: 10px 12px 0; gap: 8px 10px; }
   .brand { justify-content: flex-start; }
   .brand img { width: 76px; }
