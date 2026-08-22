@@ -9,6 +9,23 @@
     consultant: "Consultor", manager: "Gerente",
     coordinator: "Coordenador", specialist: "Especialista", editor: "Editor"
   };
+  // Gerente e Especialista nao flexionam; os demais tem forma feminina propria.
+  const ROLE_LABELS_FEMININE = {
+    director: "Diretora", executive_manager: "Gerente Executiva",
+    consultant: "Consultora", coordinator: "Coordenadora", editor: "Editora"
+  };
+  const GENDER_LABELS = { masculine: "Masculino", feminine: "Feminino" };
+
+  // Sem tratamento informado cai na forma masculina, que e como o sistema
+  // exibia antes de o campo existir.
+  function roleLabel(role, gender) {
+    if (gender === "feminine" && ROLE_LABELS_FEMININE[role]) return ROLE_LABELS_FEMININE[role];
+    return ROLE_LABELS[role] || role;
+  }
+
+  function profileRoleLabel(profile) {
+    return roleLabel(profile?.role, profile?.role_gender);
+  }
   const READ_ONLY_ROLES = ["director", "executive_manager", "consultant", "manager"];
   const TYPE_LABELS = { infrastructure: "Infraestrutura", superstructure: "Superestrutura", modernization: "Modernização" };
   const CLASSIFICATION_ORDER = ["superstructure", "infrastructure", "modernization"];
@@ -245,7 +262,7 @@
 
   async function loadScopedData() {
     setState("Atualizando dados…", "syncing");
-    const memberColumns = "id,dataset_id,code,full_name,role,enabled,manager_id,coordinator_type,profile_needs_review";
+    const memberColumns = "id,dataset_id,code,full_name,role,role_gender,enabled,manager_id,coordinator_type,profile_needs_review";
     const [memberResult, planResult] = await Promise.all([
       dataClient.from("organization_members").select(memberColumns).eq("enabled", true).order("full_name"),
       dataClient.from("interval_plans").select("*,interval_steps(*),interval_comments(*)").order("interval_date", { ascending: false })
@@ -433,7 +450,7 @@
     const activeButton = $('[data-view-button].active');
     const viewLabel = activeButton?.textContent?.trim() || "Visão gerencial";
     $("#portal-print-title").textContent = `Visão gerencial - ${viewLabel}`;
-    $("#portal-print-filters").textContent = `${ROLE_LABELS[effectiveProfile.role] || effectiveProfile.role} · ${selectedFilterSummary()} · ${new Date().toLocaleString("pt-BR")}`;
+    $("#portal-print-filters").textContent = `${profileRoleLabel(effectiveProfile)} · ${selectedFilterSummary()} · ${new Date().toLocaleString("pt-BR")}`;
     const previousTitle = document.title;
     document.title = `visao-gerencial-${viewLabel.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
     document.body.classList.add("portal-printing");
@@ -476,7 +493,7 @@
       && !comment.deleted_at
       && comment.author_user_id === currentUser.id;
     if (comment.deleted_at) return "";
-    return `<article class="interval-comment" data-comment-id="${comment.id}"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(ROLE_LABELS[comment.author_role] || comment.author_role)}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p>${canDelete ? '<button type="button" data-comment-delete>Excluir meu comentário</button>' : ""}</article>`;
+    return `<article class="interval-comment" data-comment-id="${comment.id}"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p>${canDelete ? '<button type="button" data-comment-delete>Excluir meu comentário</button>' : ""}</article>`;
   }
 
   function planTabMarkup(plan) {
@@ -550,7 +567,7 @@
       if (!content) return;
       feedback.textContent = navigator.onLine ? "Salvando…" : "Sem conexão. Tente novamente quando o sinal retornar.";
       if (!navigator.onLine) return;
-      const { error } = await dataClient.from("interval_comments").insert({ client_id: uid(), dataset_id: plan.dataset_id, plan_id: plan.id, author_user_id: currentUser.id, author_name: actualProfile.full_name || "Usuário", author_role: actualProfile.role, content });
+      const { error } = await dataClient.from("interval_comments").insert({ client_id: uid(), dataset_id: plan.dataset_id, plan_id: plan.id, author_user_id: currentUser.id, author_name: actualProfile.full_name || "Usuário", author_role: actualProfile.role, author_role_gender: actualProfile.role_gender || null, content });
       if (error) { feedback.textContent = error.message; return; }
       await reloadComments(plan);
       openPlanDetail(plan.id, "execution");
@@ -588,7 +605,7 @@
   async function initializeManagement() {
     await loadScopedData();
     populateFilters();
-    $("#hero-role").textContent = ROLE_LABELS[effectiveProfile.role] || effectiveProfile.role;
+    $("#hero-role").textContent = profileRoleLabel(effectiveProfile);
     $("#scope-description").textContent = roleScopeDescription(effectiveProfile.role);
     renderManagement();
     activateManagementView(new URLSearchParams(location.search).get("view") || "delays");
@@ -621,7 +638,7 @@
     setState("Atualizando cadastros…", "syncing");
     const [profilesResult, assignmentsResult] = await Promise.all([
       baseClient.from("user_profiles")
-        .select("id,email,full_name,role,enabled,manager_id,coordinator_type,coordinator_types,profile_needs_review,organization_member_id,created_at")
+        .select("id,email,full_name,role,role_gender,enabled,manager_id,coordinator_type,coordinator_types,profile_needs_review,organization_member_id,created_at")
         .order("created_at", { ascending: false }),
       baseClient.from("manager_operator_assignments").select("manager_member_id,operator_member_id")
     ]);
@@ -630,7 +647,7 @@
     members = profilesResult.data || [];
     managerAssignments = assignmentsResult.data || [];
     const { data: requests, error: requestsError } = await baseClient.from("access_requests")
-      .select("id,full_name,email,requested_role,requested_classifications,message,created_at")
+      .select("id,full_name,email,requested_role,requested_role_gender,requested_classifications,message,created_at")
       .eq("status", "pending")
       .order("created_at", { ascending: true });
     if (requestsError) throw requestsError;
@@ -659,6 +676,7 @@
         <label><span>Função</span><select data-request-role>${Object.entries(ROLE_LABELS)
           .filter(([value]) => value !== "editor")
           .map(([value, label]) => `<option value="${value}" ${request.requested_role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        <label><span>Tratamento</span>${genderSelectMarkup(request.requested_role_gender, "requestGender")}</label>
         <label><span>Classificação pedida</span><strong class="access-request-value">${escapeHtml(classificacoes || "—")}</strong></label>
         ${request.message ? `<label><span>Mensagem</span><p class="access-request-message">${escapeHtml(request.message)}</p></label>` : "<span></span>"}
         <div class="admin-row-actions">
@@ -682,7 +700,8 @@
           ? await baseClient.rpc("approve_access_request", {
               p_request_id: row.dataset.requestId,
               p_role: $("[data-request-role]", row).value,
-              p_classifications: null
+              p_classifications: null,
+              p_role_gender: $("[name='requestGender']", row).value || null
             })
           : await baseClient.rpc("reject_access_request", { p_request_id: row.dataset.requestId, p_note: "" });
         if (error) {
@@ -719,13 +738,22 @@
         const selected = role === "manager"
           ? assignedOperatorIds.has(profile.organization_member_id)
           : profile.manager_id === supervisorId;
-        return `<option value="${profile.id}" ${selected ? "selected" : ""}>${escapeHtml(profile.full_name || profile.email)} · ${escapeHtml(ROLE_LABELS[profile.role])}</option>`;
+        return `<option value="${profile.id}" ${selected ? "selected" : ""}>${escapeHtml(profile.full_name || profile.email)} · ${escapeHtml(profileRoleLabel(profile))}</option>`;
       })
       .join("");
   }
 
   function selectedIds(select) {
     return Array.from(select?.selectedOptions || [], (option) => option.value).filter(Boolean);
+  }
+
+  // "Não informado" continua valendo: cai na forma masculina, sem inventar
+  // tratamento para os perfis cadastrados antes deste campo existir.
+  function genderSelectMarkup(current, name = "roleGender") {
+    const options = [["", "Não informado"], ["masculine", "Masculino"], ["feminine", "Feminino"]]
+      .map(([value, label]) => `<option value="${value}" ${(current || "") === value ? "selected" : ""}>${label}</option>`)
+      .join("");
+    return `<select name="${name}">${options}</select>`;
   }
 
   function allowsManyClassifications(role) {
@@ -800,7 +828,7 @@
       extraManagerNames(profile).length ? `Também sob ${extraManagerNames(profile).join(", ")}` : ""
     ].filter(Boolean).join("\n");
     return `<article class="org-node ${profile.enabled ? "" : "is-disabled"}" data-role="${escapeHtml(profile.role)}" title="${escapeHtml(legend)}">
-      <span class="org-node-role">${escapeHtml(ROLE_LABELS[profile.role] || profile.role)}</span>
+      <span class="org-node-role">${escapeHtml(profileRoleLabel(profile))}</span>
       <strong>${escapeHtml(profile.full_name || "Sem nome")}</strong>
       <span class="org-node-email">${escapeHtml(profile.email)}</span>
       ${chips ? `<span class="org-node-chips">${chips}</span>` : ""}
@@ -917,7 +945,7 @@
     const rows = members.filter((profile) => !query || `${profile.full_name} ${profile.email}`.toLocaleLowerCase("pt-BR").includes(query));
     $("#admin-users").innerHTML = rows.length ? rows.map((profile) => {
       const hierarchy = hierarchyRole(profile.role);
-      return `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Função</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label data-classification-field ${hasClassification(profile.role) ? "" : "hidden"}>${hasClassification(profile.role) ? classificationFieldMarkup(profile.role, profileClassifications(profile)) : ""}</label><label data-edit-subordinates class="admin-hierarchy-field" ${hierarchy ? "" : "hidden"}><span data-subordinates-label>${escapeHtml(hierarchy?.label || "Subordinados diretos")}</span><select name="subordinateIds" multiple size="4">${subordinateOptions(profile.role, profile.id)}</select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`;
+      return `<form class="admin-row user-admin-row" data-user-id="${profile.id}"><div class="admin-row-identity"><strong>${escapeHtml(profile.full_name || "Sem nome")}</strong><span>${escapeHtml(profile.email)}</span>${profile.profile_needs_review ? '<i>Cadastro precisa de revisão</i>' : ""}</div><label><span>Nome</span><input name="fullName" value="${escapeHtml(profile.full_name)}" required maxlength="120"></label><label><span>Função</span><select name="role">${Object.entries(ROLE_LABELS).map(([value, label]) => `<option value="${value}" ${profile.role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label><span>Tratamento</span>${genderSelectMarkup(profile.role_gender)}</label><label data-classification-field ${hasClassification(profile.role) ? "" : "hidden"}>${hasClassification(profile.role) ? classificationFieldMarkup(profile.role, profileClassifications(profile)) : ""}</label><label data-edit-subordinates class="admin-hierarchy-field" ${hierarchy ? "" : "hidden"}><span data-subordinates-label>${escapeHtml(hierarchy?.label || "Subordinados diretos")}</span><select name="subordinateIds" multiple size="4">${subordinateOptions(profile.role, profile.id)}</select></label><label class="admin-enabled"><span>Conta ativa</span><input name="enabled" type="checkbox" ${profile.enabled ? "checked" : ""} ${profile.id === currentUser.id ? "disabled" : ""}></label><div class="admin-row-actions"><button class="button button-ghost" type="submit">Salvar</button><span class="auth-feedback"></span></div></form>`;
     }).join("") : emptyMarkup("Nenhuma conta corresponde à busca.");
     $$(".user-admin-row").forEach((form) => {
       const profile = members.find((candidate) => candidate.id === form.dataset.userId);
@@ -943,7 +971,8 @@
           p_role: form.role.value,
           p_enabled: form.enabled.disabled ? true : form.enabled.checked,
           p_subordinate_ids: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [],
-          p_classifications: classifications
+          p_classifications: classifications,
+          p_role_gender: form.roleGender.value || null
         });
         if (error) { feedback.textContent = error.message; return; }
         feedback.textContent = "Salvo."; await loadAdminData(); renderAdminUsers(); renderOrgChart();
@@ -966,7 +995,7 @@
         feedback.textContent = "Selecione ao menos uma classificação."; return;
       }
       feedback.textContent = "Criando conta…";
-      const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, classifications, subordinateIds: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [] } });
+      const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, classifications, roleGender: form.roleGender.value || null, subordinateIds: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [] } });
       if (error || data?.error) { feedback.textContent = data?.error || error.message; return; }
       feedback.textContent = "Conta criada e habilitada."; form.reset(); form.role.value = "coordinator"; await loadAdminData(); updateCreateHierarchyFields(); renderAdminUsers(); renderOrgChart(); renderAccessRequests();
     });
@@ -979,7 +1008,7 @@
     const { data: { session } } = await baseClient.auth.getSession();
     currentUser = session?.user;
     if (!currentUser) { location.replace("login.html"); return; }
-    const { data: profile, error } = await baseClient.from("user_profiles").select("id,email,full_name,role,enabled,manager_id,coordinator_type,organization_member_id").eq("id", currentUser.id).single();
+    const { data: profile, error } = await baseClient.from("user_profiles").select("id,email,full_name,role,role_gender,enabled,manager_id,coordinator_type,organization_member_id").eq("id", currentUser.id).single();
     if (error || !profile?.enabled) { await baseClient.auth.signOut(); location.replace("login.html?status=disabled"); return; }
     actualProfile = profile;
     configureContext();

@@ -29,6 +29,15 @@
   let syncRetryTimer = null;
   const dirtyPlanIds = new Set();
   const ROLE_LABELS = { director: "Diretor", executive_manager: "Gerente Executivo", consultant: "Consultor", manager: "Gerente", coordinator: "Coordenador", specialist: "Especialista", editor: "Editor" };
+  // Gerente e Especialista nao flexionam; os demais tem forma feminina propria.
+  const ROLE_LABELS_FEMININE = { director: "Diretora", executive_manager: "Gerente Executiva", consultant: "Consultora", coordinator: "Coordenadora", editor: "Editora" };
+
+  // Sem tratamento informado cai na forma masculina, que e como o sistema
+  // exibia antes de o campo existir.
+  function roleLabel(role, gender) {
+    if (gender === "feminine" && ROLE_LABELS_FEMININE[role]) return ROLE_LABELS_FEMININE[role];
+    return ROLE_LABELS[role] || role;
+  }
   const READ_ONLY_MANAGEMENT_ROLES = ["director", "executive_manager", "consultant", "manager"];
   function isOperatorRole(role) { return ["coordinator", "specialist"].includes(role); }
 
@@ -1286,7 +1295,7 @@
 
       const { data, error } = await cloudClient
         .from("organization_members")
-        .select("id,full_name,role,manager_id,coordinator_type")
+        .select("id,full_name,role,role_gender,manager_id,coordinator_type")
         .in("role", ["coordinator", "specialist"])
         .eq("enabled", true)
         .order("full_name");
@@ -1297,7 +1306,7 @@
       }
       coordinatorDirectory = data || [];
       select.innerHTML = '<option value="">Selecione o responsável</option>' + coordinatorDirectory
-        .map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.full_name)} · ${escapeHtml(ROLE_LABELS[member.role])}</option>`)
+        .map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.full_name)} · ${escapeHtml(roleLabel(member.role, member.role_gender))}</option>`)
         .join("");
       renderForm();
     }
@@ -1706,7 +1715,7 @@
       const visible = comments.filter((comment) => !comment.deleted_at);
       commentsRoot.innerHTML = visible.length ? visible.map((comment) => {
         const removable = comment.author_user_id === currentUser.id && !comment.pending && plan.status === "executing";
-        return `<article class="interval-comment ${comment.pending ? "is-pending" : ""}" data-comment-id="${escapeHtml(comment.id)}"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(ROLE_LABELS[comment.author_role] || comment.author_role)}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}${comment.pending ? " · Pendente de sincronização" : ""}</time></header><p>${escapeHtml(comment.content)}</p>${removable ? '<button type="button" data-comment-delete>Excluir meu comentário</button>' : ""}</article>`;
+        return `<article class="interval-comment ${comment.pending ? "is-pending" : ""}" data-comment-id="${escapeHtml(comment.id)}"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}${comment.pending ? " · Pendente de sincronização" : ""}</time></header><p>${escapeHtml(comment.content)}</p>${removable ? '<button type="button" data-comment-delete>Excluir meu comentário</button>' : ""}</article>`;
       }).join("") : `<div class="portal-empty"><strong>Nenhum comentário</strong><span>Atualizações registradas durante a execução aparecerão aqui.</span></div>`;
       const allowed = plan.status === "executing" || (hasExecutionData(plan) && !getStatus().finished);
       $("#execution-comment-form").hidden = !allowed;
@@ -2065,7 +2074,7 @@
       const clientId = uid();
       outbox.push({
         type: "comment_create", operationId: uid(), deviceId, planId: plan.id,
-        payload: { client_id: clientId, dataset_id: plan.datasetId, plan_id: plan.databaseId, author_user_id: currentUser.id, author_name: currentProfile.full_name || "Usuário", author_role: currentProfile.role, content },
+        payload: { client_id: clientId, dataset_id: plan.datasetId, plan_id: plan.databaseId, author_user_id: currentUser.id, author_name: currentProfile.full_name || "Usuário", author_role: currentProfile.role, author_role_gender: currentProfile.role_gender || null, content },
         attempts: 0, createdAt: new Date().toISOString(), state: "pending"
       });
       saveOutbox();
@@ -2662,6 +2671,7 @@
             email: requestForm.email.value.trim(),
             password: requestForm.password.value,
             role: requestForm.role.value,
+            roleGender: requestForm.roleGender.value || null,
             classifications,
             message: requestForm.message.value.trim()
           })
@@ -2768,7 +2778,7 @@
       $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
       const sharedComments = metadata.comments || [];
       $("#shared-comment-count").textContent = sharedComments.length;
-      $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(ROLE_LABELS[comment.author_role] || comment.author_role)}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
+      $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
 
       const hasLate = execution.lateNow.length > 0 || execution.lateFinished.length > 0;
       const status = $("#shared-status");
@@ -2970,7 +2980,7 @@
     content.hidden = false;
     $("#account-name").textContent = currentProfile.full_name || "Usuário";
     $("#account-email").textContent = currentProfile.email;
-    $("#account-role").textContent = ROLE_LABELS[currentProfile.role] || currentProfile.role;
+    $("#account-role").textContent = roleLabel(currentProfile.role, currentProfile.role_gender);
     const personalPlans = store.plans.filter((plan) => plan.ownerId === currentUser.id);
     const databasePlanIds = personalPlans.map((plan) => plan.databaseId).filter(Boolean);
     const { data: shareRows, error: shareRowsError } = databasePlanIds.length
@@ -3139,7 +3149,7 @@
     }
     gate.hidden = true;
     content.hidden = false;
-    const roleLabel = ROLE_LABELS[currentProfile.role] || currentProfile.role;
+    const roleLabel = roleLabel(currentProfile.role, currentProfile.role_gender);
     $("#account-name").textContent = currentProfile.full_name || "Usuário";
     $("#account-email").textContent = currentProfile.email;
     $("#account-role").textContent = roleLabel;
@@ -3150,7 +3160,7 @@
 
     const [{ data: directory }, { data: managerLinks }] = await Promise.all([
       cloudClient.from("organization_members")
-        .select("id,full_name,role,manager_id,coordinator_type,coordinator_types")
+        .select("id,full_name,role,role_gender,manager_id,coordinator_type,coordinator_types")
         .eq("enabled", true),
       cloudClient.from("manager_operator_assignments")
         .select("manager_member_id,operator_member_id")

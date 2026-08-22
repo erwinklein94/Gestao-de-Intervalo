@@ -7,6 +7,7 @@ const classificationOrder = ["superstructure", "infrastructure", "modernization"
 // Coordenador e Especialista respondem por uma unica classificacao, para que o
 // intervalo criado por eles nunca fique com classificacao ambigua.
 const singleClassificationRoles = new Set(["coordinator", "specialist"]);
+const genders = new Set(["masculine", "feminine"]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function response(origin: string | null, body: unknown, status = 200) {
@@ -108,6 +109,7 @@ Deno.serve(async (request) => {
     const classifications = normalizeClassifications(body);
     const subordinateIds = uniqueIds(body.subordinateIds);
     const rawSubordinateCount = Array.isArray(body.subordinateIds) ? body.subordinateIds.length : 0;
+    const roleGender = genders.has(String(body.roleGender || "")) ? String(body.roleGender) : null;
 
     if (!fullName || fullName.length > 120 || !email || email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)
       || password.length < 8 || password.length > 256 || !roles.has(role) || !classifications.length
@@ -130,8 +132,8 @@ Deno.serve(async (request) => {
     try {
       const { data: profile, error: profileError } = await admin.from("user_profiles").upsert({
         id: created.user.id, email, full_name: fullName, role, enabled: true, manager_id: null, sub_id: null,
-        coordinator_types: classifications, profile_needs_review: false,
-      }, { onConflict: "id" }).select("id,email,full_name,role,enabled,manager_id,coordinator_type,coordinator_types,organization_member_id").single();
+        coordinator_types: classifications, role_gender: roleGender, profile_needs_review: false,
+      }, { onConflict: "id" }).select("id,email,full_name,role,role_gender,enabled,manager_id,coordinator_type,coordinator_types,organization_member_id").single();
       if (profileError || !profile) throw profileError || new Error("missing_profile");
       await replaceDirectReports(admin, created.user.id, role, subordinateIds);
       return response(origin, { action: "created", user: { id: created.user.id, email: created.user.email, email_confirmed: Boolean(created.user.email_confirmed_at) }, profile }, 201);

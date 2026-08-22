@@ -5,14 +5,25 @@ const allowedOrigins = new Set(["https://erwinklein94.github.io", "https://www.s
 const roles = new Set(["director", "executive_manager", "manager", "consultant", "coordinator", "specialist"]);
 const classificationOrder = ["superstructure", "infrastructure", "modernization"];
 const singleClassificationRoles = new Set(["coordinator", "specialist"]);
+const genders = new Set(["masculine", "feminine"]);
 
 const ROLE_LABELS: Record<string, string> = {
   director: "Diretor", executive_manager: "Gerente Executivo", manager: "Gerente",
   consultant: "Consultor", coordinator: "Coordenador", specialist: "Especialista",
 };
+// Gerente e Especialista nao flexionam; os demais tem forma feminina propria.
+const ROLE_LABELS_FEMININE: Record<string, string> = {
+  director: "Diretora", executive_manager: "Gerente Executiva",
+  consultant: "Consultora", coordinator: "Coordenadora",
+};
 const TYPE_LABELS: Record<string, string> = {
   superstructure: "Superestrutura", infrastructure: "Infraestrutura", modernization: "Modernização",
 };
+
+function roleLabel(role: string, gender: string | null) {
+  if (gender === "feminine" && ROLE_LABELS_FEMININE[role]) return ROLE_LABELS_FEMININE[role];
+  return ROLE_LABELS[role] || role;
+}
 
 function response(origin: string | null, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: {
@@ -61,7 +72,8 @@ async function resolveRecipients(admin: ReturnType<typeof createClient>) {
 // O e-mail e um aviso, nao a fonte da verdade: se o envio falhar, a
 // solicitacao continua registrada e visivel na Administracao.
 async function notifyEditor(destinos: string[], payload: {
-  fullName: string; email: string; role: string; classifications: string[]; message: string;
+  fullName: string; email: string; role: string; roleGender: string | null;
+  classifications: string[]; message: string;
 }) {
   const apiKey = Deno.env.get("RESEND_API_KEY") || "";
   const remetente = Deno.env.get("ACCESS_REQUEST_FROM_EMAIL") || "onboarding@resend.dev";
@@ -78,7 +90,7 @@ async function notifyEditor(destinos: string[], payload: {
       <table style="border-collapse:collapse;margin-bottom:20px">
         ${linha("Nome", payload.fullName)}
         ${linha("E-mail", payload.email)}
-        ${linha("Função pedida", ROLE_LABELS[payload.role] || payload.role)}
+        ${linha("Função pedida", roleLabel(payload.role, payload.roleGender))}
         ${linha("Classificação", payload.classifications.map((entry) => TYPE_LABELS[entry] || entry).join(" · "))}
         ${payload.message ? linha("Mensagem", payload.message) : ""}
       </table>
@@ -131,6 +143,7 @@ Deno.serve(async (request) => {
     const role = String(body.role || "");
     const classifications = normalizeClassifications(body.classifications ?? body.classification);
     const message = String(body.message || "").trim().slice(0, 500);
+    const roleGender = genders.has(String(body.roleGender || "")) ? String(body.roleGender) : null;
 
     if (!fullName || fullName.length > 120 || !email || email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)
       || password.length < 8 || password.length > 256 || !roles.has(role) || !classifications.length) {
@@ -143,13 +156,14 @@ Deno.serve(async (request) => {
     const { error } = await admin.rpc("request_site_access", {
       p_full_name: fullName, p_email: email, p_password: password,
       p_role: role, p_classifications: classifications, p_message: message,
+      p_role_gender: roleGender,
     });
     if (error) {
       console.error("request-access rpc", error.message);
       return response(origin, { error: "Não foi possível registrar a solicitação." }, 400);
     }
 
-    const notice = await notifyEditor(await resolveRecipients(admin), { fullName, email, role, classifications, message });
+    const notice = await notifyEditor(await resolveRecipients(admin), { fullName, email, role, roleGender, classifications, message });
     // A resposta e sempre a mesma, tenha o e-mail existido ou nao: nao conta a
     // quem pergunta se aquele endereco ja possui conta.
     return response(origin, { status: "received", notified: notice.sent }, 201);

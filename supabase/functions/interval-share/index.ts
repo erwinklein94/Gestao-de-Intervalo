@@ -62,7 +62,7 @@ Deno.serve(async (request) => {
     if (!ownerAuthorized) return json(origin, { error: "Link inválido ou indisponível." }, 404);
 
     const { data: comments, error: commentsError } = await admin.from("interval_comments")
-      .select("author_name,author_role,content,created_at")
+      .select("author_name,author_role,author_role_gender,content,created_at")
       .eq("plan_id", plan.id).eq("dataset_id", realDataset.id).is("deleted_at", null).order("created_at");
     if (commentsError) throw commentsError;
 

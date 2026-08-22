@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
   <meta name="description" content="Acesso seguro à Gestão de Intervalo"><title>Gestão de Intervalo | Login</title>
-<link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css?v=20260822-4">
-<script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260822-4" defer></script>
+<link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css?v=20260822-5">
+<script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260822-5" defer></script>
 </head>
 <body data-page="login" class="login-page">
   <main class="login-layout">
@@ -43,6 +43,7 @@
             <label class="field"><span>E-mail *</span><input name="email" type="email" required autocomplete="email"></label>
             <label class="field"><span>Senha desejada *</span><input name="password" type="password" minlength="8" required autocomplete="new-password"><small class="field-help">Mínimo de 8 caracteres.</small></label>
             <label class="field"><span>Função *</span><select name="role" required><option value="director">Diretor</option><option value="executive_manager">Gerente Executivo</option><option value="manager">Gerente</option><option value="consultant">Consultor</option><option value="coordinator" selected>Coordenador</option><option value="specialist">Especialista</option></select></label>
+            <label class="field"><span>Tratamento</span><select name="roleGender"><option value="">Não informado</option><option value="masculine">Masculino</option><option value="feminine">Feminino</option></select><small class="field-help">Define se o cargo aparece como Coordenador ou Coordenadora.</small></label>
             <label class="field" data-classification-field><span>Classificação *</span><select name="classification" required><option value="superstructure">Superestrutura</option><option value="infrastructure" selected>Infraestrutura</option><option value="modernization">Modernização</option></select></label>
             <label class="field"><span>Mensagem para o Editor</span><textarea name="message" rows="2" maxlength="500" placeholder="Área, equipe ou contexto que ajude na aprovação"></textarea></label>
           </div>
