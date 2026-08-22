@@ -2737,13 +2737,20 @@
       }
       const button = $("#forgot-password");
       button.disabled = true;
-      feedback.textContent = "Solicitando recuperação…";
-      const redirectTo = new URL("recuperar-senha.html", location.href).href;
-      const { error } = await cloudClient.auth.resetPasswordForEmail(email, { redirectTo });
+      feedback.textContent = "Enviando solicitação ao Editor…";
+      try {
+        const resposta = await fetch(`${SUPABASE_URL}/functions/v1/request-password-reset`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "apikey": SUPABASE_PUBLISHABLE_KEY },
+          body: JSON.stringify({ email })
+        });
+        const dados = await resposta.json().catch(() => ({}));
+        if (!resposta.ok) throw new Error(dados.error || "Não foi possível registrar a solicitação.");
+        feedback.textContent = "Solicitação enviada ao Editor. Ele entrará em contato após alterar sua senha.";
+      } catch (error) {
+        feedback.textContent = error.message || "Não foi possível enviar a solicitação agora.";
+      }
       button.disabled = false;
-      feedback.textContent = error
-        ? "Não foi possível enviar o e-mail agora. Tente novamente em alguns minutos."
-        : "Se este e-mail pertence a uma conta ativa, você receberá um link para criar uma nova senha.";
     });
 
     bindAccessRequestForm();

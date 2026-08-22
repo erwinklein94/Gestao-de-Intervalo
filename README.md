@@ -32,7 +32,7 @@ Cada Coordenador deve possuir Gerente responsável, uma ou mais SUBs e classific
 
 ## Páginas
 
-- `login.html`: autenticação por e-mail e senha e validação da conta habilitada.
+- `login.html`: autenticação por e-mail e senha, validação da conta habilitada e solicitação administrativa de alteração de senha.
 - `index.html`: criação e revisão do plano, montagem de etapas, linha do tempo, travamento do cronograma e exportação `.xlsx`.
 - `executar.html`: registro dos horários e observações realizados, etapas não executadas, comentários e estado de sincronização.
 - `dashboard.html`: indicadores e gráficos do intervalo selecionado, comparação Programado × Realizado e impressão preparada para PDF em A4 paisagem.
@@ -180,12 +180,14 @@ Revise sempre o `--dry-run`, a lista de migrações pendentes e os advisors de s
 
 - `create-site-user`: endpoint autenticado usado pela Administração. Revalida o JWT, exige Editor habilitado, valida papel, hierarquia e todas as SUBs atribuídas, permite provisionamento idempotente explícito de uma conta existente e mantém a chave administrativa somente no ambiente da função.
 - `interval-share`: endpoint público por token de alta entropia. Aceita somente planos do dataset real, valida link, expiração, revogação e proprietário habilitado, e retorna uma projeção de dados somente leitura sem identificadores privados.
+- `request-password-reset`: recebe uma solicitação neutra na tela de login e, somente para uma conta ativa, avisa o Editor por e-mail para que a senha seja alterada manualmente no Supabase.
 
 Deploy pela CLI, preservando verificação JWT na função administrativa e desabilitando-a somente na função cujo próprio token é a credencial:
 
 ```powershell
 supabase functions deploy create-site-user --use-api
 supabase functions deploy interval-share --no-verify-jwt --use-api
+supabase functions deploy request-password-reset --no-verify-jwt --use-api
 ```
 
 Se o domínio do frontend mudar, atualize de forma consciente a lista de origens permitidas nas duas funções antes do deploy.

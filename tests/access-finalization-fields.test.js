@@ -15,7 +15,8 @@ const managerMigration = read("supabase/migrations/20260822180000_allow_managers
 
 assert.match(login, /id="forgot-password"/);
 assert.match(recovery, /data-page="password-recovery"/);
-assert.match(app, /resetPasswordForEmail\(email, \{ redirectTo \}\)/);
+assert.match(app, /functions\/v1\/request-password-reset/);
+assert.doesNotMatch(app, /resetPasswordForEmail\(email/);
 assert.match(app, /auth\.updateUser\(\{ password: form\.password\.value \}\)/);
 
 assert.match(planning, /name="contractorName"/);
