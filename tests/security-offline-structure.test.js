@@ -140,7 +140,7 @@ containsAll(share, [
   ".eq(\"token_hash\", tokenHash)",
   '.eq("code", "real").eq("kind", "real")',
   '.eq("is_example", false)',
-  '["editor", "coordinator", "specialist"].includes(ownerProfile.role)',
+  '["editor", "manager", "coordinator", "specialist"].includes(ownerProfile.role)',
   '.select("author_name,author_role,content,created_at")',
   '.is("deleted_at", null)',
   '"Cache-Control": "no-store"',

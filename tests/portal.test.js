@@ -255,7 +255,7 @@ assert.equal(roleScopeDescription("director"), roleScopeDescription("consultant"
 assert.notEqual(roleScopeDescription("executive_manager"), roleScopeDescription("director"));
 assert.match(roleScopeDescription("director"), /Todos os Coordenadores e Especialistas/);
 assert.match(roleScopeDescription("executive_manager"), /Gerentes sob sua gestão/);
-assert.match(roleScopeDescription("manager"), /Coordenadores e Especialistas vinculados/);
+assert.match(roleScopeDescription("manager"), /Seus próprios intervalos/);
 assert.match(roleScopeDescription("coordinator"), /Seus próprios intervalos/);
 assert.equal(roleScopeDescription("specialist"), roleScopeDescription("coordinator"));
 assert.match(roleScopeDescription("editor"), /acesso às ferramentas administrativas/);
@@ -271,7 +271,8 @@ assert.deepEqual(JSON.parse(JSON.stringify(roleCapabilities("consultant"))), JSO
 assert.equal(roleCapabilities("executive_manager").organizationWide, false);
 assert.equal(roleCapabilities("executive_manager").readOnly, true);
 assert.equal(roleCapabilities("manager").organizationWide, false);
-assert.equal(roleCapabilities("manager").readOnly, true);
+assert.equal(roleCapabilities("manager").readOnly, false);
+assert.equal(roleCapabilities("manager").canOperateIntervals, true);
 assert.equal(roleCapabilities("coordinator").canOperateIntervals, true);
 assert.equal(roleCapabilities("specialist").canOperateIntervals, true);
 assert.equal(roleCapabilities("coordinator").canAdminister, false);

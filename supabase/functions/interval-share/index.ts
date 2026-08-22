@@ -56,7 +56,7 @@ Deno.serve(async (request) => {
     if (!plan) return json(origin, { error: "Link inválido ou indisponível." }, 404);
 
     const { data: ownerProfile } = await admin.from("user_profiles").select("id,role,enabled,organization_member_id").eq("id", share.owner_id).maybeSingle();
-    if (!ownerProfile?.enabled || !ownerProfile.organization_member_id || !["editor", "coordinator", "specialist"].includes(ownerProfile.role)) return json(origin, { error: "Link inválido ou indisponível." }, 404);
+    if (!ownerProfile?.enabled || !ownerProfile.organization_member_id || !["editor", "manager", "coordinator", "specialist"].includes(ownerProfile.role)) return json(origin, { error: "Link inválido ou indisponível." }, 404);
     const { data: ownerMember } = await admin.from("organization_members").select("id,role,enabled,dataset_id").eq("id", ownerProfile.organization_member_id).eq("dataset_id", realDataset.id).maybeSingle();
     const ownerAuthorized = ownerMember?.enabled && ownerMember.role === ownerProfile.role && (ownerProfile.role === "editor" || ownerMember.id === plan.coordinator_member_id);
     if (!ownerAuthorized) return json(origin, { error: "Link inválido ou indisponível." }, 404);

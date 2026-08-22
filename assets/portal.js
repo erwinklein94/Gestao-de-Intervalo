@@ -26,7 +26,7 @@
   function profileRoleLabel(profile) {
     return roleLabel(profile?.role, profile?.role_gender);
   }
-  const READ_ONLY_ROLES = ["director", "executive_manager", "consultant", "manager"];
+  const READ_ONLY_ROLES = ["director", "executive_manager", "consultant"];
   const TYPE_LABELS = { infrastructure: "Infraestrutura", superstructure: "Superestrutura", modernization: "Modernização" };
   const CLASSIFICATION_ORDER = ["superstructure", "infrastructure", "modernization"];
   const SINGLE_CLASSIFICATION_ROLES = ["coordinator", "specialist"];
@@ -145,7 +145,7 @@
 
   function roleScopeDescription(role) {
     if (role === "executive_manager") return "Gerentes sob sua gestão e todos os intervalos de seus Coordenadores e Especialistas.";
-    if (role === "manager") return "Coordenadores e Especialistas vinculados à sua gestão e seus respectivos intervalos.";
+    if (role === "manager") return "Seus próprios intervalos e os intervalos dos Coordenadores e Especialistas vinculados à sua gestão.";
     if (["coordinator", "specialist"].includes(role)) return "Seus próprios intervalos, do planejamento ao histórico.";
     if (["director", "consultant"].includes(role)) return "Todos os Coordenadores e Especialistas, em modo somente leitura.";
     return "Visão completa da operação e acesso às ferramentas administrativas.";
@@ -154,7 +154,7 @@
   function roleCapabilities(role) {
     return {
       canUseManagement: ["director", "executive_manager", "consultant", "manager", "coordinator", "specialist", "editor"].includes(role),
-      canOperateIntervals: ["coordinator", "specialist", "editor"].includes(role),
+      canOperateIntervals: ["manager", "coordinator", "specialist", "editor"].includes(role),
       canAdminister: role === "editor",
       organizationWide: ["director", "consultant", "editor"].includes(role),
       readOnly: READ_ONLY_ROLES.includes(role)
@@ -226,7 +226,9 @@
     if (!nav) return;
     const page = document.body.dataset.page;
     let links;
-    if (["coordinator", "specialist"].includes(role)) {
+    if (role === "manager") {
+      links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
+    } else if (["coordinator", "specialist"].includes(role)) {
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (role === "editor") {
       // O Editor administra o sistema; nao planeja nem executa intervalos.
@@ -485,7 +487,7 @@
   }
 
   function commentMarkup(comment, plan) {
-    const canDelete = ["coordinator", "specialist", "editor"].includes(actualProfile.role)
+    const canDelete = ["manager", "coordinator", "specialist", "editor"].includes(actualProfile.role)
       && plan.status === "executing"
       && !comment.deleted_at
       && comment.author_user_id === currentUser.id;
@@ -502,7 +504,7 @@
     const metrics = intervalMetrics(plan);
     const comments = plan.interval_comments || [];
     const canComment = plan.status === "executing"
-      && (actualProfile.role === "editor" || (["coordinator", "specialist"].includes(actualProfile.role) && plan.user_id === currentUser.id));
+      && (actualProfile.role === "editor" || (["manager", "coordinator", "specialist"].includes(actualProfile.role) && plan.user_id === currentUser.id));
     return `<div class="detail-status ${metrics.deadline}">${deadlineMarkup(metrics)}<strong>${metrics.progress}% concluído</strong><span>${metrics.resolved} de ${metrics.steps.length} etapas encerradas</span></div><div class="detail-step-list execution-readonly">${metrics.steps.map((step, index) => `<article><span>${isResolved(step) ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado ${escapeHtml(stampLabel(step.planned_start, plan.interval_date))}–${escapeHtml(stampLabel(step.planned_end, plan.interval_date))} · Realizado ${escapeHtml(stampLabel(step.actual_start, plan.interval_date))}–${escapeHtml(stampLabel(step.actual_end, plan.interval_date))}</small>${step.actual_notes ? `<p>${escapeHtml(String(step.actual_notes).replace(/^\[\[ETAPA_NAO_EXECUTADA\]\]\s*/, "Não executada · "))}</p>` : ""}</div></article>`).join("") || emptyMarkup("Nenhuma etapa registrada.")}</div><article class="detail-note"><span>Registro geral da execução</span><p>${escapeHtml(plan.execution_notes || "Nenhuma observação registrada.")}</p></article><section class="comments-panel"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span>${comments.filter((comment) => !comment.deleted_at).length}</span></header><div class="comments-list">${comments.map((comment) => commentMarkup(comment, plan)).join("") || emptyMarkup("Ainda não há comentários neste intervalo.")}</div>${canComment ? '<form id="detail-comment-form"><label class="field"><span>Novo comentário</span><textarea name="content" maxlength="2000" rows="3" required placeholder="Registre uma atualização relevante"></textarea></label><button class="button button-secondary" type="submit">Adicionar comentário</button><span class="auth-feedback"></span></form>' : `<p class="comments-locked">Após o encerramento, os comentários tornam-se permanentes.</p>`}</section>`;
   }
 
@@ -545,7 +547,7 @@
     if (!plan) return;
     const dialog = $("#interval-detail");
     const root = $("#interval-detail-content");
-    const shareAllowed = ["editor", "coordinator", "specialist"].includes(actualProfile.role)
+    const shareAllowed = ["editor", "manager", "coordinator", "specialist"].includes(actualProfile.role)
       && plan.user_id === currentUser.id;
     root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Prévia do acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header><div class="detail-full-page-bar"><span><strong>Quer ver todos os detalhes?</strong><small>Abra o acompanhamento completo com plano, execução e dashboard.</small></span><a class="button button-secondary" data-full-tracking-link href="${escapeHtml(fullTrackingUrl(plan, initialTab))}">Abrir página completa <i aria-hidden="true">↗</i></a></div><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link público temporário</button><span class="auth-feedback"></span></div>' : ""}</div>`;
     const activate = (tab) => {

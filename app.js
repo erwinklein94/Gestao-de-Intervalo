@@ -39,8 +39,8 @@
     if (gender === "feminine" && ROLE_LABELS_FEMININE[role]) return ROLE_LABELS_FEMININE[role];
     return ROLE_LABELS[role] || role;
   }
-  const READ_ONLY_MANAGEMENT_ROLES = ["director", "executive_manager", "consultant", "manager"];
-  function isOperatorRole(role) { return ["coordinator", "specialist"].includes(role); }
+  const READ_ONLY_MANAGEMENT_ROLES = ["director", "executive_manager", "consultant"];
+  function isOperatorRole(role) { return ["manager", "coordinator", "specialist"].includes(role); }
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -1148,7 +1148,7 @@
     const errors = [];
     const warnings = [];
     if (!plan.title.trim()) errors.push("informe o nome do plano");
-    if (currentProfile?.role === "editor" && !plan.coordinatorMemberId) errors.push("selecione o Coordenador ou Especialista responsável");
+    if (currentProfile?.role === "editor" && !plan.coordinatorMemberId) errors.push("selecione o Gerente, Coordenador ou Especialista responsável");
     if (!plan.date) errors.push("informe a data");
     if (timeline.windowStart == null || timeline.windowEnd == null) errors.push("preencha a janela completa");
     if (plan.windowStart && plan.windowEnd && plan.windowStart === plan.windowEnd) errors.push("o início e o fim da janela não podem ser iguais");
@@ -1327,7 +1327,7 @@
       const select = document.createElement("select");
       select.name = "coordinator";
       select.dataset.coordinatorSelector = "";
-      select.setAttribute("aria-label", "Coordenador ou Especialista responsável");
+      select.setAttribute("aria-label", "Gerente, Coordenador ou Especialista responsável");
       select.required = true;
       currentField.replaceWith(select);
       select.innerHTML = '<option value="">Carregando responsáveis…</option>';
@@ -1336,12 +1336,12 @@
       const { data, error } = await cloudClient
         .from("organization_members")
         .select("id,full_name,role,role_gender,manager_id,coordinator_type")
-        .in("role", ["coordinator", "specialist"])
+        .in("role", ["manager", "coordinator", "specialist"])
         .eq("enabled", true)
         .order("full_name");
       if (error) {
         select.innerHTML = '<option value="">Não foi possível carregar os responsáveis</option>';
-        showToast("Não foi possível carregar Coordenadores e Especialistas.");
+        showToast("Não foi possível carregar Gerentes, Coordenadores e Especialistas.");
         return;
       }
       coordinatorDirectory = data || [];
@@ -2439,7 +2439,9 @@
     const nav = $(".primary-nav");
     if (!nav || !currentProfile) return;
     let links;
-    if (isOperatorRole(currentProfile.role)) {
+    if (currentProfile.role === "manager") {
+      links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
+    } else if (isOperatorRole(currentProfile.role)) {
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (currentProfile.role === "editor") {
       // O Editor administra o sistema; nao planeja nem executa intervalos.
@@ -2543,11 +2545,18 @@
     });
   }
 
-  async function loadCloudStore() {
-    const { data, error } = await cloudClient
+  function operationalPlansQuery() {
+    let request = cloudClient
       .from("interval_plans")
-      .select("*,interval_steps(*)")
-      .order("updated_at", { ascending: false });
+      .select("*,interval_steps(*)");
+    if (isOperatorRole(currentProfile?.role) && currentProfile.organization_member_id) {
+      request = request.eq("coordinator_member_id", currentProfile.organization_member_id);
+    }
+    return request.order("updated_at", { ascending: false });
+  }
+
+  async function loadCloudStore() {
+    const { data, error } = await operationalPlansQuery();
     if (error) throw error;
     if (!data.length) {
       const first = store.plans[0] || blankPlan();
@@ -2566,10 +2575,7 @@
     if (!cloudClient || !currentUser || cloudRefreshRunning || cloudSyncing || store.pendingSync || document.hidden) return;
     cloudRefreshRunning = true;
     try {
-      const { data, error } = await cloudClient
-        .from("interval_plans")
-        .select("*,interval_steps(*)")
-        .order("updated_at", { ascending: false });
+      const { data, error } = await operationalPlansQuery();
       if (error) throw error;
       if (!data.length) return;
       const plans = data.map(databaseToPlan);

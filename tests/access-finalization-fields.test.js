@@ -11,6 +11,7 @@ const shared = read("acompanhar.html");
 const styles = read("styles.css");
 const edge = read("supabase/functions/interval-share/index.ts");
 const migration = read("supabase/migrations/20260822173000_add_execution_closure_and_plan_parties.sql");
+const managerMigration = read("supabase/migrations/20260822180000_allow_managers_to_operate_intervals.sql");
 
 assert.match(login, /id="forgot-password"/);
 assert.match(recovery, /data-page="password-recovery"/);
@@ -31,6 +32,13 @@ assert.match(app, /rpc\("finalize_interval_plan"/);
 assert.match(migration, /private\.actual_role\(\) not in \('coordinator', 'specialist'\)/);
 assert.match(migration, /grant execute on function public\.finalize_interval_plan\(uuid\) to authenticated/);
 assert.match(migration, /when plan\.completed_at is not null then 'completed'/);
+assert.match(managerMigration, /private\.actual_role\(\) not in \('manager', 'coordinator', 'specialist'\)/);
+assert.match(managerMigration, /private\.actual_role\(\) in \('manager', 'coordinator', 'specialist'\)/);
+assert.match(managerMigration, /when member\.role = 'manager' then member\.id/);
+assert.match(app, /function isOperatorRole\(role\) \{ return \["manager", "coordinator", "specialist"\]/);
+assert.match(app, /function operationalPlansQuery\(\)/);
+assert.match(app, /eq\("coordinator_member_id", currentProfile\.organization_member_id\)/);
+assert.match(edge, /\["editor", "manager", "coordinator", "specialist"\]\.includes\(ownerProfile\.role\)/);
 
 assert.match(shared, /id="shared-live-state" hidden/);
 assert.match(app, /status\.hidden = plan\.status !== "executing"/);
