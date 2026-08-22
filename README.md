@@ -21,10 +21,10 @@ As permissões são aplicadas na navegação e novamente no banco por Row Level 
 
 | Perfil | Escopo | Páginas e ações principais |
 |---|---|---|
-| Diretor | Toda a operação | Gestão, maiores atrasos, intervalos em execução, histórico, dashboard geral, acompanhamento somente leitura e Minha Conta |
+| Diretor | Toda a operação | Gestão, intervalos em execução, histórico, dashboard geral, acompanhamento somente leitura e Minha Conta |
 | Gerente Executivo | Mesmo escopo do Diretor | Mesma visão global e somente leitura dos intervalos |
 | Consultor | Mesmo escopo do Diretor | Mesma visão global e somente leitura dos intervalos |
-| Gerente | Coordenadores vinculados ao próprio Gerente | Mesmas quatro visões gerenciais, filtradas automaticamente para a própria equipe |
+| Gerente | Coordenadores vinculados ao próprio Gerente | As três visões gerenciais, filtradas automaticamente para a própria equipe |
 | Coordenador | Próprios intervalos | Planejamento, execução, dashboard individual, histórico, comentários operacionais e Minha Conta |
 | Editor | Toda a operação | Visão gerencial completa, ferramentas operacionais, Administração, gestão de usuários/SUBs e modo Exemplos |
 
@@ -36,7 +36,7 @@ Cada Coordenador deve possuir Gerente responsável, uma ou mais SUBs e classific
 - `index.html`: criação e revisão do plano, montagem de etapas, linha do tempo, travamento do cronograma e exportação `.xlsx`.
 - `executar.html`: registro dos horários e observações realizados, etapas não executadas, comentários e estado de sincronização.
 - `dashboard.html`: indicadores e gráficos do intervalo selecionado, comparação Programado × Realizado e impressão preparada para PDF em A4 paisagem.
-- `gestao.html`: portal com as áreas Maiores atrasos, Em execução, Histórico e Dashboard geral. Inclui filtros por Gerente, Coordenador, SUB, classificação, status, prazo, tipo, período e texto livre.
+- `gestao.html`: portal com as áreas Em execução, Histórico e Dashboard geral. Inclui filtros por Gerente, Coordenador, SUB, classificação, status, prazo, tipo, período e texto livre.
 - `admin.html`: área exclusiva do Editor para criar e editar usuários, vínculos e SUBs. SUBs deixam de ser excluídas e podem ser desativadas para preservar referências históricas.
 - `conta.html`: mostra somente os dados do usuário autenticado e os atalhos permitidos. Para Editor, oferece Administração e o botão **Exemplos**.
 - `acompanhar.html`: acompanhamento público somente leitura por link temporário, revogável e protegido por token.

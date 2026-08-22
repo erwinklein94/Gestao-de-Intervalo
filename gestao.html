@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="styles.css?v=20260822-5">
   <script src="assets/jszip.min.js" defer></script>
   <script src="assets/supabase.min.js" defer></script>
-  <script src="assets/portal.js?v=20260822-5" defer></script>
+  <script src="assets/portal.js?v=20260822-6" defer></script>
 </head>
 <body data-page="management">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -28,7 +28,6 @@
     </section>
 
     <nav class="management-tabs" aria-label="Áreas de acompanhamento" role="tablist">
-      <button type="button" role="tab" aria-selected="false" data-view-button="delays">Maiores atrasos</button>
       <button type="button" role="tab" aria-selected="false" data-view-button="running">Em execução</button>
       <button type="button" role="tab" aria-selected="false" data-view-button="history">Histórico</button>
       <button type="button" role="tab" aria-selected="false" data-view-button="overview">Dashboard geral</button>
@@ -56,12 +55,7 @@
         </div>
       </section>
 
-      <section data-view="delays">
-        <header class="portal-section-heading"><div><p class="section-kicker">Prioridade operacional</p><h2>Intervalos com maiores atrasos</h2><p>Somente intervalos em execução com desvio positivo, do maior para o menor.</p></div><span class="result-count" data-result-count="delays">0 resultados</span></header>
-        <div class="interval-card-grid" id="delay-cards"></div>
-      </section>
-
-      <section data-view="running" hidden>
+      <section data-view="running">
         <header class="portal-section-heading"><div><p class="section-kicker">Operação ao vivo</p><h2>Intervalos em execução</h2><p>Frentes agrupadas por Superestrutura, Infraestrutura e Modernização.</p></div><span class="result-count" data-result-count="running">0 resultados</span></header>
         <section class="running-group"><div class="group-title"><span class="type-mark infra">I</span><div><h3>Infraestrutura</h3><p>Coordenações e frentes de infraestrutura</p></div></div><div class="interval-card-grid" id="infra-cards"></div></section>
         <section class="running-group"><div class="group-title"><span class="type-mark super">S</span><div><h3>Superestrutura</h3><p>Coordenações e frentes de superestrutura</p></div></div><div class="interval-card-grid" id="super-cards"></div></section>

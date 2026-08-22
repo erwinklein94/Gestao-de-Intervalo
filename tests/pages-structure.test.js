@@ -21,7 +21,6 @@ assert.match(management, /<body[^>]*data-page="management"/);
 assert.ok(management.indexOf("assets/auth-guard.js") < management.indexOf("assets/portal.js"), "proteção de autenticação deve carregar antes do portal");
 includesAll(management, [
   "data-role-nav",
-  'id="delay-cards"',
   'id="infra-cards"',
   'id="super-cards"',
   'id="modernization-cards"',
@@ -52,8 +51,8 @@ includesAll(read("assets/portal.js"), [
   "selectedFilterSummary()"
 ], "exportações do escopo gerencial filtrado");
 
-assert.deepEqual(attributeValues(management, "data-view-button"), ["delays", "running", "history", "overview"]);
-assert.deepEqual(attributeValues(management, "data-view"), ["delays", "running", "history", "overview"]);
+assert.deepEqual(attributeValues(management, "data-view-button"), ["running", "history", "overview"]);
+assert.deepEqual(attributeValues(management, "data-view"), ["running", "history", "overview"]);
 assert.match(management, /class="management-tabs"[^>]*role="tablist"/, "áreas gerenciais devem ser um conjunto acessível de botões");
 assert.deepEqual(attributeValues(management, "data-filter"), [
   "manager",

@@ -469,10 +469,8 @@
 
   function renderManagement() {
     const filtered = filterPlans(plans, currentFilters());
-    const delays = filtered.filter((plan) => plan.status === "executing" && intervalMetrics(plan).variance > 0).sort((a, b) => intervalMetrics(b).variance - intervalMetrics(a).variance);
     const running = filtered.filter((plan) => plan.status === "executing");
     const history = filtered.filter((plan) => plan.status === "completed").sort((a, b) => String(b.interval_date).localeCompare(String(a.interval_date)));
-    $("#delay-cards").innerHTML = delays.length ? delays.map(cardMarkup).join("") : emptyMarkup("Nenhuma execução atrasada corresponde aos filtros.");
     const infra = running.filter((plan) => plan.coordinator_type === "infrastructure");
     const superstructure = running.filter((plan) => plan.coordinator_type === "superstructure");
     const modernization = running.filter((plan) => plan.coordinator_type === "modernization");
@@ -480,7 +478,6 @@
     $("#super-cards").innerHTML = superstructure.length ? superstructure.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Superestrutura em execução.");
     $("#modernization-cards").innerHTML = modernization.length ? modernization.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Modernização em execução.");
     $("#history-cards").innerHTML = history.length ? history.map(cardMarkup).join("") : emptyMarkup("Nenhum intervalo concluído corresponde aos filtros.");
-    setCount("delays", delays.length);
     setCount("running", running.length);
     setCount("history", history.length);
     $("#hero-live-count").textContent = plans.filter((plan) => plan.status === "executing").length;
@@ -590,9 +587,9 @@
   }
 
   function activateManagementView(view) {
-    const allowed = ["delays", "running", "history", "overview"];
+    const allowed = ["running", "history", "overview"];
     if (view === "dashboard") view = "overview";
-    if (!allowed.includes(view)) view = "delays";
+    if (!allowed.includes(view)) view = "running";
     $$('[data-view-button]').forEach((button) => {
       const active = button.dataset.viewButton === view;
       button.classList.toggle("active", active);
@@ -608,7 +605,7 @@
     $("#hero-role").textContent = profileRoleLabel(effectiveProfile);
     $("#scope-description").textContent = roleScopeDescription(effectiveProfile.role);
     renderManagement();
-    activateManagementView(new URLSearchParams(location.search).get("view") || "delays");
+    activateManagementView(new URLSearchParams(location.search).get("view") || "running");
     $$('[data-view-button]').forEach((button) => button.addEventListener("click", () => activateManagementView(button.dataset.viewButton)));
     $$("[data-filter]").forEach((field) => field.addEventListener(field.type === "search" ? "input" : "change", renderManagement));
     $("#clear-filters").addEventListener("click", () => { $$("[data-filter]").forEach((field) => { field.value = ""; }); renderManagement(); });
