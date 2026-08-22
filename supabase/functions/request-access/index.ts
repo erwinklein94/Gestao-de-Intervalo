@@ -35,23 +35,27 @@ function escapeHtml(value: string) {
   ));
 }
 
-// Destinatarios: o endereco configurado em app_settings mais os Editores
-// habilitados. Nenhum deles fica no codigo -- o repositorio e publico.
+// Destinatarios: o endereco configurado manda; os Editores cadastrados so
+// entram quando nada foi configurado. Nenhum deles fica no codigo -- o
+// repositorio e publico.
+//
+// A lista configurada tem prioridade em vez de somar-se aos Editores porque
+// um provedor sem dominio verificado recusa o envio inteiro se qualquer
+// destinatario estiver fora da conta. Somando os dois, ninguem receberia.
 async function resolveRecipients(admin: ReturnType<typeof createClient>) {
-  const destinos = new Set<string>();
-  const doAmbiente = Deno.env.get("ACCESS_REQUEST_NOTIFY_EMAIL") || "";
-  doAmbiente.split(",").map((entry) => entry.trim()).filter(Boolean).forEach((entry) => destinos.add(entry));
+  const separar = (valor: string) => valor.split(",").map((entry) => entry.trim()).filter(Boolean);
+
+  const doAmbiente = separar(Deno.env.get("ACCESS_REQUEST_NOTIFY_EMAIL") || "");
+  if (doAmbiente.length) return [...new Set(doAmbiente)];
 
   const { data: ajuste } = await admin.from("app_settings")
     .select("value").eq("key", "access_request_notify_email").maybeSingle();
-  String(ajuste?.value || "").split(",").map((entry) => entry.trim()).filter(Boolean)
-    .forEach((entry) => destinos.add(entry));
+  const configurado = separar(String(ajuste?.value || ""));
+  if (configurado.length) return [...new Set(configurado)];
 
   const { data: editores } = await admin.from("user_profiles")
     .select("email").eq("role", "editor").eq("enabled", true);
-  (editores || []).forEach((editor) => { if (editor.email) destinos.add(editor.email); });
-
-  return [...destinos];
+  return [...new Set((editores || []).map((editor) => editor.email).filter(Boolean))];
 }
 
 // O e-mail e um aviso, nao a fonte da verdade: se o envio falhar, a
