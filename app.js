@@ -3152,7 +3152,6 @@
     const ownMember = (directory || []).find((member) => member.id === currentProfile.organization_member_id);
     const manager = (directory || []).find((member) => member.id === ownMember?.manager_id);
     const managerNames = (managerLinks || []).map((link) => (directory || []).find((member) => member.id === link.manager_member_id)?.full_name).filter(Boolean);
-    const operator = isOperatorRole(currentProfile.role);
     const hasDirectManager = ["manager", "coordinator", "specialist"].includes(currentProfile.role);
     $("#account-manager-row").hidden = !hasDirectManager;
     $("#account-type-row").hidden = false;
@@ -3167,18 +3166,8 @@
 
     await renderAccountHistory();
 
-    if (operator) {
-      const primary = $("#account-primary-link");
-      primary.href = "index.html";
-      $("strong", primary).textContent = "Planejamento";
-      $("small", primary).textContent = "Criar e revisar seus intervalos";
-    }
-    if (currentProfile.role === "editor") {
-      // O Editor administra o sistema: nao possui intervalos proprios e chega
-      // na Administracao pelo menu. As duas secoes so ocupariam espaco.
-      $("#account-history-card").hidden = true;
-      $("#account-shortcuts").hidden = true;
-    }
+    // O Editor administra o sistema e nao possui intervalos proprios.
+    if (currentProfile.role === "editor") $("#account-history-card").hidden = true;
 
     bindPasswordChange();
     $("#account-sign-out").addEventListener("click", async () => {

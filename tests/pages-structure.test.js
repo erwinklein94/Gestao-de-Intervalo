@@ -96,8 +96,9 @@ assert.ok(!admin.includes("SUB"), "administração não deve expor cadastro de S
 
 // Integrações estruturais das páginas existentes que receberam as novas funções.
 const account = read("conta.html");
-includesAll(account, ['id="account-history"', 'id="account-admin-link"', 'id="account-examples"', "gestao.html?view=history", "Perfis, funções e hierarquia"], "histórico e atalhos da Minha Conta");
+includesAll(account, ['id="account-history"', 'id="account-password-form"', 'name="currentPassword"', 'name="newPassword"'], "histórico e troca de senha da Minha Conta");
 assert.ok(!account.includes("SUB"), "Minha Conta não deve exibir SUB");
+assert.ok(!account.includes("account-shortcut"), "Minha Conta não deve exibir atalhos");
 
 const planning = read("index.html");
 includesAll(planning, ['name="coordinator"', 'id="export-button"', 'id="export-plan-pdf"'], "responsável e exportações do planejamento");
