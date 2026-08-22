@@ -103,6 +103,14 @@ containsAll(app, [
   "window.addEventListener(\"online\""
 ], "fila offline durável");
 
+containsAll(app, [
+  "const UUID_PATTERN =",
+  "bytes[6] = (bytes[6] & 0x0f) | 0x40",
+  "bytes[8] = (bytes[8] & 0x3f) | 0x80",
+  "if (UUID_PATTERN.test(item.operationId || \"\")) return",
+  'item.state = "pending"'
+], "UUID válido em HTTP e reparo da fila local existente");
+
 containsAll(createUser, [
   'editor.role !== "editor"',
   "password.length < 8",
