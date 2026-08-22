@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.112.3";
 
-const allowedOrigins = new Set(["https://erwinklein94.github.io", "http://localhost:4173", "http://localhost:4174", "http://localhost:8000"]);
+const allowedOrigins = new Set(["https://erwinklein94.github.io", "https://www.sistemagestaodeintervalos.com.br", "https://sistemagestaodeintervalos.com.br", "http://localhost:4173", "http://localhost:4174", "http://localhost:8000"]);
 
 function json(origin: string | null, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -50,8 +50,8 @@ Deno.serve(async (request) => {
     const { data: realDataset } = await admin.from("datasets").select("id").eq("code", "real").eq("kind", "real").eq("active", true).maybeSingle();
     if (!realDataset) return json(origin, { error: "Serviço indisponível." }, 503);
     const { data: plan, error: planError } = await admin.from("interval_plans")
-      .select("id,dataset_id,is_example,coordinator_member_id,client_id,title,service_type,coordinator,interval_date,location,window_start,window_end,planning_notes,execution_notes,is_locked,locked_at,status,completed_at,created_at,updated_at,interval_steps(client_id,position,activity_name,planned_start,planned_end,actual_start,actual_end,actual_notes,status,skip_reason,updated_at)")
-      .eq("id", share.plan_id).eq("dataset_id", realDataset.id).eq("is_example", false).maybeSingle();
+      .select("id,dataset_id,coordinator_member_id,client_id,title,service_type,coordinator,interval_date,location,window_start,window_end,planning_notes,execution_notes,is_locked,locked_at,status,completed_at,created_at,updated_at,interval_steps(client_id,position,activity_name,planned_start,planned_end,actual_start,actual_end,actual_notes,status,skip_reason,updated_at)")
+      .eq("id", share.plan_id).eq("dataset_id", realDataset.id).maybeSingle();
     if (planError) throw planError;
     if (!plan) return json(origin, { error: "Link inválido ou indisponível." }, 404);
 
@@ -70,7 +70,7 @@ Deno.serve(async (request) => {
       .eq("id", share.id).eq("token_hash", tokenHash).is("revoked_at", null).gt("expires_at", now).select("id").maybeSingle();
     if (!touched) return json(origin, { error: "Link inválido ou indisponível." }, 404);
 
-    const { id: _id, dataset_id: _dataset, is_example: _example, coordinator_member_id: _coordinator, ...safePlan } = plan;
+    const { id: _id, dataset_id: _dataset, coordinator_member_id: _coordinator, ...safePlan } = plan;
     return json(origin, { plan: safePlan, comments: comments || [], share: { expires_at: share.expires_at }, fetched_at: now });
   } catch (error) {
     console.error("interval-share", error instanceof Error ? error.message : "unknown");
