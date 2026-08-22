@@ -2597,6 +2597,79 @@
       }
       location.replace(landingPageForRole(profile.role));
     });
+
+    bindAccessRequestForm();
+  }
+
+  // Solicitacao de acesso: registra o pedido e avisa o Editor. Nada e criado
+  // aqui -- a conta so nasce quando um Editor aprova na Administracao.
+  function bindAccessRequestForm() {
+    const loginForm = $("#login-form");
+    const requestForm = $("#request-form");
+    if (!requestForm) return;
+    const feedback = $("#request-feedback");
+    const showRequest = (show) => {
+      loginForm.hidden = show;
+      requestForm.hidden = !show;
+      if (show) requestForm.fullName.focus();
+      else loginForm.email.focus();
+    };
+    $("#show-request-form")?.addEventListener("click", () => showRequest(true));
+    $("#show-login-form")?.addEventListener("click", () => showRequest(false));
+
+    // Coordenador e Especialista respondem por uma unica classificacao; os
+    // demais perfis acumulam. Mesma regra da Administracao.
+    const classificationField = $("[data-classification-field]", requestForm);
+    const syncClassification = () => {
+      const many = requestForm.role.value !== "coordinator" && requestForm.role.value !== "specialist";
+      const chosen = Array.from(requestForm.classification.selectedOptions, (option) => option.value);
+      classificationField.innerHTML = `<span>${many ? "Classificações" : "Classificação"} *</span>`
+        + `<select name="classification" required ${many ? 'multiple size="3"' : ""}>`
+        + ["superstructure", "infrastructure", "modernization"].map((value) => {
+            const labels = { superstructure: "Superestrutura", infrastructure: "Infraestrutura", modernization: "Modernização" };
+            const selected = chosen.includes(value) || (!chosen.length && value === "infrastructure");
+            return `<option value="${value}" ${selected ? "selected" : ""}>${labels[value]}</option>`;
+          }).join("")
+        + "</select>"
+        + (many ? '<small class="field-help">Selecione uma ou mais. No computador, use Ctrl para combinar.</small>' : "");
+    };
+    requestForm.role.addEventListener("change", syncClassification);
+
+    requestForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = $("button[type='submit']", requestForm);
+      const select = requestForm.classification;
+      const classifications = select.multiple
+        ? Array.from(select.selectedOptions, (option) => option.value)
+        : [select.value].filter(Boolean);
+      if (!classifications.length) { feedback.textContent = "Selecione ao menos uma classificação."; return; }
+      button.disabled = true;
+      button.textContent = "Enviando…";
+      feedback.textContent = "";
+      try {
+        const resposta = await fetch(`${SUPABASE_URL}/functions/v1/request-access`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "apikey": SUPABASE_PUBLISHABLE_KEY },
+          body: JSON.stringify({
+            fullName: requestForm.fullName.value.trim(),
+            email: requestForm.email.value.trim(),
+            password: requestForm.password.value,
+            role: requestForm.role.value,
+            classifications,
+            message: requestForm.message.value.trim()
+          })
+        });
+        const dados = await resposta.json().catch(() => ({}));
+        if (!resposta.ok) throw new Error(dados.error || "Não foi possível registrar a solicitação.");
+        requestForm.reset();
+        syncClassification();
+        feedback.textContent = "Solicitação enviada. Você receberá acesso assim que um Editor aprovar.";
+      } catch (error) {
+        feedback.textContent = error.message;
+      }
+      button.disabled = false;
+      button.textContent = "Enviar solicitação";
+    });
   }
 
   function sharedPage() {
@@ -3000,6 +3073,54 @@
 
   }
 
+  // Troca de senha pelo proprio usuario. A senha atual e conferida antes:
+  // updateUser sozinho aceitaria a troca so por haver sessao aberta, o que
+  // deixaria uma maquina destravada trocar a senha de quem esqueceu de sair.
+  function bindPasswordChange() {
+    const form = $("#account-password-form");
+    if (!form) return;
+    const feedback = $("#account-password-feedback");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = $("button[type='submit']", form);
+      const atual = form.currentPassword.value;
+      const nova = form.newPassword.value;
+      if (nova !== form.confirmPassword.value) {
+        feedback.textContent = "A confirmação não confere com a nova senha.";
+        return;
+      }
+      if (nova === atual) {
+        feedback.textContent = "A nova senha precisa ser diferente da atual.";
+        return;
+      }
+      button.disabled = true;
+      button.textContent = "Alterando…";
+      feedback.textContent = "";
+      const { error: confirmError } = await cloudClient.auth.signInWithPassword({
+        email: currentProfile.email,
+        password: atual
+      });
+      if (confirmError) {
+        feedback.textContent = "A senha atual não confere.";
+        button.disabled = false;
+        button.textContent = "Alterar senha";
+        return;
+      }
+      const { error } = await cloudClient.auth.updateUser({ password: nova });
+      if (error) {
+        feedback.textContent = error.message;
+        button.disabled = false;
+        button.textContent = "Alterar senha";
+        return;
+      }
+      form.reset();
+      feedback.textContent = "Senha alterada. Use a nova no próximo acesso.";
+      showToast("Senha alterada com sucesso.");
+      button.disabled = false;
+      button.textContent = "Alterar senha";
+    });
+  }
+
   async function accountPage() {
     const gate = $("#account-gate");
     const content = $("#account-content");
@@ -3053,12 +3174,13 @@
       $("small", primary).textContent = "Criar e revisar seus intervalos";
     }
     if (currentProfile.role === "editor") {
-      // Visao gerencial e Historico saem: o Editor nao acompanha intervalos da
-      // operacao real. Resta a Administracao.
-      $("#account-primary-link").hidden = true;
-      $("#account-history-link").hidden = true;
-      $("#account-admin-link").hidden = false;
+      // O Editor administra o sistema: nao possui intervalos proprios e chega
+      // na Administracao pelo menu. As duas secoes so ocupariam espaco.
+      $("#account-history-card").hidden = true;
+      $("#account-shortcuts").hidden = true;
     }
+
+    bindPasswordChange();
     $("#account-sign-out").addEventListener("click", async () => {
       await cloudClient.auth.signOut();
       location.replace("login.html");

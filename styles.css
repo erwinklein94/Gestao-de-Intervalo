@@ -879,6 +879,21 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .admin-row-actions .auth-feedback { max-width: 110px; }
 .sub-admin-row { grid-template-columns: repeat(4, minmax(120px, 1fr)) auto auto; }
 .compact-search { min-width: 250px; }
+/* Solicitacoes de acesso pendentes na Administracao. */
+.access-requests-card { margin-bottom: 34px; }
+.pending-badge { min-width: 26px; padding: 4px 9px; border-radius: 999px; color: var(--white); background: var(--orange); font-size: 12px; font-weight: 700; text-align: center; }
+.access-request-row { grid-template-columns: 1.3fr minmax(150px, 1fr) minmax(140px, 1fr) 1.2fr auto; }
+.access-request-row .access-request-value { color: var(--blue); font-size: 11px; }
+.access-request-message { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.access-request-row .admin-row-actions { gap: 6px; }
+/* Troca de senha em Minha conta. */
+.account-password-card { margin-bottom: 20px; }
+.account-password-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.account-password-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
+/* Alternancia entre entrar e solicitar acesso na tela de login. */
+.login-switch { margin: 6px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
+.link-button { padding: 0; border: 0; background: none; color: var(--blue); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+html[data-theme="dark"] .link-button { color: var(--green); }
 .org-chart-card { margin-bottom: 34px; }
 .org-chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 /* A legenda nao acompanha a reducao dos chips dentro dos cards. */
@@ -1310,6 +1325,8 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .portal-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .interval-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .access-request-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .account-password-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-row-identity, .admin-row-actions { grid-column: span 3; }
   .sub-admin-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
@@ -1348,6 +1365,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .detail-progress-list b { text-align: left; }
   .admin-form { grid-template-columns: 1fr 1fr; }
   .admin-row, .sub-admin-row { grid-template-columns: 1fr; }
+  .access-request-row, .account-password-form { grid-template-columns: 1fr; }
   .admin-row-identity, .admin-row-actions { grid-column: auto; }
   .compact-search { min-width: 0; width: 100%; }
   .account-details, .account-shortcut-grid { grid-template-columns: 1fr 1fr; }

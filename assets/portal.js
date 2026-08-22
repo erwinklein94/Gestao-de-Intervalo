@@ -157,6 +157,7 @@
   let plans = [];
   let members = [];
   let managerAssignments = [];
+  let accessRequests = [];
   let toastTimer;
 
   function initializeTheme() {
@@ -628,7 +629,74 @@
     if (assignmentsResult.error) throw assignmentsResult.error;
     members = profilesResult.data || [];
     managerAssignments = assignmentsResult.data || [];
+    const { data: requests, error: requestsError } = await baseClient.from("access_requests")
+      .select("id,full_name,email,requested_role,requested_classifications,message,created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true });
+    if (requestsError) throw requestsError;
+    accessRequests = requests || [];
     setState("Cadastros atualizados", "ok");
+  }
+
+  function renderAccessRequests() {
+    const root = $("#access-requests");
+    if (!root) return;
+    const badge = $("#access-requests-count");
+    if (badge) {
+      badge.hidden = accessRequests.length === 0;
+      badge.textContent = String(accessRequests.length);
+    }
+    root.innerHTML = accessRequests.length ? accessRequests.map((request) => {
+      const classificacoes = (request.requested_classifications || [])
+        .map((entry) => TYPE_LABELS[entry] || entry).join(" · ");
+      const quando = new Date(request.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+      return `<article class="admin-row access-request-row" data-request-id="${escapeHtml(request.id)}">
+        <div class="admin-row-identity">
+          <strong>${escapeHtml(request.full_name)}</strong>
+          <span>${escapeHtml(request.email)}</span>
+          <i>Pedido em ${escapeHtml(quando)}</i>
+        </div>
+        <label><span>Função</span><select data-request-role>${Object.entries(ROLE_LABELS)
+          .filter(([value]) => value !== "editor")
+          .map(([value, label]) => `<option value="${value}" ${request.requested_role === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        <label><span>Classificação pedida</span><strong class="access-request-value">${escapeHtml(classificacoes || "—")}</strong></label>
+        ${request.message ? `<label><span>Mensagem</span><p class="access-request-message">${escapeHtml(request.message)}</p></label>` : "<span></span>"}
+        <div class="admin-row-actions">
+          <button class="button button-secondary" type="button" data-request-action="approve">Aprovar</button>
+          <button class="button button-ghost" type="button" data-request-action="reject">Recusar</button>
+          <span class="auth-feedback"></span>
+        </div>
+      </article>`;
+    }).join("") : emptyMarkup("Nenhuma solicitação aguardando decisão.");
+
+    $$(".access-request-row", root).forEach((row) => {
+      const feedback = $(".auth-feedback", row);
+      row.addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-request-action]");
+        if (!button) return;
+        const approving = button.dataset.requestAction === "approve";
+        if (!approving && !confirm("Recusar esta solicitação? Ela não poderá ser reaberta.")) return;
+        $$("[data-request-action]", row).forEach((item) => { item.disabled = true; });
+        feedback.textContent = approving ? "Criando conta…" : "Recusando…";
+        const { error } = approving
+          ? await baseClient.rpc("approve_access_request", {
+              p_request_id: row.dataset.requestId,
+              p_role: $("[data-request-role]", row).value,
+              p_classifications: null
+            })
+          : await baseClient.rpc("reject_access_request", { p_request_id: row.dataset.requestId, p_note: "" });
+        if (error) {
+          feedback.textContent = error.message;
+          $$("[data-request-action]", row).forEach((item) => { item.disabled = false; });
+          return;
+        }
+        showToast(approving ? "Conta criada. A pessoa já pode entrar com a senha que escolheu." : "Solicitação recusada.");
+        await loadAdminData();
+        renderAccessRequests();
+        renderAdminUsers();
+        renderOrgChart();
+      });
+    });
   }
 
   function hierarchyRole(role) {
@@ -889,6 +957,7 @@
     $("#admin-user-form").role.addEventListener("change", updateCreateHierarchyFields);
     renderAdminUsers();
     renderOrgChart();
+    renderAccessRequests();
     $("#user-search").addEventListener("input", renderAdminUsers);
     $("#admin-user-form").addEventListener("submit", async (event) => {
       event.preventDefault(); const form = event.currentTarget; const feedback = $("#admin-user-feedback");
@@ -899,7 +968,7 @@
       feedback.textContent = "Criando conta…";
       const { data, error } = await baseClient.functions.invoke("create-site-user", { body: { fullName: form.fullName.value.trim(), email: form.email.value.trim(), password: form.password.value, role: form.role.value, classifications, subordinateIds: hierarchyRole(form.role.value) ? selectedIds(form.subordinateIds) : [] } });
       if (error || data?.error) { feedback.textContent = data?.error || error.message; return; }
-      feedback.textContent = "Conta criada e habilitada."; form.reset(); form.role.value = "coordinator"; await loadAdminData(); updateCreateHierarchyFields(); renderAdminUsers(); renderOrgChart();
+      feedback.textContent = "Conta criada e habilitada."; form.reset(); form.role.value = "coordinator"; await loadAdminData(); updateCreateHierarchyFields(); renderAdminUsers(); renderOrgChart(); renderAccessRequests();
     });
   }
 

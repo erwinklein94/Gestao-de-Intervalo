@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
   <meta name="description" content="Acesso seguro à Gestão de Intervalo"><title>Gestão de Intervalo | Login</title>
-<link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css?v=20260821-15">
-<script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260821-15" defer></script>
+<link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css?v=20260822-1">
+<script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260822-1" defer></script>
 </head>
 <body data-page="login" class="login-page">
   <main class="login-layout">
@@ -21,6 +21,20 @@
         <label class="field"><span>Senha</span><input name="password" type="password" autocomplete="current-password" minlength="8" required></label>
         <button class="button button-secondary login-submit" type="submit">Entrar no sistema</button>
         <span class="login-feedback" id="login-feedback" role="status" aria-live="polite"></span>
+        <p class="login-switch">Ainda não tem acesso? <button class="link-button" type="button" id="show-request-form">Solicitar cadastro</button></p>
+      </form>
+      <form class="login-card" id="request-form" hidden>
+        <div class="login-mark" aria-hidden="true">+</div><p class="section-kicker">Novo acesso</p><h2>Solicitar cadastro</h2>
+        <p>Um Editor recebe o pedido e libera o acesso. A conta só passa a existir depois da aprovação.</p>
+        <label class="field"><span>Nome completo *</span><input name="fullName" required maxlength="120" autocomplete="name"></label>
+        <label class="field"><span>E-mail *</span><input name="email" type="email" required autocomplete="email"></label>
+        <label class="field"><span>Senha desejada *</span><input name="password" type="password" minlength="8" required autocomplete="new-password"><small class="field-help">Mínimo de 8 caracteres. Será a senha usada quando o acesso for aprovado.</small></label>
+        <label class="field"><span>Função *</span><select name="role" required><option value="director">Diretor</option><option value="executive_manager">Gerente Executivo</option><option value="manager">Gerente</option><option value="consultant">Consultor</option><option value="coordinator" selected>Coordenador</option><option value="specialist">Especialista</option></select></label>
+        <label class="field" data-classification-field><span>Classificação *</span><select name="classification" required><option value="superstructure">Superestrutura</option><option value="infrastructure" selected>Infraestrutura</option><option value="modernization">Modernização</option></select></label>
+        <label class="field"><span>Mensagem para o Editor</span><textarea name="message" rows="2" maxlength="500" placeholder="Área, equipe ou qualquer contexto que ajude na aprovação"></textarea></label>
+        <button class="button button-secondary login-submit" type="submit">Enviar solicitação</button>
+        <span class="login-feedback" id="request-feedback" role="status" aria-live="polite"></span>
+        <p class="login-switch">Já tem conta? <button class="link-button" type="button" id="show-login-form">Voltar para o login</button></p>
       </form>
     </section>
   </main>

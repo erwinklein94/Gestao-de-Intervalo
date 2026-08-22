@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
   <script src="assets/auth-guard.js"></script><meta name="description" content="Dados da conta autenticada.">
-  <title>Gestão de Intervalo | Minha Conta</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css?v=20260821-15">
-  <script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260821-15" defer></script>
+  <title>Gestão de Intervalo | Minha Conta</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css?v=20260822-1">
+  <script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260822-1" defer></script>
 </head>
 <body data-page="account">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -21,8 +21,17 @@
             <div><span>Nome</span><strong id="account-detail-name">—</strong></div><div><span>E-mail</span><strong id="account-detail-email">—</strong></div><div><span>Função</span><strong id="account-detail-role">—</strong></div><div><span>Situação</span><strong id="account-detail-enabled">—</strong></div><div id="account-manager-row"><span>Gestor responsável</span><strong id="account-detail-manager">—</strong></div><div id="account-type-row"><span>Classificação</span><strong id="account-detail-type">—</strong></div>
           </div>
         </section>
-        <section class="chart-card"><div class="chart-heading"><div><p class="section-kicker">Histórico pessoal</p><h2>Seus intervalos planejados e executados</h2></div></div><div class="history-list" id="account-history"></div></section>
-        <section class="account-shortcuts chart-card">
+        <section class="account-password-card chart-card">
+          <div class="chart-heading"><div><p class="section-kicker">Segurança</p><h2>Alterar minha senha</h2><p>Troque a senha inicial fornecida pelo editor por uma que só você conheça.</p></div></div>
+          <form class="account-password-form" id="account-password-form">
+            <label class="field"><span>Senha atual *</span><input name="currentPassword" type="password" autocomplete="current-password" minlength="8" required></label>
+            <label class="field"><span>Nova senha *</span><input name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small class="field-help">Mínimo de 8 caracteres.</small></label>
+            <label class="field"><span>Repita a nova senha *</span><input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></label>
+            <div class="account-password-actions"><button class="button button-secondary" type="submit">Alterar senha</button><span class="auth-feedback" id="account-password-feedback"></span></div>
+          </form>
+        </section>
+        <section class="chart-card" id="account-history-card"><div class="chart-heading"><div><p class="section-kicker">Histórico pessoal</p><h2>Seus intervalos planejados e executados</h2></div></div><div class="history-list" id="account-history"></div></section>
+        <section class="account-shortcuts chart-card" id="account-shortcuts">
           <div class="chart-heading"><div><p class="section-kicker">Acessos permitidos</p><h2>Atalhos</h2></div></div>
           <div class="account-shortcut-grid"><a class="account-shortcut" id="account-primary-link" href="gestao.html"><span>↗</span><strong>Visão gerencial</strong><small>Acompanhar intervalos no seu escopo</small></a><a class="account-shortcut" id="account-history-link" href="gestao.html?view=history"><span>↗</span><strong>Histórico</strong><small>Consultar registros concluídos</small></a><a class="account-shortcut" id="account-admin-link" href="admin.html" hidden><span>⚙</span><strong>Administração</strong><small>Perfis, funções e hierarquia</small></a></div>
         </section>
