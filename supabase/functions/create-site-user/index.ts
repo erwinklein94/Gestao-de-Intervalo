@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.112.3";
 
-const allowedOrigins = new Set(["https://erwinklein94.github.io", "https://www.sistemagestaodeintervalos.com.br", "https://sistemagestaodeintervalos.com.br", "http://localhost:4173", "http://localhost:4174", "http://localhost:8000"]);
+const allowedOrigins = new Set(["https://erwinklein94.github.io", "https://www.sistemagestaodeintervalos.com.br", "https://sistemagestaodeintervalos.com.br", "http://www.sistemagestaodeintervalos.com.br", "http://sistemagestaodeintervalos.com.br", "http://localhost:4173", "http://localhost:4174", "http://localhost:8000"]);
 const roles = new Set(["director", "executive_manager", "manager", "consultant", "coordinator", "specialist"]);
 const classificationOrder = ["superstructure", "infrastructure", "modernization"];
 // Coordenador e Especialista respondem por uma unica classificacao, para que o
