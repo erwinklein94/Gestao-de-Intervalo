@@ -103,6 +103,8 @@
       id: uid(),
       title,
       serviceType: "",
+      contractorName: "",
+      foremanName: "",
       coordinator: isOperatorRole(currentProfile?.role) ? (currentProfile.full_name || "") : "",
       date: todayISO(),
       location: "",
@@ -146,6 +148,8 @@
   function normalizePlan(plan) {
     plan.steps = Array.isArray(plan.steps) ? plan.steps : [];
     plan.executionNotes = plan.executionNotes || "";
+    plan.contractorName = plan.contractorName || "";
+    plan.foremanName = plan.foremanName || "";
     plan.deletedStepIds = Array.isArray(plan.deletedStepIds) ? plan.deletedStepIds : [];
     plan.structureDirty = Boolean(plan.structureDirty);
     plan.ownerId = plan.ownerId || null;
@@ -274,6 +278,8 @@
       client_id: plan.id,
       title: plan.title || "",
       service_type: plan.serviceType || "",
+      contractor_name: plan.contractorName || "",
+      foreman_name: plan.foremanName || "",
       coordinator: plan.coordinator || "",
       interval_date: plan.date || null,
       location: plan.location || "",
@@ -312,6 +318,8 @@
       datasetId: row.dataset_id,
       title: row.title,
       serviceType: row.service_type,
+      contractorName: row.contractor_name || "",
+      foremanName: row.foreman_name || "",
       coordinator: row.coordinator,
       date: row.interval_date || "",
       location: row.location,
@@ -1352,7 +1360,7 @@
     function renderForm() {
       const plan = activePlan();
       renderSelector();
-      ["title", "serviceType", "coordinator", "date", "location", "windowStart", "windowEnd", "notes"].forEach((name) => {
+      ["title", "serviceType", "contractorName", "foremanName", "coordinator", "date", "location", "windowStart", "windowEnd", "notes"].forEach((name) => {
         const input = form.elements[name];
         if (input) {
           // A janela e guardada com data, mas continua sendo preenchida por
@@ -1714,6 +1722,9 @@
     const root = $("#execution-steps");
     const blocked = $("#execution-blocked");
     const content = $("#execution-content");
+    const finishPanel = $("#execution-finish-panel");
+    const finishButton = $("#finish-execution-button");
+    const finishFeedback = $("#finish-execution-feedback");
 
     function nowTime() {
       return nowStamp();
@@ -1836,6 +1847,7 @@
 
     function renderSteps() {
       const status = getStatus();
+      const executionClosed = plan.status === "completed";
       const activeIds = new Set(status.active.map((step) => step.id));
       const criticalId = status.critical?.step?.id || null;
       const firstPending = status.steps.find((step) => !isStepResolved(step) && !activeIds.has(step.id));
@@ -1850,7 +1862,7 @@
           skipped ? "is-skipped" : stepComplete ? "is-complete" : activeIds.has(step.id) || (!status.active.length && firstPending?.id === step.id) ? "is-active" : "",
           isCritical ? "is-critical" : ""
         ].filter(Boolean).join(" ");
-        const disabled = skipped ? "disabled" : "";
+        const disabled = skipped || executionClosed ? "disabled" : "";
         return `<article class="execution-step ${stateClass}" data-step-id="${step.id}">
           <header class="execution-step-header">
             <span class="execution-index">${stepComplete ? "✓" : skipped ? "—" : String(index + 1).padStart(2, "0")}</span>
@@ -1874,17 +1886,17 @@
                   <button class="now-button" type="button" data-now="actualStart" ${disabled}>Agora</button>
                 </div>
                 <div class="time-entry">
-                  <label>Fim<input data-field="actualEnd" type="datetime-local" value="${escapeHtml(stampInput(step.actualEnd))}" aria-label="Data e hora de fim realizado da etapa ${index + 1}" ${step.actualStart && !skipped ? "" : "disabled"}></label>
-                  <button class="now-button" type="button" data-now="actualEnd" ${step.actualStart && !skipped ? "" : "disabled"}>Agora</button>
+                  <label>Fim<input data-field="actualEnd" type="datetime-local" value="${escapeHtml(stampInput(step.actualEnd))}" aria-label="Data e hora de fim realizado da etapa ${index + 1}" ${step.actualStart && !skipped && !executionClosed ? "" : "disabled"}></label>
+                  <button class="now-button" type="button" data-now="actualEnd" ${step.actualStart && !skipped && !executionClosed ? "" : "disabled"}>Agora</button>
                 </div>
               </div>
               <small class="realized-duration${durationOverClass(step, status.nowAbs)}" data-step-duration>${escapeHtml(realizedDurationText)}</small>
               <small class="step-forecast" data-step-forecast ${forecastText ? "" : "hidden"}>${escapeHtml(forecastText)}</small>
-              <button class="step-status-button" type="button" data-step-action="${skipped ? "restore" : "skip"}" ${stepComplete ? "disabled" : ""}>${skipped ? "Reativar etapa" : "Marcar como não executada"}</button>
+              <button class="step-status-button" type="button" data-step-action="${skipped ? "restore" : "skip"}" ${stepComplete || executionClosed ? "disabled" : ""}>${skipped ? "Reativar etapa" : "Marcar como não executada"}</button>
             </div>
             <label class="field notes-block">
               <span>${skipped ? "Observação / motivo" : "O que foi realizado"}</span>
-              <textarea data-field="actualNotes" maxlength="600" rows="3" placeholder="${skipped ? "Registre detalhes da decisão" : "Descreva o serviço executado, ocorrências ou desvios"}">${escapeHtml(step.actualNotes)}</textarea>
+              <textarea data-field="actualNotes" maxlength="600" rows="3" placeholder="${skipped ? "Registre detalhes da decisão" : "Descreva o serviço executado, ocorrências ou desvios"}" ${executionClosed ? "disabled" : ""}>${escapeHtml(step.actualNotes)}</textarea>
             </label>
           </div>
         </article>`;
@@ -2019,6 +2031,7 @@
     }
 
     function updateActualTime(step, field, value) {
+      if (plan.status === "completed") return false;
       const previous = step[field];
       if (isStepSkipped(step)) {
         showToast("Reative a etapa antes de registrar horários.");
@@ -2045,6 +2058,7 @@
 
     root.addEventListener("input", (event) => {
       if (!event.target.matches("textarea[data-field='actualNotes']")) return;
+      if (plan.status === "completed") return;
       const stepElement = event.target.closest("[data-step-id]");
       const step = plan.steps.find((item) => item.id === stepElement?.dataset.stepId);
       if (!step) return;
@@ -2067,6 +2081,7 @@
     root.addEventListener("click", (event) => {
       const button = event.target.closest("[data-now], [data-step-action]");
       if (!button) return;
+      if (plan.status === "completed") return;
       const stepElement = button.closest("[data-step-id]");
       const step = plan.steps.find((item) => item.id === stepElement?.dataset.stepId);
       if (!step) return;
@@ -2093,6 +2108,7 @@
     });
 
     $("#execution-notes").addEventListener("input", (event) => {
+      if (plan.status === "completed") return;
       plan.executionNotes = event.target.value;
       persist();
     });
@@ -2142,6 +2158,51 @@
     });
     $("#print-button").addEventListener("click", () => exportPageToPdf($("#print-button"), `execucao-${plan.title || "intervalo"}`, "Exportar PDF", "execution-printing"));
 
+    finishButton?.addEventListener("click", async () => {
+      if (!isOperatorRole(currentProfile?.role) || plan.status === "completed") return;
+      const unresolved = plan.steps.filter((step) => !isStepResolved(step));
+      if (unresolved.length) {
+        showToast(unresolved.length === 1
+          ? "Encerre ou marque como não executada a etapa pendente."
+          : `Encerre ou marque como não executadas as ${unresolved.length} etapas pendentes.`);
+        $(`[data-step-id="${unresolved[0].id}"]`, root)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      if (!confirm("Finalizar esta execução? Depois do encerramento, os registros passam a fazer parte do histórico e não poderão ser alterados.")) return;
+      finishButton.disabled = true;
+      finishButton.textContent = "Finalizando…";
+      finishFeedback.textContent = "Confirmando os últimos dados no servidor…";
+      try {
+        clearTimeout(saveTimer);
+        clearTimeout(cloudTimer);
+        if (!navigator.onLine) throw new Error("OFFLINE");
+        cloudSyncPending = true;
+        if (!cloudSyncing) await syncStoreToCloud();
+        while (cloudSyncing) await new Promise((resolve) => setTimeout(resolve, 60));
+        if (store.pendingSync || outbox.length || dirtyPlanIds.size || !plan.databaseId) throw new Error("PENDING_SYNC");
+        const { data, error } = await cloudClient.rpc("finalize_interval_plan", { p_plan_id: plan.databaseId });
+        if (error) throw error;
+        plan.status = data.status || "completed";
+        plan.completedAt = data.completed_at || new Date().toISOString();
+        plan.revision = Number(data.revision || plan.revision || 0);
+        store.pendingSync = false;
+        writeStoreLocally();
+        finishFeedback.textContent = "Execução finalizada e registrada no histórico.";
+        setSyncState("Sincronizado", "saved");
+        showToast("Execução finalizada com sucesso.");
+        renderPage();
+      } catch (error) {
+        console.error("Falha ao finalizar a execução.", error);
+        finishFeedback.textContent = error.message === "OFFLINE"
+          ? "Conecte-se à internet para finalizar. Seus registros continuam preservados neste dispositivo."
+          : error.message === "PENDING_SYNC"
+            ? "Ainda há dados pendentes de confirmação pelo servidor. Aguarde a sincronização e tente novamente."
+            : error.message || "Não foi possível finalizar a execução.";
+        finishButton.disabled = false;
+        finishButton.textContent = "Finalizar execução";
+      }
+    });
+
     function renderPage() {
       plan = activePlan();
       const executionAvailable = plan.locked || hasExecutionData(plan);
@@ -2150,9 +2211,16 @@
       $("#execution-revision-banner").hidden = plan.locked || !hasExecutionData(plan);
       $("#execution-title").textContent = plan.title || "Intervalo sem nome";
       const dateLabel = plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Data não informada";
-      $("#execution-subtitle").textContent = [dateLabel, plan.serviceType, plan.location, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ");
+      $("#execution-subtitle").textContent = [dateLabel, plan.serviceType, plan.location, plan.contractorName && `Empreiteira: ${plan.contractorName}`, plan.foremanName && `Encarregado: ${plan.foremanName}`, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ");
       if (document.activeElement !== $("#execution-notes")) $("#execution-notes").value = plan.executionNotes || "";
-      $("#execution-notes").disabled = !executionAvailable;
+      $("#execution-notes").disabled = !executionAvailable || plan.status === "completed";
+      const canFinish = executionAvailable && isOperatorRole(currentProfile?.role) && plan.status !== "completed";
+      if (finishPanel) finishPanel.hidden = !canFinish;
+      if (finishButton) {
+        finishButton.disabled = false;
+        finishButton.textContent = "Finalizar execução";
+      }
+      if (plan.status === "completed" && finishFeedback) finishFeedback.textContent = "Execução finalizada e registrada no histórico.";
       renderSteps();
       renderDashboard();
       renderClock();
@@ -2546,6 +2614,10 @@
     });
     const { data: { session } } = await cloudClient.auth.getSession();
     currentUser = session?.user || null;
+    if (page === "password-recovery") {
+      passwordRecoveryPage();
+      return;
+    }
     if (page === "login") {
       if (currentUser) {
         const { data: profile } = await cloudClient.from("user_profiles").select("role,enabled").eq("id", currentUser.id).single();
@@ -2650,7 +2722,60 @@
       location.replace(landingPageForRole(profile.role));
     });
 
+    $("#forgot-password")?.addEventListener("click", async () => {
+      const email = form.email.value.trim();
+      if (!email || !form.email.checkValidity()) {
+        feedback.textContent = "Informe um e-mail válido para recuperar a senha.";
+        form.email.focus();
+        return;
+      }
+      const button = $("#forgot-password");
+      button.disabled = true;
+      feedback.textContent = "Solicitando recuperação…";
+      const redirectTo = new URL("recuperar-senha.html", location.href).href;
+      const { error } = await cloudClient.auth.resetPasswordForEmail(email, { redirectTo });
+      button.disabled = false;
+      feedback.textContent = error
+        ? "Não foi possível enviar o e-mail agora. Tente novamente em alguns minutos."
+        : "Se este e-mail pertence a uma conta ativa, você receberá um link para criar uma nova senha.";
+    });
+
     bindAccessRequestForm();
+  }
+
+  function passwordRecoveryPage() {
+    const form = $("#password-recovery-form");
+    const feedback = $("#password-recovery-feedback");
+    const submit = $("button[type='submit']", form);
+    const params = new URLSearchParams(location.search);
+    const hasRecoveryError = params.has("error") || params.has("error_code");
+    if (!currentUser || hasRecoveryError) {
+      form.hidden = true;
+      feedback.textContent = "Este link de recuperação é inválido ou expirou. Solicite um novo link na página de login.";
+      return;
+    }
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      if (form.password.value !== form.passwordConfirm.value) {
+        feedback.textContent = "As senhas informadas não são iguais.";
+        return;
+      }
+      submit.disabled = true;
+      submit.textContent = "Salvando nova senha…";
+      feedback.textContent = "";
+      const { error } = await cloudClient.auth.updateUser({ password: form.password.value });
+      if (error) {
+        feedback.textContent = error.message || "Não foi possível atualizar a senha.";
+        submit.disabled = false;
+        submit.textContent = "Criar nova senha";
+        return;
+      }
+      await cloudClient.auth.signOut();
+      form.hidden = true;
+      feedback.textContent = "Senha atualizada com sucesso. Você já pode entrar com a nova senha.";
+      $("#password-recovery-success").hidden = false;
+    });
   }
 
   // Solicitacao de acesso: registra o pedido e avisa o Editor. Nada e criado
@@ -2794,6 +2919,9 @@
       const plannedTotal = timeline.steps.reduce((sum, step) => sum + (step.duration || 0), 0);
       const elapsedInterval = intervalElapsedTime(timeline, nowAbs);
 
+      const liveState = $("#shared-live-state");
+      if (liveState) liveState.hidden = plan.status !== "executing";
+
       $("#shared-title").textContent = plan.title || "Intervalo sem nome";
       $("#shared-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
       $("#shared-updated").textContent = `Atualizado às ${new Date(metadata.fetched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
@@ -2808,7 +2936,8 @@
       }
       $("#shared-plan-summary").innerHTML = [
         ["Título", plan.title || "—"], ["Tipo", plan.serviceType || "—"], ["Data", plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
-        ["Local", plan.location || "—"], ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—"]
+        ["Local", plan.location || "—"], ["Empreiteira", plan.contractorName || "—"], ["Encarregado", plan.foremanName || "—"],
+        ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—"]
       ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
       $("#shared-planning-notes").textContent = plan.notes || "Nenhuma observação registrada.";
       $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
@@ -2818,6 +2947,7 @@
 
       const hasLate = execution.lateNow.length > 0 || execution.lateFinished.length > 0;
       const status = $("#shared-status");
+      status.hidden = plan.status !== "executing";
       status.className = `shared-status ${
         !showDeviation ? "status-neutral"
           : deviation > 0 ? "status-delay"

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
+  <meta name="description" content="Crie uma nova senha para a Gestão de Intervalo"><title>Gestão de Intervalo | Recuperar senha</title>
+  <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png"><link rel="stylesheet" href="styles.css?v=20260822-6">
+  <script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260822-9" defer></script>
+</head>
+<body data-page="password-recovery" class="login-page">
+  <main class="login-layout">
+    <div class="login-shell">
+      <section class="login-brand-panel">
+        <img src="assets/rumo-logo-white.png" alt="Rumo">
+        <div><p class="eyebrow">Gestão de Intervalo</p><h1>Recupere seu acesso com segurança.</h1><p>Defina uma nova senha para continuar usando sua conta ativa.</p></div>
+        <small>Via Permanente · Link pessoal e temporário</small>
+      </section>
+      <section class="login-form-panel">
+        <form class="login-card" id="password-recovery-form">
+          <header class="login-card-head"><div class="login-mark" aria-hidden="true">✓</div><div><p class="section-kicker">Nova senha</p><h2>Crie uma nova senha</h2></div></header>
+          <p class="login-note">Use ao menos 8 caracteres e não compartilhe sua senha.</p>
+          <div class="login-fields">
+            <label class="field field-wide"><span>Nova senha</span><input name="password" type="password" autocomplete="new-password" minlength="8" required autofocus></label>
+            <label class="field field-wide"><span>Confirmar nova senha</span><input name="passwordConfirm" type="password" autocomplete="new-password" minlength="8" required></label>
+          </div>
+          <button class="button button-secondary login-submit" type="submit">Criar nova senha</button>
+        </form>
+        <span class="login-feedback recovery-feedback" id="password-recovery-feedback" role="status" aria-live="polite"></span>
+        <p class="login-switch" id="password-recovery-success" hidden><a class="link-button" href="login.html">Voltar para o login</a></p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

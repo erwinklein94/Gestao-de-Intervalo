@@ -11,10 +11,10 @@
     />
     <title>Gestão de Intervalo | Execução</title>
     <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png" />
-<link rel="stylesheet" href="styles.css?v=20260822-5" />
+<link rel="stylesheet" href="styles.css?v=20260822-6" />
     <script src="assets/jszip.min.js" defer></script>
     <script src="assets/supabase.min.js" defer></script>
-<script src="app.js?v=20260822-8" defer></script>
+<script src="app.js?v=20260822-9" defer></script>
   </head>
   <body data-page="execution">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -162,6 +162,18 @@
               </form>
               <p class="comments-locked" id="execution-comments-locked" hidden>Comentários são permanentes após o encerramento do intervalo.</p>
             </div>
+          </section>
+
+          <section class="execution-finish-panel" id="execution-finish-panel" hidden aria-labelledby="execution-finish-title">
+            <div>
+              <span class="step-number light">04</span>
+              <div>
+                <h2 id="execution-finish-title">Encerrar o intervalo</h2>
+                <p>Finalize somente depois que todas as etapas estiverem concluídas ou marcadas como não executadas. O registro passará a fazer parte do histórico.</p>
+                <span id="finish-execution-feedback" role="status" aria-live="polite"></span>
+              </div>
+            </div>
+            <button class="button button-accent large" id="finish-execution-button" type="button">Finalizar execução</button>
           </section>
         </div>
       </section>

@@ -50,7 +50,7 @@ Deno.serve(async (request) => {
     const { data: realDataset } = await admin.from("datasets").select("id").eq("code", "real").eq("kind", "real").eq("active", true).maybeSingle();
     if (!realDataset) return json(origin, { error: "Serviço indisponível." }, 503);
     const { data: plan, error: planError } = await admin.from("interval_plans")
-      .select("id,dataset_id,coordinator_member_id,client_id,title,service_type,coordinator,interval_date,location,window_start,window_end,planning_notes,execution_notes,is_locked,locked_at,status,completed_at,created_at,updated_at,interval_steps(client_id,position,activity_name,planned_start,planned_end,actual_start,actual_end,actual_notes,status,skip_reason,updated_at)")
+      .select("id,dataset_id,coordinator_member_id,client_id,title,service_type,contractor_name,foreman_name,coordinator,interval_date,location,window_start,window_end,planning_notes,execution_notes,is_locked,locked_at,status,completed_at,created_at,updated_at,interval_steps(client_id,position,activity_name,planned_start,planned_end,actual_start,actual_end,actual_notes,status,skip_reason,updated_at)")
       .eq("id", share.plan_id).eq("dataset_id", realDataset.id).maybeSingle();
     if (planError) throw planError;
     if (!plan) return json(origin, { error: "Link inválido ou indisponível." }, 404);
