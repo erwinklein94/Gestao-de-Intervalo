@@ -203,8 +203,6 @@ a { color: inherit; }
 .button-accent { color: var(--blue); background: var(--lime); box-shadow: 0 8px 22px rgba(127,224,108,.18); }
 .button-accent:hover { background: #92eb80; }
 .button-light { color: var(--blue); background: var(--white); }
-.button-example { color: var(--blue); background: var(--yellow); }
-.button-example:hover { background: #ffe24c; }
 .button-secondary { color: var(--white); background: var(--green); }
 .button-secondary:hover { background: #178c70; }
 .button-ghost { border-color: var(--line); color: var(--blue); background: var(--white); }
@@ -713,17 +711,6 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .save-state[data-sync-state="syncing"]::before { background: var(--yellow); animation: state-pulse 1s infinite alternate; }
 @keyframes state-pulse { to { opacity: .35; } }
 
-.demo-banner {
-  position: sticky; z-index: 40; top: 0; min-height: 64px; padding: 10px max(24px, calc((100vw - 1280px) / 2));
-  display: flex; align-items: center; gap: 18px; color: var(--blue); background: var(--yellow); box-shadow: 0 8px 20px rgba(18,48,71,.13);
-}
-.demo-banner > div { display: grid; margin-right: auto; }
-.demo-banner strong { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
-.demo-banner span { font-size: 11px; opacity: .75; }
-.demo-banner label { display: flex; align-items: center; gap: 10px; font-size: 11px; font-weight: 700; }
-.demo-banner select { min-width: 250px; min-height: 40px; border: 1px solid rgba(0,56,101,.2); border-radius: 8px; background: white; }
-.demo-banner .button { min-height: 40px; }
-
 .management-hero, .admin-hero {
   min-height: 310px; padding: 64px max(24px, calc((100vw - 1280px) / 2)); color: white;
   display: flex; align-items: flex-end; justify-content: space-between; gap: 40px;
@@ -1054,7 +1041,6 @@ html[data-theme="dark"] .execution-step.is-active .execution-index,
 html[data-theme="dark"] .blocked-icon,
 html[data-theme="dark"] .dialog-mark,
 html[data-theme="dark"] .button-accent,
-html[data-theme="dark"] .button-example { color: #003865; }
 html[data-theme="dark"] .button-share-active { color: #bcebb2; border-color: #4d8f44; background: #173c2d; }
 html[data-theme="dark"] .share-active-card { color: #bcebb2; border-color: #4d8f44; background: #173c2d; }
 html[data-theme="dark"] .shared-header,
@@ -1335,9 +1321,6 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .site-header .header-tools { align-self: start; }
   .primary-nav a { min-width: 96px; min-height: 52px; }
   .save-state { display: none; }
-  .demo-banner { position: static; padding: 13px 16px; align-items: stretch; flex-direction: column; gap: 10px; }
-  .demo-banner label { display: grid; }
-  .demo-banner select { width: 100%; min-width: 0; }
   .management-hero, .admin-hero { min-height: auto; padding: 42px 18px; align-items: stretch; flex-direction: column; }
   .management-hero h1, .admin-hero h1 { font-size: 36px; }
   .hero-snapshot { min-width: 0; }

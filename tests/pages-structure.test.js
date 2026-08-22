@@ -21,9 +21,6 @@ assert.match(management, /<body[^>]*data-page="management"/);
 assert.ok(management.indexOf("assets/auth-guard.js") < management.indexOf("assets/portal.js"), "proteção de autenticação deve carregar antes do portal");
 includesAll(management, [
   "data-role-nav",
-  'id="demo-banner"',
-  'id="demo-persona"',
-  'id="exit-demo"',
   'id="delay-cards"',
   'id="infra-cards"',
   'id="super-cards"',
@@ -151,7 +148,6 @@ includesAll(styles, [
   ".interval-detail-dialog > div",
   "min-height: 0",
   "scrollbar-gutter: stable",
-  ".demo-banner",
   ".admin-form",
   ".admin-row",
   ".comments-list"

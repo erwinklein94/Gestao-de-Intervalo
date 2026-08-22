@@ -111,37 +111,6 @@
     };
   }
 
-  function examplePlan() {
-    const created = new Date().toISOString();
-    return {
-      id: uid(),
-      title: "Exemplo — Renovação de linha km 141+150",
-      serviceType: "Renovação de linha",
-      coordinator: "Coordenação de Via Permanente",
-      date: todayISO(),
-      location: "Linha Tronco — km 141+150",
-      windowStart: "08:00",
-      windowEnd: "12:00",
-      notes: "Plano demonstrativo para teste. Recursos previstos: equipe de via, equipamentos de pequeno porte e apoio operacional.",
-      executionNotes: "Execução demonstrativa: primeira frente liberada e equipe reposicionada para manter o ritmo do intervalo.",
-      locked: true,
-      lockedAt: created,
-      createdAt: created,
-      updatedAt: created,
-      isExample: true,
-      deletedStepIds: [],
-      structureDirty: false,
-      steps: [
-        { id: uid(), name: "DDS e liberação da frente de serviço", plannedStart: "08:00", plannedEnd: "08:15", actualStart: "08:02", actualEnd: "08:18", actualNotes: "DDS realizado com toda a equipe e frente liberada após confirmação da proteção." },
-        { id: uid(), name: "Desmontagem da grade existente", plannedStart: "08:15", plannedEnd: "09:00", actualStart: "08:18", actualEnd: "09:08", actualNotes: "Grade desmontada; houve cinco minutos adicionais para reposicionamento do equipamento." },
-        { id: uid(), name: "Regularização e preparação da plataforma", plannedStart: "09:00", plannedEnd: "09:45", actualStart: "09:08", actualEnd: "09:50", actualNotes: "Plataforma regularizada e liberada para o lançamento da nova grade." },
-        { id: uid(), name: "Lançamento e posicionamento da nova grade", plannedStart: "09:45", plannedEnd: "10:40", actualStart: "09:50", actualEnd: "", actualNotes: "Atividade em andamento no exemplo." },
-        { id: uid(), name: "Fixação, alinhamento e nivelamento", plannedStart: "10:40", plannedEnd: "11:30", actualStart: "", actualEnd: "", actualNotes: "" },
-        { id: uid(), name: "Inspeção final e liberação da via", plannedStart: "11:30", plannedEnd: "12:00", actualStart: "", actualEnd: "", actualNotes: "" }
-      ]
-    };
-  }
-
   function loadStore() {
     try {
       const parsed = JSON.parse(localStorage.getItem(activeStorageKey));
@@ -320,7 +289,6 @@
       executionNotes: row.execution_notes,
       locked: row.is_locked,
       lockedAt: row.locked_at,
-      isExample: row.is_example,
       coordinatorMemberId: row.coordinator_member_id,
       managerMemberId: row.manager_member_id,
       coordinatorType: row.coordinator_type,
@@ -1603,23 +1571,6 @@
       form.elements.title.focus();
     });
 
-    $("#example-plan-button")?.addEventListener("click", () => {
-      const existingExample = store.plans.find((plan) => plan.isExample);
-      if (existingExample) {
-        store.activePlanId = existingExample.id;
-        persist(true);
-        renderForm();
-        showToast("Exemplo existente selecionado. Abra a execução para testar.");
-        return;
-      }
-      const plan = examplePlan();
-      store.plans.push(plan);
-      store.activePlanId = plan.id;
-      persist(true);
-      renderForm();
-      showToast("Exemplo criado com execução parcial. Clique em “Abrir execução”.");
-    });
-
     $("#duplicate-plan-button").addEventListener("click", () => {
       const source = activePlan();
       const copy = structuredClone(source);
@@ -2479,7 +2430,7 @@
       .order("updated_at", { ascending: false });
     if (error) throw error;
     if (!data.length) {
-      const first = store.plans.find((plan) => !plan.isExample) || blankPlan();
+      const first = store.plans[0] || blankPlan();
       store = { version: 4, activePlanId: first.id, plans: [first], deletedPlanIds: [], pendingSync: false };
       writeStoreLocally();
       return;
@@ -2566,6 +2517,7 @@
       return;
     }
 
+    // Limpeza de sessoes antigas: o ambiente de exemplos nao existe mais.
     sessionStorage.removeItem("gestaoIntervaloRumo.dataset");
     sessionStorage.removeItem("gestaoIntervaloRumo.demoPersona");
     renderRoleNavigation();
@@ -2583,7 +2535,7 @@
       // Migra com segurança os dados da versão anterior, que ainda usava uma chave local única.
       store.pendingSync = true;
       normalizeStore(store);
-      store.plans.filter((plan) => !plan.isExample).forEach((plan) => { plan.ownerId ||= currentUser.id; dirtyPlanIds.add(plan.id); });
+      store.plans.forEach((plan) => { plan.ownerId ||= currentUser.id; dirtyPlanIds.add(plan.id); });
       writeStoreLocally();
     } else {
       const first = blankPlan();
@@ -2591,7 +2543,7 @@
       writeStoreLocally();
     }
 
-    $("#example-plan-button")?.remove();
+    // Descarta o plano de exemplo que versoes anteriores deixaram no navegador.
     const hadExamples = store.plans.some((plan) => plan.isExample);
     store.plans = store.plans.filter((plan) => !plan.isExample);
     if (!store.plans.length) store.plans = [blankPlan()];
@@ -2652,10 +2604,8 @@
     const token = params.get("token") || "";
     const requestedPlanId = params.get("plan") || "";
     const requestedView = params.get("view") || "plan";
-    const demoPersonaId = params.get("persona") || "";
     const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const internalMode = Boolean(requestedPlanId);
-    const demoMode = internalMode && params.get("dataset") === "demo";
     const loading = $("#shared-loading");
     const errorPanel = $("#shared-error");
     const content = $("#shared-content");
@@ -2724,7 +2674,7 @@
       if (metadata.access_mode === "profile") {
         $("#shared-access-title").textContent = "Acesso conforme o seu perfil";
         $("#shared-access-description").textContent = "Página completa somente para consulta, com os mesmos limites de acesso da visão gerencial.";
-        $("#shared-expiry").textContent = demoMode ? "Ambiente de demonstração" : "Sessão autenticada";
+        $("#shared-expiry").textContent = "Sessão autenticada";
       } else {
         $("#shared-access-title").textContent = "Acesso somente para consulta";
         $("#shared-access-description").textContent = "Este link não permite alterar planejamento, horários ou registros. Solicite ao coordenador um novo link caso este expire.";
@@ -2867,12 +2817,9 @@
     async function loadInternalPlan() {
       if (!window.supabase?.createClient) throw new Error("Biblioteca de autenticação indisponível.");
       if (!UUID_PATTERN.test(requestedPlanId)) throw new Error("O endereço não contém um intervalo válido.");
-      if (demoMode && !UUID_PATTERN.test(demoPersonaId)) throw new Error("A persona de demonstração não é válida.");
       if (!internalClient) {
-        const headers = demoMode ? { "x-dataset-context": "demo", "x-demo-persona-id": demoPersonaId } : {};
         internalClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-          global: { headers }
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
         });
       }
       if (!internalUserVerified) {
@@ -3107,16 +3054,10 @@
     }
     if (currentProfile.role === "editor") {
       // Visao gerencial e Historico saem: o Editor nao acompanha intervalos da
-      // operacao real. Restam Administracao e o ambiente de exemplos.
+      // operacao real. Resta a Administracao.
       $("#account-primary-link").hidden = true;
       $("#account-history-link").hidden = true;
       $("#account-admin-link").hidden = false;
-      $("#account-examples").hidden = false;
-      $("#account-examples").addEventListener("click", () => {
-        sessionStorage.setItem("gestaoIntervaloRumo.dataset", "demo");
-        sessionStorage.removeItem("gestaoIntervaloRumo.demoPersona");
-        location.assign("gestao.html");
-      });
     }
     $("#account-sign-out").addEventListener("click", async () => {
       await cloudClient.auth.signOut();

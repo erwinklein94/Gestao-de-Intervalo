@@ -4,8 +4,6 @@
   const SUPABASE_URL = "https://rzsybguxlueorjpsstmu.supabase.co";
   const SUPABASE_KEY = "sb_publishable_sHHGnU3rob-unvk-_CCdcA_Ut4omY23";
   const THEME_KEY = "gestaoIntervaloRumo.theme";
-  const DEMO_KEY = "gestaoIntervaloRumo.dataset";
-  const PERSONA_KEY = "gestaoIntervaloRumo.demoPersona";
   const ROLE_LABELS = {
     director: "Diretor", executive_manager: "Gerente Executivo",
     consultant: "Consultor", manager: "Gerente",
@@ -156,8 +154,6 @@
   let currentUser;
   let actualProfile;
   let effectiveProfile;
-  let demoMode = false;
-  let personas = [];
   let plans = [];
   let members = [];
   let managerAssignments = [];
@@ -212,9 +208,7 @@
     if (!nav) return;
     const page = document.body.dataset.page;
     let links;
-    if (demoMode) {
-      links = [["gestao.html", "Gestão", "management"]];
-    } else if (["coordinator", "specialist"].includes(role)) {
+    if (["coordinator", "specialist"].includes(role)) {
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (role === "editor") {
       // O Editor administra o sistema; nao planeja nem executa intervalos.
@@ -228,24 +222,9 @@
     nav.innerHTML = links.map(([href, label, target], index) => `<a href="${href}" class="${page === target ? "active" : ""}" ${page === target ? 'aria-current="page"' : ""}><span>${index + 1}</span>${escapeHtml(label)}</a>`).join("");
   }
 
-  async function configureContext() {
-    demoMode = sessionStorage.getItem(DEMO_KEY) === "demo" && actualProfile.role === "editor";
-    if (!demoMode) {
-      sessionStorage.removeItem(DEMO_KEY);
-      sessionStorage.removeItem(PERSONA_KEY);
-      dataClient = baseClient;
-      effectiveProfile = actualProfile;
-      return;
-    }
-    const demoBootstrapClient = createClient({ "x-dataset-context": "demo" });
-    const { data, error } = await demoBootstrapClient.rpc("list_demo_personas");
-    if (error) throw error;
-    personas = data || [];
-    const selected = sessionStorage.getItem(PERSONA_KEY);
-    effectiveProfile = personas.find((persona) => persona.id === selected) || personas.find((persona) => persona.role === "editor") || personas[0];
-    if (!effectiveProfile) throw new Error("Nenhuma persona de demonstração disponível.");
-    sessionStorage.setItem(PERSONA_KEY, effectiveProfile.id);
-    dataClient = createClient({ "x-dataset-context": "demo", "x-demo-persona-id": effectiveProfile.id });
+  function configureContext() {
+    dataClient = baseClient;
+    effectiveProfile = actualProfile;
   }
 
   function decoratePlans(rows) {
@@ -491,8 +470,7 @@
   }
 
   function commentMarkup(comment, plan) {
-    const canDelete = !demoMode
-      && ["coordinator", "specialist", "editor"].includes(actualProfile.role)
+    const canDelete = ["coordinator", "specialist", "editor"].includes(actualProfile.role)
       && plan.status === "executing"
       && !comment.deleted_at
       && comment.author_user_id === currentUser.id;
@@ -508,10 +486,9 @@
   function executionTabMarkup(plan) {
     const metrics = intervalMetrics(plan);
     const comments = plan.interval_comments || [];
-    const canComment = !demoMode
-      && plan.status === "executing"
+    const canComment = plan.status === "executing"
       && (actualProfile.role === "editor" || (["coordinator", "specialist"].includes(actualProfile.role) && plan.user_id === currentUser.id));
-    return `<div class="detail-status ${metrics.deadline}">${deadlineMarkup(metrics)}<strong>${metrics.progress}% concluído</strong><span>${metrics.resolved} de ${metrics.steps.length} etapas encerradas</span></div><div class="detail-step-list execution-readonly">${metrics.steps.map((step, index) => `<article><span>${isResolved(step) ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado ${escapeHtml(stampLabel(step.planned_start, plan.interval_date))}–${escapeHtml(stampLabel(step.planned_end, plan.interval_date))} · Realizado ${escapeHtml(stampLabel(step.actual_start, plan.interval_date))}–${escapeHtml(stampLabel(step.actual_end, plan.interval_date))}</small>${step.actual_notes ? `<p>${escapeHtml(String(step.actual_notes).replace(/^\[\[ETAPA_NAO_EXECUTADA\]\]\s*/, "Não executada · "))}</p>` : ""}</div></article>`).join("") || emptyMarkup("Nenhuma etapa registrada.")}</div><article class="detail-note"><span>Registro geral da execução</span><p>${escapeHtml(plan.execution_notes || "Nenhuma observação registrada.")}</p></article><section class="comments-panel"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span>${comments.filter((comment) => !comment.deleted_at).length}</span></header><div class="comments-list">${comments.map((comment) => commentMarkup(comment, plan)).join("") || emptyMarkup("Ainda não há comentários neste intervalo.")}</div>${canComment ? '<form id="detail-comment-form"><label class="field"><span>Novo comentário</span><textarea name="content" maxlength="2000" rows="3" required placeholder="Registre uma atualização relevante"></textarea></label><button class="button button-secondary" type="submit">Adicionar comentário</button><span class="auth-feedback"></span></form>' : `<p class="comments-locked">${demoMode ? "Comentários desativados no ambiente de exemplos." : "Após o encerramento, os comentários tornam-se permanentes."}</p>`}</section>`;
+    return `<div class="detail-status ${metrics.deadline}">${deadlineMarkup(metrics)}<strong>${metrics.progress}% concluído</strong><span>${metrics.resolved} de ${metrics.steps.length} etapas encerradas</span></div><div class="detail-step-list execution-readonly">${metrics.steps.map((step, index) => `<article><span>${isResolved(step) ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado ${escapeHtml(stampLabel(step.planned_start, plan.interval_date))}–${escapeHtml(stampLabel(step.planned_end, plan.interval_date))} · Realizado ${escapeHtml(stampLabel(step.actual_start, plan.interval_date))}–${escapeHtml(stampLabel(step.actual_end, plan.interval_date))}</small>${step.actual_notes ? `<p>${escapeHtml(String(step.actual_notes).replace(/^\[\[ETAPA_NAO_EXECUTADA\]\]\s*/, "Não executada · "))}</p>` : ""}</div></article>`).join("") || emptyMarkup("Nenhuma etapa registrada.")}</div><article class="detail-note"><span>Registro geral da execução</span><p>${escapeHtml(plan.execution_notes || "Nenhuma observação registrada.")}</p></article><section class="comments-panel"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span>${comments.filter((comment) => !comment.deleted_at).length}</span></header><div class="comments-list">${comments.map((comment) => commentMarkup(comment, plan)).join("") || emptyMarkup("Ainda não há comentários neste intervalo.")}</div>${canComment ? '<form id="detail-comment-form"><label class="field"><span>Novo comentário</span><textarea name="content" maxlength="2000" rows="3" required placeholder="Registre uma atualização relevante"></textarea></label><button class="button button-secondary" type="submit">Adicionar comentário</button><span class="auth-feedback"></span></form>' : `<p class="comments-locked">Após o encerramento, os comentários tornam-se permanentes.</p>`}</section>`;
   }
 
   function dashboardTabMarkup(plan) {
@@ -545,10 +522,6 @@
     const link = new URL("acompanhar.html", location.href);
     link.searchParams.set("plan", plan.id);
     link.searchParams.set("view", ["plan", "execution", "dashboard"].includes(view) ? view : "plan");
-    if (demoMode) {
-      link.searchParams.set("dataset", "demo");
-      link.searchParams.set("persona", effectiveProfile.id);
-    }
     return link.href;
   }
 
@@ -557,8 +530,7 @@
     if (!plan) return;
     const dialog = $("#interval-detail");
     const root = $("#interval-detail-content");
-    const shareAllowed = !demoMode
-      && ["editor", "coordinator", "specialist"].includes(actualProfile.role)
+    const shareAllowed = ["editor", "coordinator", "specialist"].includes(actualProfile.role)
       && plan.user_id === currentUser.id;
     root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Prévia do acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header><div class="detail-full-page-bar"><span><strong>Quer ver todos os detalhes?</strong><small>Abra o acompanhamento completo com plano, execução e dashboard.</small></span><a class="button button-secondary" data-full-tracking-link href="${escapeHtml(fullTrackingUrl(plan, initialTab))}">Abrir página completa <i aria-hidden="true">↗</i></a></div><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link público temporário</button><span class="auth-feedback"></span></div>' : ""}</div>`;
     const activate = (tab) => {
@@ -641,14 +613,6 @@
     $(".management-workspace").addEventListener("click", (event) => { const card = event.target.closest("[data-plan-detail]"); if (card) openPlanDetail(card.dataset.planDetail); });
     $("#interval-detail").addEventListener("click", (event) => { if (event.target === event.currentTarget) event.currentTarget.close(); });
 
-    if (demoMode) {
-      $("#demo-banner").hidden = false;
-      const selector = $("#demo-persona");
-      const managerById = new Map(personas.map((persona) => [persona.id, persona.full_name]));
-      selector.innerHTML = personas.map((persona) => `<option value="${persona.id}" ${persona.id === effectiveProfile.id ? "selected" : ""}>${escapeHtml(ROLE_LABELS[persona.role])} · ${escapeHtml(persona.full_name)}${persona.manager_id ? ` · ${escapeHtml(managerById.get(persona.manager_id) || "")}` : ""}</option>`).join("");
-      selector.addEventListener("change", () => { sessionStorage.setItem(PERSONA_KEY, selector.value); location.reload(); });
-      $("#exit-demo").addEventListener("click", () => { sessionStorage.removeItem(DEMO_KEY); sessionStorage.removeItem(PERSONA_KEY); location.replace("gestao.html"); });
-    }
     setInterval(async () => { if (document.hidden) return; try { await loadScopedData(); renderManagement(); } catch (error) { console.warn(error); setState("Erro ao atualizar", "error"); } }, 15000);
   }
 
@@ -949,16 +913,15 @@
     const { data: profile, error } = await baseClient.from("user_profiles").select("id,email,full_name,role,enabled,manager_id,coordinator_type,organization_member_id").eq("id", currentUser.id).single();
     if (error || !profile?.enabled) { await baseClient.auth.signOut(); location.replace("login.html?status=disabled"); return; }
     actualProfile = profile;
-    await configureContext();
+    configureContext();
     if (!roleCapabilities(effectiveProfile.role).canUseManagement) { location.replace("conta.html"); return; }
     renderNavigation(effectiveProfile.role);
     if (document.body.dataset.page === "admin") {
-      if (actualProfile.role !== "editor" || demoMode) { location.replace("gestao.html"); return; }
+      if (actualProfile.role !== "editor") { location.replace("gestao.html"); return; }
       await initializeAdmin();
     } else {
-      // A Gestao so cabe ao Editor dentro do ambiente de exemplos; na operacao
-      // real o lugar dele e a Administracao.
-      if (actualProfile.role === "editor" && !demoMode) { location.replace("admin.html"); return; }
+      // O Editor administra o sistema; a Gestao nao lhe cabe.
+      if (actualProfile.role === "editor") { location.replace("admin.html"); return; }
       await initializeManagement();
     }
     document.documentElement.classList.remove("auth-checking");
