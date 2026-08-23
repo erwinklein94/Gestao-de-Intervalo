@@ -106,7 +106,13 @@ includesAll(read("app.js"), [
 ], "Minha Conta deve preencher a função flexionada sem interromper os demais dados");
 
 const planning = read("index.html");
-includesAll(planning, ['name="coordinator"', 'id="export-button"', 'id="export-plan-pdf"'], "responsável e exportações do planejamento");
+includesAll(planning, [
+  'name="coordinator"',
+  'id="export-button"',
+  'id="export-plan-pdf"',
+  'id="front-strip"',
+  'name="frontName"'
+], "responsável, frentes e exportações do planejamento");
 assert.ok(!planning.includes("SUB"), "planejamento não deve exigir SUB");
 
 const execution = read("executar.html");
@@ -118,8 +124,12 @@ includesAll(execution, [
   'id="execution-comments-locked"',
   'id="export-execution-xlsx"',
   'id="print-button"',
-  'assets/jszip.min.js'
-], "comentários da execução");
+  'assets/jszip.min.js',
+  'id="front-strip"',
+  'id="weather-choices"',
+  'id="execution-silence"',
+  'id="closing-fronts"'
+], "comentários, frentes, clima e encerramento da execução");
 
 const dashboard = read("dashboard.html");
 includesAll(dashboard, ['id="export-dashboard-xlsx"', 'id="export-dashboard-pdf"', 'assets/jszip.min.js'], "exportações do dashboard");
@@ -156,7 +166,13 @@ includesAll(styles, [
   "scrollbar-gutter: stable",
   ".admin-form",
   ".admin-row",
-  ".comments-list"
+  ".comments-list",
+  ".front-tab",
+  ".weather-chip",
+  ".silence-chip",
+  ".card-silence",
+  ".closing-fronts",
+  ".management-tabs button .tab-badge"
 ], "estilos dos componentes novos");
 includesAll(styles, [
   "grid-template-columns: repeat(auto-fit, minmax(92px, 1fr))",

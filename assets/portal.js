@@ -32,6 +32,10 @@
   const SINGLE_CLASSIFICATION_ROLES = ["coordinator", "specialist"];
   const ORG_ROLE_ORDER = ["editor", "director", "executive_manager", "consultant", "manager", "coordinator", "specialist"];
   const STATUS_LABELS = { planning: "Planejamento", executing: "Em execução", completed: "Concluído", cancelled: "Cancelado" };
+  const WEATHER_LABELS = {
+    clear: "Bom", cloudy: "Nublado", drizzle: "Garoa", rain: "Chuva", storm: "Chuva forte",
+    fog: "Neblina", wind: "Vento forte", heat: "Calor extremo", cold: "Frio intenso"
+  };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
@@ -126,6 +130,77 @@
     return { steps, resolved, progress, variance: variance == null ? null : Math.round(variance), deadline };
   }
 
+  // ---------------------------------------------------------------------------
+  // Frentes: um bloqueio da via pode ter varios servicos correndo em paralelo.
+  // Cada frente e uma linha de interval_plans; o group_id as reune de volta no
+  // intervalo que a gestao enxerga. Contar frentes como intervalos inflaria
+  // todo indicador desta tela.
+  // ---------------------------------------------------------------------------
+  const SILENCE_MINUTES = 20;
+
+  function stampEpoch(value) {
+    if (!value) return null;
+    const parsed = Date.parse(String(value).replace(" ", "T"));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function lastActivityEpoch(plan) {
+    const marks = [stampEpoch(plan.updated_at)];
+    (plan.interval_steps || []).forEach((step) => {
+      marks.push(stampEpoch(step.actual_start));
+      marks.push(stampEpoch(step.actual_end));
+    });
+    (plan.interval_comments || []).forEach((comment) => marks.push(stampEpoch(comment.created_at)));
+    const valid = marks.filter(Number.isFinite);
+    return valid.length ? Math.max(...valid) : null;
+  }
+
+  function frontLabel(plan, index) {
+    return String(plan.front_name || "").trim() || `Frente ${index + 1}`;
+  }
+
+  function groupPlans(plans) {
+    const byGroup = new Map();
+    plans.forEach((plan) => {
+      const key = plan.group_id || plan.id;
+      if (!byGroup.has(key)) byGroup.set(key, []);
+      byGroup.get(key).push(plan);
+    });
+    return [...byGroup.entries()].map(([id, fronts]) => {
+      fronts.sort((a, b) => (a.front_position || 1) - (b.front_position || 1)
+        || String(a.created_at).localeCompare(String(b.created_at)));
+      return { id, fronts, lead: fronts[0] };
+    });
+  }
+
+  // O intervalo herda a pior leitura das suas frentes: quem esta atrasado e o
+  // bloqueio, ainda que apenas uma frente esteja segurando a devolucao.
+  function groupMetrics(group, now = new Date()) {
+    const parts = group.fronts.map((plan) => intervalMetrics(plan, now));
+    const steps = parts.reduce((sum, part) => sum + part.steps.length, 0);
+    const resolved = parts.reduce((sum, part) => sum + part.resolved, 0);
+    const variances = parts.map((part) => part.variance).filter(Number.isFinite);
+    const variance = variances.length ? Math.max(...variances) : null;
+    const status = group.fronts.every((plan) => plan.status === "completed")
+      ? "completed"
+      : group.fronts.some((plan) => plan.status === "executing")
+        ? "executing"
+        : group.fronts.every((plan) => plan.status === "cancelled")
+          ? "cancelled"
+          : "planning";
+    const activity = group.fronts.map(lastActivityEpoch).filter(Number.isFinite);
+    const lastActivity = activity.length ? Math.max(...activity) : null;
+    const silence = status === "executing" && lastActivity != null
+      ? Math.floor((now.getTime() - lastActivity) / 60000)
+      : null;
+    return {
+      parts, steps, resolved, variance, status,
+      progress: steps ? Math.round((resolved / steps) * 100) : 0,
+      deadline: variance == null || Math.abs(variance) < 1 ? "ontime" : variance > 0 ? "late" : "ahead",
+      silence: silence != null && silence >= SILENCE_MINUTES ? silence : null
+    };
+  }
+
   function filterPlans(plans, filters) {
     const query = String(filters.query || "").trim().toLocaleLowerCase("pt-BR");
     return plans.filter((plan) => {
@@ -162,7 +237,11 @@
   }
 
   if (window.__GESTAO_TEST_MODE__) {
-    window.__GESTAO_PORTAL_TEST_API__ = { stampMinutes, stampLabel, intervalMetrics, filterPlans, roleScopeDescription, roleCapabilities, managementSummary, exportManagementToXlsx };
+    window.__GESTAO_PORTAL_TEST_API__ = {
+      stampMinutes, stampLabel, intervalMetrics, filterPlans, roleScopeDescription,
+      roleCapabilities, managementSummary, exportManagementToXlsx,
+      groupPlans, groupMetrics, frontLabel, lastActivityEpoch, SILENCE_MINUTES
+    };
     return;
   }
 
@@ -300,17 +379,23 @@
     return '<span class="deadline ontime">No prazo</span>';
   }
 
-  function cardMarkup(plan) {
-    const metrics = intervalMetrics(plan);
+  function cardMarkup(group) {
+    const plan = group.lead;
+    const metrics = groupMetrics(group);
     const date = plan.interval_date ? new Date(`${plan.interval_date}T12:00:00`).toLocaleDateString("pt-BR") : "Sem data";
-    return `<button class="interval-card ${metrics.deadline === "late" ? "is-late" : metrics.deadline === "ahead" ? "is-ahead" : "is-on-time"}" type="button" data-plan-detail="${escapeHtml(plan.id)}">
-      <span class="interval-card-top"><b>${escapeHtml(STATUS_LABELS[plan.status] || plan.status)}</b><i>${escapeHtml(TYPE_LABELS[plan.coordinator_type] || "Sem classificação")}</i></span>
+    const services = [...new Set(group.fronts.map((front) => front.service_type).filter(Boolean))];
+    const fronts = group.fronts.length > 1 ? `<i class="tag-fronts">${group.fronts.length} frentes</i>` : "";
+    const silence = metrics.silence != null
+      ? `<span class="card-silence" title="A última movimentação registrada neste intervalo foi há ${formatMinutes(metrics.silence)}. Silêncio prolongado costuma indicar problema em campo.">Sem atualização há ${escapeHtml(formatMinutes(metrics.silence))}</span>`
+      : "";
+    return `<button class="interval-card ${metrics.deadline === "late" ? "is-late" : metrics.deadline === "ahead" ? "is-ahead" : "is-on-time"}${metrics.silence != null ? " is-silent" : ""}" type="button" data-plan-detail="${escapeHtml(plan.id)}">
+      <span class="interval-card-top"><b>${escapeHtml(STATUS_LABELS[metrics.status] || metrics.status)}</b><i>${escapeHtml(TYPE_LABELS[plan.coordinator_type] || "Sem classificação")}</i></span>
       <strong class="interval-card-title">${escapeHtml(plan.title || "Intervalo sem título")}</strong>
       <span class="interval-card-location">${escapeHtml(plan.location || "Local não informado")} · ${date}</span>
       <span class="interval-card-people"><small>Gerente</small><b>${escapeHtml(plan.managerName)}</b><small>Responsável</small><b>${escapeHtml(plan.coordinatorName)}</b></span>
-      <span class="interval-card-tags"><i>${escapeHtml(plan.service_type || "Tipo não informado")}</i><i>${escapeHtml(stampLabel(plan.window_start, plan.interval_date))}–${escapeHtml(stampLabel(plan.window_end, plan.interval_date))}</i></span>
+      <span class="interval-card-tags"><i>${escapeHtml(services.join(" · ") || "Tipo não informado")}</i><i>${escapeHtml(stampLabel(plan.window_start, plan.interval_date))}–${escapeHtml(stampLabel(plan.window_end, plan.interval_date))}</i>${fronts}</span>
       <span class="interval-card-progress"><span><i style="width:${metrics.progress}%"></i></span><b>${metrics.progress}%</b></span>
-      ${deadlineMarkup(metrics)}
+      ${deadlineMarkup(metrics)}${silence}
     </button>`;
   }
 
@@ -339,9 +424,12 @@
     const superstructure = filtered.filter((plan) => plan.coordinator_type === "superstructure").length;
     const modernization = filtered.filter((plan) => plan.coordinator_type === "modernization").length;
     const average = completedMetrics.filter((metric) => metric.variance != null).reduce((sum, metric, _, all) => sum + metric.variance / all.length, 0);
+    // Um bloqueio com duas frentes e um intervalo, nao dois.
+    const intervals = new Set(filtered.map((plan) => plan.group_id || plan.id)).size;
+    const executingIntervals = new Set(filtered.filter((plan) => plan.status === "executing").map((plan) => plan.group_id || plan.id)).size;
     const kpis = [
-      ["Total de intervalos", filtered.length, "No período e filtros atuais"],
-      ["Em execução", filtered.filter((plan) => plan.status === "executing").length, "Frentes simultâneas"],
+      ["Total de intervalos", intervals, filtered.length === intervals ? "No período e filtros atuais" : `${filtered.length} frentes no período`],
+      ["Em execução", executingIntervals, "Bloqueios abertos agora"],
       ["Dentro do prazo", within, completed.length ? `${Math.round(within / completed.length * 100)}% dos concluídos` : "Sem concluídos"],
       ["Fora do prazo", late, completed.length ? `${Math.round(late / completed.length * 100)}% dos concluídos` : "Sem concluídos"],
       ["Atraso médio", completedMetrics.length ? formatMinutes(Math.max(0, average)) : "—", "Entre os concluídos"],
@@ -354,7 +442,7 @@
     renderBars($("#service-chart"), serviceCounts.map(([label, value]) => ({ label, value })));
     const recent = completed.slice().sort((a, b) => String(b.interval_date).localeCompare(String(a.interval_date))).slice(0, 8);
     $("#trend-chart").innerHTML = recent.length ? recent.map((plan) => { const metric = intervalMetrics(plan); return `<button type="button" data-plan-detail="${plan.id}"><span><strong>${escapeHtml(plan.title)}</strong><small>${escapeHtml(plan.interval_date || "Sem data")} · ${escapeHtml(plan.coordinatorName)}</small></span>${deadlineMarkup(metric)}</button>`; }).join("") : emptyMarkup("Conclua intervalos para formar a tendência.");
-    setCount("overview", filtered.length, "intervalo");
+    setCount("overview", intervals, "intervalo");
   }
 
   function selectedFilterSummary() {
@@ -386,10 +474,12 @@
       result[key] = (result[key] || 0) + 1;
       return result;
     }, {})).sort((a, b) => b[1] - a[1]);
+    const intervals = new Set(filtered.map((plan) => plan.group_id || plan.id)).size;
     const kpis = [
-      ["Total de intervalos", filtered.length],
-      ["Em execução", filtered.filter((plan) => plan.status === "executing").length],
-      ["Concluídos", completed.length],
+      ["Total de intervalos", intervals],
+      ["Frentes de serviço", filtered.length],
+      ["Em execução", new Set(filtered.filter((plan) => plan.status === "executing").map((plan) => plan.group_id || plan.id)).size],
+      ["Concluídos", new Set(completed.map((plan) => plan.group_id || plan.id)).size],
       ["Dentro do prazo", onTime + ahead],
       ["Fora do prazo", late],
       ["Atraso médio (min)", averageDelay]
@@ -420,11 +510,21 @@
     rows.push(`<row r="${dataHeaderRow - 1}" ht="24" customHeight="1">${excelCell(1, dataHeaderRow - 1, "DADOS DOS INTERVALOS", 2)}</row>`);
     const headers = ["Título", "Data", "Status", "Situação do prazo", "Desvio (min)", "Progresso (%)", "Gerente", "Responsável", "Classificação", "Tipo", "Local", "Janela"];
     rows.push(`<row r="${dataHeaderRow}" ht="28" customHeight="1">${headers.map((header, index) => excelCell(index + 1, dataHeaderRow, header, 4)).join("")}</row>`);
+    // Cada linha e uma frente; o titulo carrega o nome dela quando o bloqueio
+    // tem mais de uma, para as linhas nao parecerem duplicadas.
+    const groupSizes = filtered.reduce((result, plan) => {
+      const key = plan.group_id || plan.id;
+      result[key] = (result[key] || 0) + 1;
+      return result;
+    }, {});
     filtered.forEach((plan, index) => {
       const row = dataStartRow + index;
       const metrics = intervalMetrics(plan);
       const deadline = metrics.variance == null || metrics.variance === 0 ? "No prazo" : metrics.variance > 0 ? "Em atraso" : "Adiantado";
-      const values = [plan.title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${stampLabel(plan.window_start, plan.interval_date)}-${stampLabel(plan.window_end, plan.interval_date)}`];
+      const title = groupSizes[plan.group_id || plan.id] > 1
+        ? `${plan.title || ""} · ${frontLabel(plan, (plan.front_position || 1) - 1)}`
+        : plan.title;
+      const values = [title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${stampLabel(plan.window_start, plan.interval_date)}-${stampLabel(plan.window_end, plan.interval_date)}`];
       rows.push(`<row r="${row}" ht="25" customHeight="1">${values.map((value, column) => excelCell(column + 1, row, value, [0, 9, 10].includes(column) ? 9 : 5)).join("")}</row>`);
     });
     const lastRow = Math.max(dataHeaderRow, dataStartRow + filtered.length - 1);
@@ -469,20 +569,53 @@
     setTimeout(() => window.print(), 80);
   }
 
+  // Um numero discreto sobre a aba "Em execução": quantos intervalos em
+  // andamento estao atrasados agora. E a resposta a pergunta que o gerente
+  // faria ao abrir a tela, dada antes de ele precisar procurar.
+  function renderDelayBadge(count) {
+    const button = $('[data-view-button="running"]');
+    if (!button) return;
+    let badge = $(".tab-badge", button);
+    if (!count) {
+      badge?.remove();
+      button.removeAttribute("title");
+      button.removeAttribute("aria-describedby");
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "tab-badge";
+      badge.id = "running-delay-badge";
+      button.appendChild(badge);
+    }
+    const texto = count === 1
+      ? "1 intervalo em execução está em atraso agora."
+      : `${count} intervalos em execução estão em atraso agora.`;
+    badge.textContent = count > 99 ? "99+" : String(count);
+    badge.title = `${texto} Abra “Em execução” para ver quais.`;
+    badge.setAttribute("aria-label", texto);
+    button.title = badge.title;
+    button.setAttribute("aria-describedby", "running-delay-badge");
+  }
+
   function renderManagement() {
     const filtered = filterPlans(plans, currentFilters());
-    const running = filtered.filter((plan) => plan.status === "executing");
-    const history = filtered.filter((plan) => plan.status === "completed").sort((a, b) => String(b.interval_date).localeCompare(String(a.interval_date)));
-    const infra = running.filter((plan) => plan.coordinator_type === "infrastructure");
-    const superstructure = running.filter((plan) => plan.coordinator_type === "superstructure");
-    const modernization = running.filter((plan) => plan.coordinator_type === "modernization");
+    const groups = groupPlans(filtered).map((group) => ({ ...group, metrics: groupMetrics(group) }));
+    const running = groups.filter((group) => group.metrics.status === "executing");
+    const history = groups.filter((group) => group.metrics.status === "completed")
+      .sort((a, b) => String(b.lead.interval_date).localeCompare(String(a.lead.interval_date)));
+    const byType = (type) => running.filter((group) => group.lead.coordinator_type === type);
+    const infra = byType("infrastructure");
+    const superstructure = byType("superstructure");
+    const modernization = byType("modernization");
     $("#infra-cards").innerHTML = infra.length ? infra.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Infraestrutura em execução.");
     $("#super-cards").innerHTML = superstructure.length ? superstructure.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Superestrutura em execução.");
     $("#modernization-cards").innerHTML = modernization.length ? modernization.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Modernização em execução.");
     $("#history-cards").innerHTML = history.length ? history.map(cardMarkup).join("") : emptyMarkup("Nenhum intervalo concluído corresponde aos filtros.");
     setCount("running", running.length);
     setCount("history", history.length);
-    $("#hero-live-count").textContent = plans.filter((plan) => plan.status === "executing").length;
+    renderDelayBadge(running.filter((group) => group.metrics.variance > 0).length);
+    $("#hero-live-count").textContent = groupPlans(plans).filter((group) => groupMetrics(group).status === "executing").length;
     renderOverview(filtered);
   }
 
@@ -505,7 +638,18 @@
     const comments = plan.interval_comments || [];
     const canComment = plan.status === "executing"
       && (actualProfile.role === "editor" || (["manager", "coordinator", "specialist"].includes(actualProfile.role) && plan.user_id === currentUser.id));
-    return `<div class="detail-status ${metrics.deadline}">${deadlineMarkup(metrics)}<strong>${metrics.progress}% concluído</strong><span>${metrics.resolved} de ${metrics.steps.length} etapas encerradas</span></div><div class="detail-step-list execution-readonly">${metrics.steps.map((step, index) => `<article><span>${isResolved(step) ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado ${escapeHtml(stampLabel(step.planned_start, plan.interval_date))}–${escapeHtml(stampLabel(step.planned_end, plan.interval_date))} · Realizado ${escapeHtml(stampLabel(step.actual_start, plan.interval_date))}–${escapeHtml(stampLabel(step.actual_end, plan.interval_date))}</small>${step.actual_notes ? `<p>${escapeHtml(String(step.actual_notes).replace(/^\[\[ETAPA_NAO_EXECUTADA\]\]\s*/, "Não executada · "))}</p>` : ""}</div></article>`).join("") || emptyMarkup("Nenhuma etapa registrada.")}</div><article class="detail-note"><span>Registro geral da execução</span><p>${escapeHtml(plan.execution_notes || "Nenhuma observação registrada.")}</p></article><section class="comments-panel"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span>${comments.filter((comment) => !comment.deleted_at).length}</span></header><div class="comments-list">${comments.map((comment) => commentMarkup(comment, plan)).join("") || emptyMarkup("Ainda não há comentários neste intervalo.")}</div>${canComment ? '<form id="detail-comment-form"><label class="field"><span>Novo comentário</span><textarea name="content" maxlength="2000" rows="3" required placeholder="Registre uma atualização relevante"></textarea></label><button class="button button-secondary" type="submit">Adicionar comentário</button><span class="auth-feedback"></span></form>' : `<p class="comments-locked">Após o encerramento, os comentários tornam-se permanentes.</p>`}</section>`;
+    const quiet = plan.status === "executing" && lastActivityEpoch(plan) != null
+      ? Math.floor((Date.now() - lastActivityEpoch(plan)) / 60000)
+      : null;
+    const silenceMarkup = quiet != null && quiet >= SILENCE_MINUTES
+      ? `<p class="detail-silence">Sem atualização há ${escapeHtml(formatMinutes(quiet))}.</p>`
+      : "";
+    const weatherMarkup = plan.weather || plan.weather_note
+      ? `<article class="detail-note"><span>Clima registrado</span><p>${escapeHtml([WEATHER_LABELS[plan.weather], plan.weather_note].filter(Boolean).join(" · ") || "—")}${
+          plan.weather_recorded_at ? ` <small>(${escapeHtml(new Date(plan.weather_recorded_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }))})</small>` : ""
+        }</p></article>`
+      : "";
+    return `<div class="detail-status ${metrics.deadline}">${deadlineMarkup(metrics)}<strong>${metrics.progress}% concluído</strong><span>${metrics.resolved} de ${metrics.steps.length} etapas encerradas</span></div>${silenceMarkup}${weatherMarkup}<div class="detail-step-list execution-readonly">${metrics.steps.map((step, index) => `<article><span>${isResolved(step) ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.activity_name || `Etapa ${index + 1}`)}</strong><small>Planejado ${escapeHtml(stampLabel(step.planned_start, plan.interval_date))}–${escapeHtml(stampLabel(step.planned_end, plan.interval_date))} · Realizado ${escapeHtml(stampLabel(step.actual_start, plan.interval_date))}–${escapeHtml(stampLabel(step.actual_end, plan.interval_date))}</small>${step.actual_notes ? `<p>${escapeHtml(String(step.actual_notes).replace(/^\[\[ETAPA_NAO_EXECUTADA\]\]\s*/, "Não executada · "))}</p>` : ""}</div></article>`).join("") || emptyMarkup("Nenhuma etapa registrada.")}</div><article class="detail-note"><span>Registro geral da execução</span><p>${escapeHtml(plan.execution_notes || "Nenhuma observação registrada.")}</p></article><section class="comments-panel"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span>${comments.filter((comment) => !comment.deleted_at).length}</span></header><div class="comments-list">${comments.map((comment) => commentMarkup(comment, plan)).join("") || emptyMarkup("Ainda não há comentários neste intervalo.")}</div>${canComment ? '<form id="detail-comment-form"><label class="field"><span>Novo comentário</span><textarea name="content" maxlength="2000" rows="3" required placeholder="Registre uma atualização relevante"></textarea></label><button class="button button-secondary" type="submit">Adicionar comentário</button><span class="auth-feedback"></span></form>' : `<p class="comments-locked">Após o encerramento, os comentários tornam-se permanentes.</p>`}</section>`;
   }
 
   function dashboardTabMarkup(plan) {
@@ -549,7 +693,16 @@
     const root = $("#interval-detail-content");
     const shareAllowed = ["editor", "manager", "coordinator", "specialist"].includes(actualProfile.role)
       && plan.user_id === currentUser.id;
-    root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Prévia do acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header><div class="detail-full-page-bar"><span><strong>Quer ver todos os detalhes?</strong><small>Abra o acompanhamento completo com plano, execução e dashboard.</small></span><a class="button button-secondary" data-full-tracking-link href="${escapeHtml(fullTrackingUrl(plan, initialTab))}">Abrir página completa <i aria-hidden="true">↗</i></a></div><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link público temporário</button><span class="auth-feedback"></span></div>' : ""}</div>`;
+    // Frentes do mesmo bloqueio: o dialogo abre uma, mas deixa trocar sem
+    // voltar para os cards.
+    const fronts = plans
+      .filter((candidate) => (candidate.group_id || candidate.id) === (plan.group_id || plan.id))
+      .sort((a, b) => (a.front_position || 1) - (b.front_position || 1)
+        || String(a.created_at).localeCompare(String(b.created_at)));
+    const frontStrip = fronts.length > 1
+      ? `<div class="front-strip detail-fronts" role="tablist" aria-label="Frentes deste intervalo">${fronts.map((front, index) => `<button class="front-tab${front.id === plan.id ? " is-active" : ""}" type="button" role="tab" aria-selected="${front.id === plan.id}" data-detail-front="${escapeHtml(front.id)}"><b>${escapeHtml(frontLabel(front, index))}</b><small>${escapeHtml(front.service_type || STATUS_LABELS[front.status] || "")}</small></button>`).join("")}</div>`
+      : "";
+    root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Prévia do acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}${fronts.length > 1 ? ` · ${escapeHtml(frontLabel(plan, fronts.indexOf(plan)))} de ${fronts.length}` : ""}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header>${frontStrip}<div class="detail-full-page-bar"><span><strong>Quer ver todos os detalhes?</strong><small>Abra o acompanhamento completo com plano, execução e dashboard.</small></span><a class="button button-secondary" data-full-tracking-link href="${escapeHtml(fullTrackingUrl(plan, initialTab))}">Abrir página completa <i aria-hidden="true">↗</i></a></div><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link público temporário</button><span class="auth-feedback"></span></div>' : ""}</div>`;
     const activate = (tab) => {
       $$('[data-detail-tab]', root).forEach((button) => { const active = button.dataset.detailTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); });
       $$('[data-detail-view]', root).forEach((view) => { view.hidden = view.dataset.detailView !== tab; });
@@ -558,6 +711,10 @@
     activate(initialTab);
     $('[data-detail-close]', root).addEventListener("click", () => dialog.close());
     $$('[data-detail-tab]', root).forEach((button) => button.addEventListener("click", () => activate(button.dataset.detailTab)));
+    $$('[data-detail-front]', root).forEach((button) => button.addEventListener("click", () => {
+      const current = $$('[data-detail-tab]', root).find((tab) => tab.classList.contains("active"))?.dataset.detailTab || initialTab;
+      openPlanDetail(button.dataset.detailFront, current);
+    }));
     $("#detail-comment-form", root)?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = event.currentTarget;

@@ -11,10 +11,13 @@
     />
     <title>Gestão de Intervalo | Execução</title>
     <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png" />
-<link rel="stylesheet" href="styles.css?v=20260822-6" />
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<script src="assets/pwa.js" defer></script>
+<link rel="stylesheet" href="styles.css?v=20260823-1" />
     <script src="assets/jszip.min.js" defer></script>
     <script src="assets/supabase.min.js" defer></script>
-<script src="app.js?v=20260822-9" defer></script>
+<script src="app.js?v=20260823-1" defer></script>
   </head>
   <body data-page="execution">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -64,12 +67,18 @@
             <p class="section-kicker">Acompanhamento operacional</p>
             <h1 id="execution-title">Intervalo</h1>
             <p id="execution-subtitle">—</p>
+            <p class="silence-chip" id="execution-silence" role="status" hidden></p>
           </div>
           <div class="execution-actions">
             <a class="button button-ghost" href="index.html">Ver planejamento</a>
             <button class="button button-ghost" id="export-execution-xlsx" type="button">Exportar Excel</button>
             <button class="button button-secondary" id="print-button" type="button">Exportar PDF</button>
           </div>
+        </div>
+
+        <div class="front-bar">
+          <div class="front-strip" id="front-strip" role="tablist" aria-label="Frentes de serviço deste intervalo"></div>
+          <p class="front-hint" id="front-count"></p>
         </div>
 
         <div class="blocked-state" id="execution-blocked" hidden>
@@ -116,10 +125,28 @@
             </article>
           </section>
 
+          <section class="panel weather-panel" aria-labelledby="weather-title">
+            <div class="panel-heading compact">
+              <div>
+                <span class="step-number">01</span>
+                <div>
+                  <h2 id="weather-title">Como está o clima agora?</h2>
+                  <p>O tempo em campo explica boa parte dos desvios. Registre no começo do intervalo e atualize se virar.</p>
+                </div>
+              </div>
+              <p class="weather-stamp" id="weather-stamp" hidden></p>
+            </div>
+            <div class="weather-choices" id="weather-choices" role="radiogroup" aria-labelledby="weather-title"></div>
+            <label class="field">
+              <span>Observação sobre as condições (opcional)</span>
+              <input id="weather-note" type="text" maxlength="240" placeholder="Ex.: chuva forte desde as 02h, plataforma alagada" />
+            </label>
+          </section>
+
           <section class="panel execution-panel" aria-labelledby="execution-table-title">
             <div class="panel-heading execution-panel-heading">
               <div>
-                <span class="step-number">01</span>
+                <span class="step-number">02</span>
                 <div>
                   <h2 id="execution-table-title">Programado x realizado</h2>
                   <p>O programado está protegido. Registre os horários reais; é possível manter várias etapas em andamento ao mesmo tempo.</p>
@@ -137,7 +164,7 @@
           <section class="execution-notes panel">
             <div class="panel-heading compact">
               <div>
-                <span class="step-number">02</span>
+                <span class="step-number">03</span>
                 <div>
                   <h2>Registro geral do intervalo</h2>
                   <p>Consolide ocorrências, restrições e decisões que afetaram a execução.</p>
@@ -152,7 +179,7 @@
 
           <section class="execution-comments panel" id="execution-comments-panel">
             <div class="panel-heading compact">
-              <div><span class="step-number">03</span><div><h2>Comentários da execução</h2><p>Atualizações registradas com autor, perfil, data e horário permanecem no histórico.</p></div></div>
+              <div><span class="step-number">04</span><div><h2>Comentários da execução</h2><p>Atualizações registradas com autor, perfil, data e horário permanecem no histórico.</p></div></div>
             </div>
             <div class="execution-comments-body">
               <div class="comments-list" id="execution-comments"></div>
@@ -166,10 +193,11 @@
 
           <section class="execution-finish-panel" id="execution-finish-panel" hidden aria-labelledby="execution-finish-title">
             <div>
-              <span class="step-number light">04</span>
+              <span class="step-number light">05</span>
               <div>
                 <h2 id="execution-finish-title">Encerrar o intervalo</h2>
-                <p>Finalize somente depois que todas as etapas estiverem concluídas ou marcadas como não executadas. O registro passará a fazer parte do histórico.</p>
+                <p id="closing-description">Finalize somente depois que todas as etapas estiverem concluídas ou marcadas como não executadas. O registro passará a fazer parte do histórico.</p>
+                <ul class="closing-fronts" id="closing-fronts"></ul>
                 <span id="finish-execution-feedback" role="status" aria-live="polite"></span>
               </div>
             </div>

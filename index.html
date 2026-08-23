@@ -11,10 +11,13 @@
     />
     <title>Gestão de Intervalo | Planejamento</title>
     <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png" />
-<link rel="stylesheet" href="styles.css?v=20260822-6" />
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<script src="assets/pwa.js" defer></script>
+<link rel="stylesheet" href="styles.css?v=20260823-1" />
     <script src="assets/jszip.min.js" defer></script>
     <script src="assets/supabase.min.js" defer></script>
-<script src="app.js?v=20260822-9" defer></script>
+<script src="app.js?v=20260823-1" defer></script>
   </head>
   <body data-page="planning">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -57,11 +60,16 @@
             <h2 id="plan-heading">Cronograma programado</h2>
           </div>
           <div class="plan-switcher">
-            <label for="plan-selector">Meus planos</label>
-            <select id="plan-selector" aria-label="Selecionar plano"></select>
-            <button class="icon-button" id="duplicate-plan-button" type="button" title="Duplicar plano" aria-label="Duplicar plano">⧉</button>
-            <button class="icon-button danger-quiet" id="delete-plan-button" type="button" title="Excluir plano" aria-label="Excluir plano">×</button>
+            <label for="plan-selector">Meus intervalos</label>
+            <select id="plan-selector" aria-label="Selecionar intervalo"></select>
+            <button class="icon-button" id="duplicate-plan-button" type="button" title="Duplicar intervalo" aria-label="Duplicar intervalo">⧉</button>
+            <button class="icon-button danger-quiet" id="delete-plan-button" type="button" title="Excluir frente" aria-label="Excluir frente">×</button>
           </div>
+        </div>
+
+        <div class="front-bar">
+          <div class="front-strip" id="front-strip" role="tablist" aria-label="Frentes de serviço deste intervalo"></div>
+          <p class="front-hint" id="front-count">Uma frente.</p>
         </div>
 
         <div class="lock-banner" id="lock-banner" hidden>
@@ -88,7 +96,7 @@
                 <span class="step-number">01</span>
                 <div>
                   <h3 id="details-title">Dados do intervalo</h3>
-                  <p>Informações que identificam o serviço e a janela autorizada.</p>
+                  <p>Nome, data, janela e local identificam o bloqueio e valem para todas as frentes. Nome da frente e tipo de serviço são só desta frente.</p>
                 </div>
               </div>
             </div>
@@ -96,6 +104,10 @@
               <label class="field field-span-2">
                 <span>Nome do plano *</span>
                 <input name="title" type="text" maxlength="100" placeholder="Ex.: Renovação de linha — km 141+150" required />
+              </label>
+              <label class="field">
+                <span>Nome da frente</span>
+                <input name="frontName" type="text" maxlength="80" placeholder="Frente 1" />
               </label>
               <label class="field">
                 <span>Tipo de serviço</span>

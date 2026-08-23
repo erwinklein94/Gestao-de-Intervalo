@@ -7,10 +7,11 @@ Aplicação web para planejar, executar e acompanhar intervalos de manutenção 
 | Camada | Responsabilidade | Arquivos principais |
 |---|---|---|
 | Fluxo operacional | Planejamento, execução, dashboard individual, conta, compartilhamento e sincronização offline | `index.html`, `executar.html`, `dashboard.html`, `conta.html`, `acompanhar.html`, `app.js` |
-| Portal gerencial | Cards, filtros, histórico, dashboard geral, acompanhamento detalhado e modo de exemplos | `gestao.html`, `assets/portal.js` |
-| Administração | Criação e edição de perfis, hierarquia Gerente → Coordenador, atribuição de múltiplas SUBs e cadastro de SUBs | `admin.html`, `assets/portal.js` |
+| Portal gerencial | Cards por intervalo, filtros, histórico, dashboard geral, contador de atrasos e detecção de silêncio | `gestao.html`, `assets/portal.js` |
+| Administração | Criação e edição de perfis e hierarquia Gerente → Coordenador | `admin.html`, `assets/portal.js` |
 | Identidade e interface | Login, proteção inicial de rotas, temas claro/escuro e estilos responsivos | `login.html`, `assets/auth-guard.js`, `styles.css` |
-| Backend | Auth, Postgres, RLS, funções SQL, auditoria, dados demonstrativos e Edge Functions | `supabase/migrations/`, `supabase/functions/` |
+| Backend | Auth, Postgres, RLS, funções SQL, auditoria e Edge Functions | `supabase/migrations/`, `supabase/functions/` |
+| Aplicativo instalável | Manifesto, service worker e app shell em cache para abrir sem sinal | `manifest.webmanifest`, `sw.js`, `assets/pwa.js` |
 | Entrega | Publicação automática do site estático | `.github/workflows/deploy-pages.yml` |
 
 O navegador usa somente a chave publicável do projeto. Chaves `service_role` ou secretas permanecem restritas às Edge Functions e nunca devem ser copiadas para HTML ou JavaScript público.
@@ -26,9 +27,9 @@ As permissões são aplicadas na navegação e novamente no banco por Row Level 
 | Consultor | Mesmo escopo do Diretor | Mesma visão global e somente leitura dos intervalos |
 | Gerente | Coordenadores vinculados ao próprio Gerente | As três visões gerenciais, filtradas automaticamente para a própria equipe |
 | Coordenador | Próprios intervalos | Planejamento, execução, dashboard individual, histórico, comentários operacionais e Minha Conta |
-| Editor | Toda a operação | Visão gerencial completa, ferramentas operacionais, Administração, gestão de usuários/SUBs e modo Exemplos |
+| Editor | Toda a operação | Visão gerencial completa, ferramentas operacionais, Administração e gestão de usuários |
 
-Cada Coordenador deve possuir Gerente responsável, uma ou mais SUBs e classificação `infrastructure` ou `superstructure`. Cada intervalo continua associado a uma SUB específica dentre as atribuídas ao Coordenador. O Gerente Executivo é um perfil global somente leitura e não participa da relação hierárquica Gerente → Coordenador. Perfis legados incompletos são preservados com indicação de revisão, em vez de terem dados removidos silenciosamente.
+Cada Coordenador deve possuir Gerente responsável e classificação `infrastructure`, `superstructure` ou `modernization`. O Gerente Executivo é um perfil global somente leitura e não participa da relação hierárquica Gerente → Coordenador. Perfis legados incompletos são preservados com indicação de revisão, em vez de terem dados removidos silenciosamente.
 
 ## Páginas
 
@@ -36,12 +37,12 @@ Cada Coordenador deve possuir Gerente responsável, uma ou mais SUBs e classific
 - `index.html`: criação e revisão do plano, montagem de etapas, linha do tempo, travamento do cronograma e exportação `.xlsx`.
 - `executar.html`: registro dos horários e observações realizados, etapas não executadas, comentários e estado de sincronização.
 - `dashboard.html`: indicadores e gráficos do intervalo selecionado, comparação Programado × Realizado e impressão preparada para PDF em A4 paisagem.
-- `gestao.html`: portal com as áreas Em execução, Histórico e Dashboard geral. Inclui filtros por Gerente, Coordenador, SUB, classificação, status, prazo, tipo, período e texto livre.
-- `admin.html`: área exclusiva do Editor para criar e editar usuários, vínculos e SUBs. SUBs deixam de ser excluídas e podem ser desativadas para preservar referências históricas.
-- `conta.html`: mostra somente os dados do usuário autenticado e os atalhos permitidos. Para Editor, oferece Administração e o botão **Exemplos**.
+- `gestao.html`: portal com as áreas Em execução, Histórico e Dashboard geral. Inclui filtros por Gerente, Coordenador, classificação, status, prazo, tipo, período e texto livre. Um contador discreto sobre a aba **Em execução** mostra quantos intervalos em andamento estão atrasados agora.
+- `admin.html`: área exclusiva do Editor para criar e editar usuários e vínculos da hierarquia.
+- `conta.html`: mostra somente os dados do usuário autenticado. Para Editor, oferece o acesso à Administração.
 - `acompanhar.html`: acompanhamento público somente leitura por link temporário, revogável e protegido por token.
 
-Os cards gerenciais mostram título, local, Gerente, Coordenador, SUB, classificação, tipo, janela, progresso, status e desvio. Ao abrir um card, a Página de Acompanhamento reúne Plano, Execução, Dashboard e comentários no mesmo contexto.
+Os cards gerenciais mostram título, local, Gerente, Coordenador, classificação, tipo, janela, progresso, status, desvio e — quando houver — a quantidade de frentes e o aviso de silêncio. Um card representa o intervalo inteiro, somando as frentes. Ao abrir um card, a Página de Acompanhamento reúne Plano, Execução, Dashboard e comentários no mesmo contexto.
 
 O site possui temas claro e escuro. O tema claro é o padrão inicial, e a preferência escolhida fica memorizada no dispositivo.
 
@@ -114,11 +115,9 @@ O destaque em vermelho aparece apenas quando a etapa passa do próprio fim progr
 As migrações mantêm as tabelas operacionais originais e ampliam o modelo de forma aditiva. Os principais objetos são:
 
 - `user_profiles`: conta Auth, papel, habilitação e dados organizacionais reais.
-- `organization_members`: diretório e hierarquia por dataset, incluindo personas sem conta Auth no ambiente demonstrativo.
-- `coordinator_sub_assignments`: relação muitos-para-muitos entre cada Coordenador e as SUBs sob sua responsabilidade.
-- `subs`: catálogo administrável das 103 SUBs identificadas no mapa utilizado como fonte, mais futuras inclusões administrativas.
-- `datasets`: separação explícita entre `real` e `demo`.
-- `interval_plans` e `interval_steps`: plano, execução, status, responsáveis, revisões e etapas independentes.
+- `organization_members`: diretório e hierarquia organizacional.
+- `interval_plans` e `interval_steps`: cada linha de `interval_plans` é uma **frente de serviço**; `group_id` reúne as frentes do mesmo intervalo e `front_position`/`front_name` dão a elas ordem e nome. A linha guarda ainda plano, execução, status, responsáveis, revisões, empreiteira, encarregado, clima e o encerramento.
+- `datasets`: identificação do conjunto de dados real.
 - `interval_comments`: comentários históricos com autoria e exclusão lógica.
 - `interval_sync_receipts`: recibos de idempotência da sincronização offline.
 - `interval_audit_log`: rastreabilidade das alterações relevantes de intervalos e comentários.
@@ -126,19 +125,56 @@ As migrações mantêm as tabelas operacionais originais e ampliam o modelo de f
 
 As políticas RLS calculam o escopo a partir do usuário autenticado e da hierarquia: Diretor, Gerente Executivo, Consultor e Editor consultam toda a operação; Gerente consulta apenas sua equipe; Coordenador consulta e altera apenas os próprios intervalos. Diretor, Gerente Executivo e Consultor permanecem somente leitura. Permissões de tabela e coluna são concedidas explicitamente, separadas das políticas de linha.
 
-## Modo Exemplos
+## Frentes de serviço
 
-O botão **Exemplos**, disponível em Minha Conta para o Editor, abre um conjunto demonstrativo preenchido com todos os papéis, inclusive Gerente Executivo, Gerentes, Coordenadores, classificações, SUBs, intervalos simultâneos, atrasados, adiantados, concluídos, comentários e dashboards.
+Um bloqueio da via costuma abrigar mais de uma frente trabalhando ao mesmo tempo, cada uma com cronograma e execução próprios. O intervalo comporta até **12 frentes**, e o mesmo responsável cria todas elas.
 
-O isolamento não depende de uma simples filtragem visual:
+O que descreve o **bloqueio** é único e vale para todas as frentes: nome do plano, data, janela e local. Alterar qualquer um deles em uma frente altera nas demais — a janela autorizada é uma só. O que é **da frente** fica isolado: nome da frente, tipo de serviço, etapas, observações, clima e execução.
 
-- dados reais e exemplos possuem `dataset_id` distintos;
-- cabeçalhos de contexto demonstrativo só são reconhecidos pelo banco para uma conta real de Editor habilitada;
-- personas demonstrativas existem em `organization_members`, sem criar contas em `auth.users`;
-- RLS filtra consultas, métricas, históricos e diretórios pelo dataset corrente;
-- gravações de planos e comentários demonstrativos ficam desabilitadas;
-- um banner persistente identifica o ambiente e permite alternar a persona visualizada;
-- ao sair, o contexto demonstrativo é removido da sessão e o portal retorna imediatamente aos dados reais.
+- No planejamento, a faixa de frentes fica abaixo do seletor de intervalos. **+ Frente** cria uma nova frente já com os dados do bloqueio preenchidos e o cronograma em branco.
+- Na execução, a mesma faixa alterna entre as frentes; cada uma tem seu próprio indicador de atraso, projeção e comentários.
+- No portal gerencial, um card representa o **intervalo inteiro**: o progresso soma as etapas de todas as frentes e o desvio exibido é o pior entre elas. A etiqueta “N frentes” identifica os bloqueios com mais de uma.
+- No banco, a frente continua sendo uma linha de `interval_plans`. Todo o motor de projeção, dashboard, exportação e RLS segue valendo sem alteração.
+
+O vínculo é protegido no banco: frentes do mesmo `group_id` precisam pertencer ao mesmo responsável, e uma frente não troca de intervalo depois de criada.
+
+## Encerramento do intervalo
+
+Terminar as etapas e encerrar o bloqueio são atos diferentes: entre um e outro ainda cabem devolução da via, pendência e restrição. Por isso o encerramento é explícito.
+
+Com mais de uma frente, o encerramento passa a valer para o **intervalo**, não para a frente: o botão **Encerrar** só libera quando todas as frentes tiverem etapas resolvidas — concluídas ou marcadas como não executadas — e quem encerra é a frente que terminou por último; nas demais, o painel indica qual é ela.
+
+No banco, a validação de `private.guard_interval_plan` olha as etapas de todas as frentes do grupo, e `public.close_interval(group_id)` grava `completed_at` em todas de uma vez. `public.finalize_interval_plan(plan_id)` continua existindo e delega para o grupo do plano informado — para intervalo de frente única, que é o caso de tudo que já estava gravado, o comportamento é idêntico ao anterior.
+
+Depois disso o intervalo é histórico: a tela continua legível, mas nada mais é editável e o banco recusa gravações.
+
+## Clima do intervalo
+
+A execução abre perguntando **como está o clima agora**. O registro usa um vocabulário fechado — bom, nublado, garoa, chuva, chuva forte, neblina, vento forte, calor extremo e frio intenso — porque clima em texto livre não vira indicador depois; a descrição livre fica no campo de observação ao lado. Cada registro guarda o horário, e clicar de novo na mesma condição limpa o valor.
+
+O clima aparece no acompanhamento gerencial e no link compartilhado, junto com a execução da frente.
+
+## Detecção de silêncio
+
+Um intervalo em execução que **para de receber registro** costuma ser um intervalo com problema, não um intervalo sem novidade. Passados **20 minutos** sem nenhuma movimentação — horário realizado, alteração no plano ou comentário —, o sistema passa a exibir “Sem atualização há X”:
+
+- no card do portal e no detalhe do intervalo, como aviso para a gestão;
+- na própria execução, como lembrete para quem está em campo.
+
+Na aba **Em execução** do portal, um contador discreto sobre o botão mostra quantos intervalos em andamento estão em atraso agora, com a explicação ao passar o mouse. É a resposta à primeira pergunta do gerente, dada antes de ele precisar procurar.
+
+## Aplicativo instalável e uso sem sinal
+
+A fila offline já garantia que o registro feito sem sinal não se perde; o que faltava era o passo anterior — sem rede, a página não abria. `manifest.webmanifest`, `sw.js` e `assets/pwa.js` resolvem isso: o app pode ser instalado na tela inicial e o service worker guarda o app shell no dispositivo.
+
+- Navegação usa **rede primeiro**, para que um deploy novo apareça de imediato; o cache entra quando a rede falha.
+- Arquivos estáticos usam **cache primeiro**, com atualização em segundo plano.
+- **Nada do Supabase é cacheado.** Resposta de dados guardada localmente viraria informação velha exibida como atual, que é exatamente o erro que esta operação não pode cometer.
+- Com a sessão expirada e sem rede, o `auth-guard` deixa de expulsar para o login: nenhuma chamada ao servidor passa mesmo, o RLS continua sendo quem autoriza, e o coordenador não perde o acesso ao que registrou offline. A sessão é revalidada assim que houver conexão.
+
+Ao alterar CSS ou JavaScript, mantenha a constante `VERSION` de `sw.js` sincronizada com o parâmetro `?v=` dos arquivos HTML — é ela que invalida o cache antigo.
+
+> O ícone `assets/icon.svg` atende Chrome, Edge e Android. Para cobrir todas as versões de iOS, vale gerar depois um PNG 192×192 e 512×512 a partir dele e acrescentá-lo ao manifesto.
 
 ## Comentários
 
@@ -165,7 +201,7 @@ A interface informa estados como **Salvo**, **Sem conexão**, **Sincronizando**,
 
 ## Migrações Supabase
 
-As migrações ficam em `supabase/migrations/` e devem ser aplicadas na ordem do timestamp. A expansão organizacional está em `20260821115809_expand_organizational_interval_management.sql`; `20260821133000_complete_sub_catalog.sql` completa o catálogo com as SUBs 100–103 sem alterar as anteriores. As migrações seguintes cobrem o índice da auditoria por autor, o bootstrap das personas demo sob RLS com privilégios do próprio chamador, a inclusão segura de `executive_manager`, o preenchimento do escopo organizacional de planos legados e a atribuição protegida de múltiplas SUBs por Coordenador.
+As migrações ficam em `supabase/migrations/` e devem ser aplicadas na ordem do timestamp. A expansão organizacional está em `20260821115809_expand_organizational_interval_management.sql`; as seguintes cobrem auditoria, `executive_manager`, hierarquia compartilhada entre Gerentes, solicitação de acesso, flexão de gênero, finalização explícita da execução e o escopo operacional do Gerente. As duas últimas mudam o modelo de forma relevante: `20260823090000_remove_sub_catalog.sql` **apaga** o catálogo de SUBs e as colunas `sub_id` (não há caminho de volta por migração), e `20260823100000_interval_fronts_weather_and_closure.sql` introduz frentes, clima e o encerramento por intervalo.
 
 Com a CLI autenticada e o projeto correto vinculado:
 
@@ -178,7 +214,7 @@ Revise sempre o `--dry-run`, a lista de migrações pendentes e os advisors de s
 
 ## Edge Functions
 
-- `create-site-user`: endpoint autenticado usado pela Administração. Revalida o JWT, exige Editor habilitado, valida papel, hierarquia e todas as SUBs atribuídas, permite provisionamento idempotente explícito de uma conta existente e mantém a chave administrativa somente no ambiente da função.
+- `create-site-user`: endpoint autenticado usado pela Administração. Revalida o JWT, exige Editor habilitado, valida papel e hierarquia, permite provisionamento idempotente explícito de uma conta existente e mantém a chave administrativa somente no ambiente da função.
 - `interval-share`: endpoint público por token de alta entropia. Aceita somente planos do dataset real, valida link, expiração, revogação e proprietário habilitado, e retorna uma projeção de dados somente leitura sem identificadores privados.
 - `request-password-reset`: recebe uma solicitação neutra na tela de login e, somente para uma conta ativa, avisa o Editor por e-mail para que a senha seja alterada manualmente no Supabase.
 
@@ -210,16 +246,18 @@ Os testes de cálculo usam o runtime nativo do Node.js:
 node --test tests/*.test.js
 ```
 
-Eles validam cenários de etapas simultâneas, seleção do marco operacional, encerramento, tempo decorrido, métricas gerenciais, filtros, capacidades por perfil, estrutura das páginas, RLS, hierarquia, histórico, fila offline e Edge Functions. Antes de publicar, faça também um teste funcional com cada papel, confirmando a equivalência entre Gerente Executivo e Diretor, bloqueios de rota, escopo do Gerente, edição exclusiva de Coordenador/Editor, comentários, alternância real/demo, perda e retorno da conexão e link compartilhado revogado ou expirado.
+Eles validam cenários de etapas simultâneas, seleção do marco operacional, encerramento, tempo decorrido, métricas gerenciais, filtros, capacidades por perfil, estrutura das páginas, RLS, hierarquia, histórico, fila offline e Edge Functions. `tests/fronts-weather-closure.test.js` cobre especificamente frentes, propagação dos dados do bloqueio, clima, detecção de silêncio, encerramento por intervalo, PWA e a ausência de SUB.
+
+Antes de publicar, faça também um teste funcional com cada papel, confirmando a equivalência entre Gerente Executivo e Diretor, bloqueios de rota, escopo do Gerente, edição exclusiva de Coordenador/Editor, comentários, perda e retorno da conexão, link compartilhado revogado ou expirado e — no fluxo novo — criar duas frentes no mesmo intervalo, verificar que a janela alterada em uma vale para a outra, registrar clima, conferir o contador de atrasos na aba **Em execução** e encerrar o intervalo pela frente que terminou por último.
 
 ## Publicação no GitHub Pages
 
 O workflow `.github/workflows/deploy-pages.yml` publica o conteúdo do repositório a cada push na branch `main` e também aceita execução manual. O fluxo faz checkout, configura Pages, envia o artefato estático e cria o deployment; não há etapa de build.
 
-Após alterar CSS ou JavaScript, mantenha os parâmetros de versão dos assets nos arquivos HTML sincronizados para evitar cache antigo. Depois do push, acompanhe o workflow **Deploy GitHub Pages** na aba Actions e valide as rotas principais no endereço publicado.
+Após alterar CSS ou JavaScript, mantenha sincronizados os parâmetros de versão dos assets nos arquivos HTML **e a constante `VERSION` de `sw.js`** — com o service worker ativo, é ela que descarta o cache anterior. Depois do push, acompanhe o workflow **Deploy GitHub Pages** na aba Actions e valide as rotas principais no endereço publicado.
 
 ## Referências de produto
 
 - Identidade visual baseada no brand book oficial da Rumo: paleta institucional, combinações de acessibilidade e Verdana como tipografia de sistema para HTML.
 - Fluxo funcional derivado da planilha `00 - CronoAVF.xlsx`: planejado × executado, duração, produtividade/ritmo e visão de Gantt, reorganizados para uso operacional em telas menores.
-- Catálogo inicial de SUBs derivado do Mapa Rumo 2020-V9, preservando todas as 103 identificações encontradas no documento.
+- Catálogo de SUBs do Mapa Rumo 2020-V9 usado na primeira versão e retirado depois: o recorte nunca chegou a ser usado na operação e só sobrevivia como cadastro paralelo.

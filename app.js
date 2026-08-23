@@ -42,6 +42,27 @@
   const READ_ONLY_MANAGEMENT_ROLES = ["director", "executive_manager", "consultant"];
   function isOperatorRole(role) { return ["manager", "coordinator", "specialist"].includes(role); }
 
+  // Um intervalo e um bloqueio da via; as frentes sao os servicos que correm
+  // dentro dele. O que identifica o bloqueio -- titulo, data, janela e local --
+  // pertence ao intervalo e vale igual para todas as frentes. O que muda de
+  // frente para frente sao as etapas, o tipo de servico e a execucao.
+  const SHARED_INTERVAL_FIELDS = ["title", "date", "windowStart", "windowEnd", "location", "coordinator", "coordinatorMemberId", "managerMemberId", "coordinatorType"];
+  const MAX_FRONTS = 12;
+
+  // Vocabulario fechado: clima em texto livre nao vira indicador depois.
+  const WEATHER_OPTIONS = [
+    { value: "clear", label: "Bom", icon: "☀" },
+    { value: "cloudy", label: "Nublado", icon: "☁" },
+    { value: "drizzle", label: "Garoa", icon: "🌦" },
+    { value: "rain", label: "Chuva", icon: "🌧" },
+    { value: "storm", label: "Chuva forte", icon: "⛈" },
+    { value: "fog", label: "Neblina", icon: "🌫" },
+    { value: "wind", label: "Vento forte", icon: "🌬" },
+    { value: "heat", label: "Calor extremo", icon: "🔥" },
+    { value: "cold", label: "Frio intenso", icon: "❄" }
+  ];
+  const WEATHER_LABELS = Object.fromEntries(WEATHER_OPTIONS.map((option) => [option.value, option.label]));
+
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -98,13 +119,19 @@
     return { id: uid(), name: "", plannedStart: "", plannedEnd: "", actualStart: "", actualEnd: "", actualNotes: "", executionStatus: "pending", skipReason: "" };
   }
 
-  function blankPlan(title = "Novo plano") {
-    return {
+  function blankPlan(title = "Novo plano", overrides = {}) {
+    const plan = {
       id: uid(),
+      groupId: "",
+      frontPosition: 1,
+      frontName: "",
       title,
       serviceType: "",
       contractorName: "",
       foremanName: "",
+      weather: "",
+      weatherNote: "",
+      weatherRecordedAt: null,
       coordinator: isOperatorRole(currentProfile?.role) ? (currentProfile.full_name || "") : "",
       date: todayISO(),
       location: "",
@@ -126,8 +153,49 @@
       revision: 0,
       deletedStepIds: [],
       structureDirty: false,
-      steps: [blankStep()]
+      steps: [blankStep()],
+      ...overrides
     };
+    // Intervalo de frente unica: o grupo e o proprio plano.
+    plan.groupId = plan.groupId || plan.id;
+    return plan;
+  }
+
+  // Frentes do mesmo intervalo, sempre na ordem em que foram criadas.
+  function frontsOf(plan) {
+    if (!plan) return [];
+    const groupId = plan.groupId || plan.id;
+    return store.plans
+      .filter((candidate) => (candidate.groupId || candidate.id) === groupId)
+      .sort((a, b) => (a.frontPosition || 1) - (b.frontPosition || 1) || String(a.createdAt).localeCompare(String(b.createdAt)));
+  }
+
+  function frontLabel(plan, fronts = null) {
+    const list = fronts || frontsOf(plan);
+    const index = Math.max(0, list.findIndex((candidate) => candidate.id === plan.id));
+    return plan.frontName?.trim() || `Frente ${index + 1}`;
+  }
+
+  // O que identifica o bloqueio e um dado so: alterar em uma frente altera em
+  // todas, senao a mesma janela apareceria com dois horarios diferentes.
+  function propagateSharedFields(source) {
+    const siblings = frontsOf(source).filter((plan) => plan.id !== source.id);
+    if (!siblings.length) return false;
+    let changed = false;
+    siblings.forEach((plan) => {
+      let planChanged = false;
+      SHARED_INTERVAL_FIELDS.forEach((field) => {
+        if (plan[field] === source[field]) return;
+        plan[field] = source[field];
+        planChanged = true;
+      });
+      if (!planChanged) return;
+      resequencePlanStamps(plan);
+      plan.updatedAt = new Date().toISOString();
+      dirtyPlanIds.add(plan.id);
+      changed = true;
+    });
+    return changed;
   }
 
   function loadStore() {
@@ -156,7 +224,15 @@
     plan.datasetId = plan.datasetId || null;
     plan.coordinatorMemberId = plan.coordinatorMemberId || null;
     plan.managerMemberId = plan.managerMemberId || null;
+    // Resto do cadastro de SUB, que saiu do produto.
     delete plan.subId;
+    // Plano gravado antes das frentes existirem e um intervalo de frente unica.
+    plan.groupId = plan.groupId || plan.id;
+    plan.frontPosition = Math.min(MAX_FRONTS, Math.max(1, Number(plan.frontPosition) || 1));
+    plan.frontName = typeof plan.frontName === "string" ? plan.frontName : "";
+    plan.weather = WEATHER_LABELS[plan.weather] ? plan.weather : "";
+    plan.weatherNote = plan.weatherNote || "";
+    plan.weatherRecordedAt = plan.weatherRecordedAt || null;
     plan.coordinatorType = plan.coordinatorType || null;
     plan.status = plan.status || "planning";
     plan.completedAt = plan.completedAt || null;
@@ -291,8 +367,13 @@
       locked_at: plan.lockedAt || null,
       coordinator_member_id: plan.coordinatorMemberId || null,
       manager_member_id: plan.managerMemberId || null,
-      sub_id: null,
-      coordinator_type: plan.coordinatorType || null
+      coordinator_type: plan.coordinatorType || null,
+      group_id: plan.groupId || plan.id,
+      front_position: plan.frontPosition || 1,
+      front_name: plan.frontName || "",
+      weather: plan.weather || "",
+      weather_note: plan.weatherNote || "",
+      weather_recorded_at: plan.weatherRecordedAt || null
     };
   }
 
@@ -322,6 +403,12 @@
       foremanName: row.foreman_name || "",
       coordinator: row.coordinator,
       date: row.interval_date || "",
+      groupId: row.group_id || row.client_id,
+      frontPosition: Number(row.front_position || 1),
+      frontName: row.front_name || "",
+      weather: row.weather || "",
+      weatherNote: row.weather_note || "",
+      weatherRecordedAt: row.weather_recorded_at || null,
       location: row.location,
       windowStart: stampInput(row.window_start),
       windowEnd: stampInput(row.window_end),
@@ -377,6 +464,9 @@
       const plan = store.plans.find((candidate) => candidate.id === planId);
       dirtyPlanIds.delete(planId);
       if (!plan) continue;
+      // Intervalo encerrado e historico: o banco recusaria a gravacao e a fila
+      // ficaria presa tentando de novo.
+      if (plan.completedAt) continue;
       const planPayload = planToDatabase(plan);
       const stepsPayload = stepsToDatabase(plan);
       outbox.push({
@@ -722,6 +812,29 @@
 
   function isStepResolved(step) {
     return isStepComplete(step) || isStepSkipped(step);
+  }
+
+  // Silencio e sintoma: um intervalo em execucao que para de receber registro
+  // costuma ser um intervalo com problema, nao um intervalo sem novidade.
+  const SILENCE_MINUTES = 20;
+
+  function lastOperationalStamp(plan) {
+    const marks = [Date.parse(plan.updatedAt || "")];
+    (plan.steps || []).forEach((step) => {
+      marks.push(Date.parse(String(step.actualStart || "").replace(" ", "T")));
+      marks.push(Date.parse(String(step.actualEnd || "").replace(" ", "T")));
+    });
+    const valid = marks.filter(Number.isFinite);
+    return valid.length ? Math.max(...valid) : null;
+  }
+
+  function silenceMinutes(plan, now = Date.now()) {
+    if (plan.completedAt || plan.status === "completed") return null;
+    if (!hasExecutionData(plan)) return null;
+    const last = lastOperationalStamp(plan);
+    if (last == null) return null;
+    const minutes = Math.floor((now - last) / 60000);
+    return minutes >= SILENCE_MINUTES ? minutes : null;
   }
 
   function hasExecutionData(plan) {
@@ -1351,15 +1464,55 @@
       renderForm();
     }
 
+    // O seletor lista intervalos, nao frentes: quem escolhe "Renovação km 141"
+    // quer o bloqueio inteiro, e a frente se escolhe logo abaixo.
     function renderSelector() {
-      selector.innerHTML = store.plans
-        .map((plan) => `<option value="${plan.id}" ${plan.id === store.activePlanId ? "selected" : ""}>${escapeHtml(plan.title || "Plano sem nome")}${plan.locked ? " · travado" : hasExecutionData(plan) ? " · em revisão" : ""}</option>`)
+      const active = activePlan();
+      const activeGroup = active.groupId || active.id;
+      const groups = [];
+      store.plans.forEach((plan) => {
+        const groupId = plan.groupId || plan.id;
+        if (!groups.some((group) => group.id === groupId)) groups.push({ id: groupId, plan });
+      });
+      selector.innerHTML = groups
+        .map(({ id, plan }) => {
+          const fronts = frontsOf(plan);
+          const suffix = fronts.length > 1 ? ` · ${fronts.length} frentes` : plan.locked ? " · travado" : hasExecutionData(plan) ? " · em revisão" : "";
+          return `<option value="${escapeHtml(id)}" ${id === activeGroup ? "selected" : ""}>${escapeHtml(plan.title || "Plano sem nome")}${suffix}</option>`;
+        })
         .join("");
+    }
+
+    function renderFronts() {
+      const plan = activePlan();
+      const fronts = frontsOf(plan);
+      const root = $("#front-strip");
+      if (!root) return;
+      root.innerHTML = fronts.map((front) => {
+        const active = front.id === plan.id;
+        const state = front.completedAt ? "encerrada" : front.locked ? "travada" : hasExecutionData(front) ? "em execução" : "em planejamento";
+        return `<button class="front-tab${active ? " is-active" : ""}" type="button" role="tab" aria-selected="${active}" data-front="${escapeHtml(front.id)}">
+          <b>${escapeHtml(frontLabel(front, fronts))}</b>
+          <small>${escapeHtml(front.serviceType || state)}</small>
+        </button>`;
+      }).join("") + (fronts.length < MAX_FRONTS
+        ? '<button class="front-tab front-add" type="button" id="add-front-button" title="Adicionar frente de serviço a este intervalo">+ Frente</button>'
+        : "");
+      $("#front-count").textContent = fronts.length > 1
+        ? `${fronts.length} frentes neste intervalo · título, data, janela e local valem para todas`
+        : "Uma frente. Use “+ Frente” quando o mesmo bloqueio tiver mais de um serviço em paralelo.";
     }
 
     function renderForm() {
       const plan = activePlan();
       renderSelector();
+      renderFronts();
+      const frontNameField = form.elements.frontName;
+      if (frontNameField) {
+        frontNameField.value = plan.frontName || "";
+        frontNameField.placeholder = frontLabel(plan);
+        frontNameField.disabled = plan.locked;
+      }
       ["title", "serviceType", "contractorName", "foremanName", "coordinator", "date", "location", "windowStart", "windowEnd", "notes"].forEach((name) => {
         const input = form.elements[name];
         if (input) {
@@ -1496,11 +1649,38 @@
         resequencePlanStamps(plan);
         renderSteps();
       }
+      // Titulo, data, janela e local descrevem o bloqueio, nao a frente.
+      if (SHARED_INTERVAL_FIELDS.includes(field)) propagateSharedFields(plan);
       persist();
       renderSelector();
+      if (field === "frontName" || field === "serviceType") renderFronts();
       renderValidation();
       renderGantt();
     });
+
+    // Nova frente herda o bloqueio e comeca com cronograma proprio em branco.
+    function addFront() {
+      const source = activePlan();
+      const fronts = frontsOf(source);
+      if (fronts.length >= MAX_FRONTS) {
+        showToast(`Um intervalo comporta no máximo ${MAX_FRONTS} frentes.`);
+        return;
+      }
+      const inherited = Object.fromEntries(SHARED_INTERVAL_FIELDS.map((field) => [field, source[field]]));
+      const front = blankPlan(source.title, {
+        ...inherited,
+        groupId: source.groupId || source.id,
+        frontPosition: Math.max(...fronts.map((item) => item.frontPosition || 1)) + 1,
+        frontName: `Frente ${fronts.length + 1}`
+      });
+      resequencePlanStamps(front);
+      store.plans.push(front);
+      store.activePlanId = front.id;
+      persist(true);
+      renderForm();
+      form.elements.frontName?.focus();
+      showToast(`${frontLabel(front)} criada. O cronograma dela é independente.`);
+    }
 
     stepsRoot.addEventListener("input", (event) => {
       const plan = activePlan();
@@ -1607,12 +1787,21 @@
     });
 
     selector.addEventListener("change", () => {
-      selectPlan(selector.value);
+      const first = store.plans.find((plan) => (plan.groupId || plan.id) === selector.value);
+      if (first) selectPlan(frontsOf(first)[0].id);
+      renderForm();
+    });
+
+    $("#front-strip").addEventListener("click", (event) => {
+      if (event.target.closest("#add-front-button")) { addFront(); return; }
+      const tab = event.target.closest("[data-front]");
+      if (!tab || !selectPlan(tab.dataset.front)) return;
       renderForm();
     });
 
     $("#new-plan-button").addEventListener("click", () => {
-      const plan = blankPlan(`Plano ${store.plans.length + 1}`);
+      const intervals = new Set(store.plans.map((item) => item.groupId || item.id)).size;
+      const plan = blankPlan(`Plano ${intervals + 1}`);
       store.plans.push(plan);
       store.activePlanId = plan.id;
       persist(true);
@@ -1625,6 +1814,17 @@
       const copy = structuredClone(source);
       copy.id = uid();
       delete copy.databaseId;
+      // A copia e um bloqueio novo: herdar o grupo a penduraria como mais uma
+      // frente do intervalo original.
+      copy.groupId = copy.id;
+      copy.frontPosition = 1;
+      copy.frontName = "";
+      copy.weather = "";
+      copy.weatherNote = "";
+      copy.weatherRecordedAt = null;
+      copy.completedAt = null;
+      copy.status = "planning";
+      copy.revision = 0;
       copy.title = `${source.title || "Plano"} — cópia`;
       copy.locked = false;
       copy.lockedAt = null;
@@ -1658,7 +1858,11 @@
         showToast("Somente rascunhos sem execução podem ser excluídos.");
         return;
       }
-      if (!confirm(`Excluir “${plan.title || "Plano sem nome"}”? Esta ação não pode ser desfeita.`)) return;
+      const fronts = frontsOf(plan);
+      const alvo = fronts.length > 1
+        ? `a ${frontLabel(plan, fronts)} de “${plan.title || "Plano sem nome"}”`
+        : `“${plan.title || "Plano sem nome"}”`;
+      if (!confirm(`Excluir ${alvo}? Esta ação não pode ser desfeita.`)) return;
       store.deletedPlanIds.push({ clientId: plan.id, databaseId: plan.databaseId || null, ownerId: plan.ownerId || currentUser?.id || null });
       store.plans = store.plans.filter((item) => item.id !== plan.id);
       store.activePlanId = store.plans[0].id;
@@ -1760,7 +1964,9 @@
         const removable = comment.author_user_id === currentUser.id && !comment.pending && plan.status === "executing";
         return `<article class="interval-comment ${comment.pending ? "is-pending" : ""}" data-comment-id="${escapeHtml(comment.id)}"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}${comment.pending ? " · Pendente de sincronização" : ""}</time></header><p>${escapeHtml(comment.content)}</p>${removable ? '<button type="button" data-comment-delete>Excluir meu comentário</button>' : ""}</article>`;
       }).join("") : `<div class="portal-empty"><strong>Nenhum comentário</strong><span>Atualizações registradas durante a execução aparecerão aqui.</span></div>`;
-      const allowed = plan.status === "executing" || (hasExecutionData(plan) && !getStatus().finished);
+      // Comentario continua aberto ate o encerramento: terminar as etapas de
+      // uma frente nao e o mesmo que encerrar o intervalo.
+      const allowed = plan.status !== "completed" && (plan.status === "executing" || hasExecutionData(plan));
       $("#execution-comment-form").hidden = !allowed;
       $("#execution-comments-locked").hidden = allowed;
     }
@@ -2030,6 +2236,114 @@
       $("#live-date").textContent = now.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
     }
 
+    function renderFronts() {
+      const fronts = frontsOf(plan);
+      const root = $("#front-strip");
+      if (!root) return;
+      root.innerHTML = fronts.map((front) => {
+        const status = executionStatus(front, buildTimeline(front));
+        const state = front.status === "completed"
+          ? "encerrada"
+          : status.finished ? "aguardando encerramento"
+          : status.started ? `${status.resolved.length}/${status.steps.length} etapas`
+          : "não iniciada";
+        return `<button class="front-tab${front.id === plan.id ? " is-active" : ""}${status.finished && front.status !== "completed" ? " is-done" : ""}" type="button" role="tab" aria-selected="${front.id === plan.id}" data-front="${escapeHtml(front.id)}">
+          <b>${escapeHtml(frontLabel(front, fronts))}</b>
+          <small>${escapeHtml(state)}</small>
+        </button>`;
+      }).join("");
+      const bar = root.closest(".front-bar");
+      if (bar) bar.hidden = fronts.length < 2;
+      $("#front-count").textContent = fronts.length > 1
+        ? `${fronts.length} frentes no mesmo bloqueio. Cada uma registra a própria execução.`
+        : "";
+    }
+
+    function renderWeather() {
+      const root = $("#weather-choices");
+      if (!root) return;
+      const editable = plan.status !== "completed";
+      root.innerHTML = WEATHER_OPTIONS.map((option) => `
+        <button class="weather-chip${plan.weather === option.value ? " is-active" : ""}" type="button" role="radio"
+          aria-checked="${plan.weather === option.value}" data-weather="${option.value}" ${editable ? "" : "disabled"}>
+          <i aria-hidden="true">${option.icon}</i><span>${escapeHtml(option.label)}</span>
+        </button>`).join("");
+      const stamp = $("#weather-stamp");
+      stamp.hidden = !plan.weatherRecordedAt;
+      if (plan.weatherRecordedAt) {
+        stamp.textContent = `Registrado às ${new Date(plan.weatherRecordedAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`;
+      }
+      const note = $("#weather-note");
+      if (document.activeElement !== note) note.value = plan.weatherNote || "";
+      note.disabled = !editable;
+    }
+
+    function renderSilence() {
+      const chip = $("#execution-silence");
+      if (!chip) return;
+      const minutes = silenceMinutes(plan);
+      chip.hidden = minutes == null;
+      if (minutes != null) chip.textContent = `Sem registro há ${formatMinutes(minutes)}. Um marco registrado agora evita que a gestão veja este intervalo como parado.`;
+    }
+
+    // O intervalo so encerra quando a ultima frente encerra, e quem aperta o
+    // botao e justamente a frente que terminou por ultimo.
+    function closingState() {
+      const fronts = frontsOf(plan);
+      const detail = fronts.map((front) => {
+        const status = executionStatus(front, buildTimeline(front));
+        const ends = status.steps
+          .map((step) => Date.parse(String(step.actualEnd || "").replace(" ", "T")))
+          .filter(Number.isFinite);
+        return {
+          front,
+          label: frontLabel(front, fronts),
+          ready: status.steps.length > 0 && status.finished,
+          pending: status.steps.length - status.resolved.length,
+          empty: status.steps.length === 0,
+          lastEnd: ends.length ? Math.max(...ends) : null
+        };
+      });
+      const ordered = [...detail].sort((a, b) => (a.lastEnd ?? -Infinity) - (b.lastEnd ?? -Infinity)
+        || (a.front.frontPosition || 1) - (b.front.frontPosition || 1));
+      return {
+        fronts, detail,
+        ready: detail.every((entry) => entry.ready),
+        last: ordered.at(-1),
+        closed: fronts.every((front) => front.status === "completed")
+      };
+    }
+
+    function renderClosing() {
+      const list = $("#closing-fronts");
+      if (!list) return;
+      const state = closingState();
+      list.innerHTML = state.detail.length > 1
+        ? state.detail.map((entry) => `<li class="${entry.ready ? "is-ready" : ""}"><b>${escapeHtml(entry.label)}</b><span>${
+            entry.empty ? "sem etapas" : entry.ready ? "concluída" : `${entry.pending} ${entry.pending === 1 ? "etapa em aberto" : "etapas em aberto"}`
+          }</span></li>`).join("")
+        : "";
+      const hint = $("#closing-description");
+      if (!hint) return;
+      if (state.closed) {
+        hint.textContent = "Intervalo encerrado. O registro passou a fazer parte do histórico.";
+      } else if (!state.ready) {
+        const abertas = state.detail.filter((entry) => !entry.ready);
+        hint.textContent = state.fronts.length > 1
+          ? `Faltam encerrar: ${abertas.map((entry) => entry.label).join(", ")}. O intervalo termina quando a última frente terminar.`
+          : "Resolva todas as etapas — concluídas ou marcadas como não executadas — para liberar o encerramento.";
+      } else if (state.last?.front.id !== plan.id) {
+        hint.textContent = `Todas as frentes terminaram. O encerramento é feito pela ${state.last.label}, que foi a última a concluir.`;
+      } else {
+        hint.textContent = state.fronts.length > 1
+          ? "Esta foi a última frente a terminar. Ao encerrar, o intervalo inteiro vai para o histórico e não aceita mais alterações."
+          : "Ao encerrar, o intervalo vai para o histórico e não aceita mais alterações.";
+      }
+      if (finishButton) {
+        finishButton.textContent = state.fronts.length > 1 ? "Encerrar intervalo e todas as frentes" : "Finalizar execução";
+      }
+    }
+
     function updateActualTime(step, field, value) {
       if (plan.status === "completed") return false;
       const previous = step[field];
@@ -2076,6 +2390,9 @@
       else if (event.target.value) showToast(`${field === "actualStart" ? "Início" : "Fim"} realizado registrado em ${stampHuman(event.target.value)}.`);
       renderSteps();
       renderDashboard();
+      renderFronts();
+      renderSilence();
+      renderClosing();
     });
 
     root.addEventListener("click", (event) => {
@@ -2105,6 +2422,9 @@
       }
       renderSteps();
       renderDashboard();
+      renderFronts();
+      renderSilence();
+      renderClosing();
     });
 
     $("#execution-notes").addEventListener("input", (event) => {
@@ -2160,15 +2480,31 @@
 
     finishButton?.addEventListener("click", async () => {
       if (!isOperatorRole(currentProfile?.role) || plan.status === "completed") return;
-      const unresolved = plan.steps.filter((step) => !isStepResolved(step));
-      if (unresolved.length) {
-        showToast(unresolved.length === 1
-          ? "Encerre ou marque como não executada a etapa pendente."
-          : `Encerre ou marque como não executadas as ${unresolved.length} etapas pendentes.`);
-        $(`[data-step-id="${unresolved[0].id}"]`, root)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      // O encerramento e do intervalo, nao da frente: enquanto houver etapa
+      // aberta em qualquer frente, o bloqueio continua de pe.
+      const state = closingState();
+      const abertas = state.detail.filter((entry) => !entry.ready);
+      if (abertas.length) {
+        const propria = abertas.find((entry) => entry.front.id === plan.id);
+        if (propria) {
+          const unresolved = plan.steps.filter((step) => !isStepResolved(step));
+          showToast(unresolved.length === 1
+            ? "Encerre ou marque como não executada a etapa pendente."
+            : `Encerre ou marque como não executadas as ${unresolved.length} etapas pendentes.`);
+          if (unresolved.length) $(`[data-step-id="${unresolved[0].id}"]`, root)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        } else {
+          showToast(`Ainda há frente em aberto: ${abertas.map((entry) => entry.label).join(", ")}.`);
+        }
         return;
       }
-      if (!confirm("Finalizar esta execução? Depois do encerramento, os registros passam a fazer parte do histórico e não poderão ser alterados.")) return;
+      if (state.fronts.length > 1 && state.last?.front.id !== plan.id) {
+        showToast(`O encerramento é feito pela ${state.last.label}, que foi a última a concluir.`);
+        return;
+      }
+      const aviso = state.fronts.length > 1
+        ? `Encerrar “${plan.title || "este intervalo"}” com ${state.fronts.length} frentes? Depois do encerramento nenhuma delas aceita alteração.`
+        : "Finalizar esta execução? Depois do encerramento, os registros passam a fazer parte do histórico e não poderão ser alterados.";
+      if (!confirm(aviso)) return;
       finishButton.disabled = true;
       finishButton.textContent = "Finalizando…";
       finishFeedback.textContent = "Confirmando os últimos dados no servidor…";
@@ -2180,14 +2516,22 @@
         if (!cloudSyncing) await syncStoreToCloud();
         while (cloudSyncing) await new Promise((resolve) => setTimeout(resolve, 60));
         if (store.pendingSync || outbox.length || dirtyPlanIds.size || !plan.databaseId) throw new Error("PENDING_SYNC");
+        // A RPC por plano delega para public.close_interval do grupo: encerra
+        // o bloqueio inteiro, com todas as frentes, numa transacao so.
         const { data, error } = await cloudClient.rpc("finalize_interval_plan", { p_plan_id: plan.databaseId });
         if (error) throw error;
-        plan.status = data.status || "completed";
-        plan.completedAt = data.completed_at || new Date().toISOString();
-        plan.revision = Number(data.revision || plan.revision || 0);
+        const closedAt = data?.completed_at || new Date().toISOString();
+        state.fronts.forEach((front) => {
+          front.status = "completed";
+          front.completedAt = closedAt;
+          dirtyPlanIds.delete(front.id);
+        });
+        plan.revision = Number(data?.revision || plan.revision || 0);
         store.pendingSync = false;
         writeStoreLocally();
-        finishFeedback.textContent = "Execução finalizada e registrada no histórico.";
+        finishFeedback.textContent = state.fronts.length > 1
+          ? "Intervalo encerrado com todas as frentes e registrado no histórico."
+          : "Execução finalizada e registrada no histórico.";
         setSyncState("Sincronizado", "saved");
         showToast("Execução finalizada com sucesso.");
         renderPage();
@@ -2197,32 +2541,66 @@
           ? "Conecte-se à internet para finalizar. Seus registros continuam preservados neste dispositivo."
           : error.message === "PENDING_SYNC"
             ? "Ainda há dados pendentes de confirmação pelo servidor. Aguarde a sincronização e tente novamente."
-            : error.message || "Não foi possível finalizar a execução.";
+            : /INTERVAL_HAS_OPEN_STEPS/.test(error.message || "")
+              ? "Há etapas em aberto em alguma frente. Atualize a página e revise antes de encerrar."
+              : error.message || "Não foi possível finalizar a execução.";
         finishButton.disabled = false;
-        finishButton.textContent = "Finalizar execução";
+        renderClosing();
       }
+    });
+
+    $("#front-strip")?.addEventListener("click", (event) => {
+      const tab = event.target.closest("[data-front]");
+      if (!tab || !selectPlan(tab.dataset.front)) return;
+      renderPage();
+    });
+
+    $("#weather-choices")?.addEventListener("click", (event) => {
+      const chip = event.target.closest("[data-weather]");
+      if (!chip || plan.status === "completed") return;
+      // Clicar de novo na mesma condicao limpa o registro.
+      plan.weather = plan.weather === chip.dataset.weather ? "" : chip.dataset.weather;
+      plan.weatherRecordedAt = plan.weather ? new Date().toISOString() : null;
+      persist(true);
+      renderWeather();
+      showToast(plan.weather ? `Clima registrado: ${WEATHER_LABELS[plan.weather]}.` : "Registro de clima removido.");
+    });
+
+    $("#weather-note")?.addEventListener("input", (event) => {
+      if (plan.status === "completed") return;
+      plan.weatherNote = event.target.value;
+      if (!plan.weatherRecordedAt) plan.weatherRecordedAt = new Date().toISOString();
+      persist();
     });
 
     function renderPage() {
       plan = activePlan();
+      const fronts = frontsOf(plan);
       const executionAvailable = plan.locked || hasExecutionData(plan);
       blocked.hidden = executionAvailable;
       content.hidden = !executionAvailable;
       $("#execution-revision-banner").hidden = plan.locked || !hasExecutionData(plan);
       $("#execution-title").textContent = plan.title || "Intervalo sem nome";
       const dateLabel = plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Data não informada";
-      $("#execution-subtitle").textContent = [dateLabel, plan.serviceType, plan.location, plan.contractorName && `Empreiteira: ${plan.contractorName}`, plan.foremanName && `Encarregado: ${plan.foremanName}`, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ");
+      $("#execution-subtitle").textContent = [
+        fronts.length > 1 ? frontLabel(plan, fronts) : "",
+        dateLabel, plan.serviceType, plan.location,
+        plan.contractorName && `Empreiteira: ${plan.contractorName}`,
+        plan.foremanName && `Encarregado: ${plan.foremanName}`,
+        plan.coordinator && `Responsável: ${plan.coordinator}`
+      ].filter(Boolean).join(" · ");
       if (document.activeElement !== $("#execution-notes")) $("#execution-notes").value = plan.executionNotes || "";
       $("#execution-notes").disabled = !executionAvailable || plan.status === "completed";
       const canFinish = executionAvailable && isOperatorRole(currentProfile?.role) && plan.status !== "completed";
       if (finishPanel) finishPanel.hidden = !canFinish;
-      if (finishButton) {
-        finishButton.disabled = false;
-        finishButton.textContent = "Finalizar execução";
-      }
+      if (finishButton) finishButton.disabled = false;
       if (plan.status === "completed" && finishFeedback) finishFeedback.textContent = "Execução finalizada e registrada no histórico.";
+      renderFronts();
+      renderWeather();
       renderSteps();
       renderDashboard();
+      renderSilence();
+      renderClosing();
       renderClock();
       loadExecutionComments();
     }
@@ -2234,6 +2612,7 @@
       if (plan.locked || hasExecutionData(plan)) {
         renderDashboard();
         refreshStepIndicators();
+        renderSilence();
       }
     }, 1000);
   }
@@ -2261,7 +2640,13 @@
     }
 
     function renderPlanOptions() {
-      selector.innerHTML = store.plans.map((plan) => `<option value="${plan.id}" ${plan.id === store.activePlanId ? "selected" : ""}>${escapeHtml(plan.title || "Plano sem nome")}</option>`).join("");
+      selector.innerHTML = store.plans.map((plan) => {
+        const fronts = frontsOf(plan);
+        const label = fronts.length > 1
+          ? `${plan.title || "Plano sem nome"} · ${frontLabel(plan, fronts)}`
+          : (plan.title || "Plano sem nome");
+        return `<option value="${plan.id}" ${plan.id === store.activePlanId ? "selected" : ""}>${escapeHtml(label)}</option>`;
+      }).join("");
     }
 
     function render() {
@@ -2935,8 +3320,13 @@
       const liveState = $("#shared-live-state");
       if (liveState) liveState.hidden = plan.status !== "executing";
 
+      // Aqui a frente vem do proprio payload: o acompanhamento nao carrega as
+      // outras frentes do bloqueio, entao nao ha lista para consultar.
+      const sharedFront = plan.frontName?.trim() || (plan.frontPosition > 1 ? `Frente ${plan.frontPosition}` : "");
+      const sharedWeather = [WEATHER_LABELS[plan.weather], plan.weatherNote].filter(Boolean).join(" · ");
+
       $("#shared-title").textContent = plan.title || "Intervalo sem nome";
-      $("#shared-subtitle").textContent = [plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
+      $("#shared-subtitle").textContent = [sharedFront, plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
       $("#shared-updated").textContent = `Atualizado às ${new Date(metadata.fetched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
       if (metadata.access_mode === "profile") {
         $("#shared-access-title").textContent = "Acesso conforme o seu perfil";
@@ -2950,7 +3340,9 @@
       $("#shared-plan-summary").innerHTML = [
         ["Título", plan.title || "—"], ["Tipo", plan.serviceType || "—"], ["Data", plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
         ["Local", plan.location || "—"], ["Empreiteira", plan.contractorName || "—"], ["Encarregado", plan.foremanName || "—"],
-        ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—"]
+        ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—"],
+        ...(sharedFront ? [["Frente", sharedFront]] : []),
+        ...(sharedWeather ? [["Clima", sharedWeather]] : [])
       ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
       $("#shared-planning-notes").textContent = plan.notes || "Nenhuma observação registrada.";
       $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
@@ -3370,7 +3762,14 @@
   }
 
   if (window.__GESTAO_TEST_MODE__) {
-    window.__GESTAO_TEST_API__ = { buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation, stepScheduleDeviation, wholeMinutes, snapshotSignature, exportPlanToXlsx };
+    window.__GESTAO_TEST_API__ = {
+      buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation,
+      stepScheduleDeviation, wholeMinutes, snapshotSignature, exportPlanToXlsx,
+      blankPlan, normalizePlan, planToDatabase, databaseToPlan,
+      frontsOf, frontLabel, propagateSharedFields, silenceMinutes, lastOperationalStamp,
+      setStore: (next) => { store = next; },
+      getStore: () => store
+    };
     return;
   }
 

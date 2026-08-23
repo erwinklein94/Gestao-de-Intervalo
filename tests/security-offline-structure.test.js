@@ -89,6 +89,31 @@ for (const table of ["interval_plans", "interval_steps", "user_profiles", "datas
 assert.ok(commentAuthorization.includes("private.can_write_plan(plan.dataset_id, plan.coordinator_member_id)"), "comentários devem exigir permissão operacional");
 assert.ok(!commentAuthorization.includes("private.can_read_plan"), "permissão de leitura não pode autorizar comentários");
 
+// Encerramento e vinculo entre frentes sao decisao de banco, nao de tela.
+const frontsMigration = read("supabase/migrations/20260823100000_interval_fronts_weather_and_closure.sql");
+containsAll(frontsMigration, [
+  "create or replace function public.close_interval(p_group_id uuid)",
+  "revoke all on function public.close_interval(uuid) from public, anon;",
+  "grant execute on function public.close_interval(uuid) to authenticated;",
+  "not private.can_write_plan(plan.dataset_id, plan.coordinator_member_id)",
+  "Este intervalo pertence a outro responsavel.",
+  "new.group_id := old.group_id;",
+  "security definer"
+], "encerramento do intervalo e propriedade das frentes");
+assert.ok(
+  frontsMigration.includes("public.close_interval(target.group_id)"),
+  "finalizar um plano deve encerrar o intervalo do qual ele faz parte"
+);
+
+// A remocao da SUB nao pode levar junto o escopo de Gerente nem a empreiteira.
+const subRemoval = read("supabase/migrations/20260823090000_remove_sub_catalog.sql");
+containsAll(subRemoval, [
+  "drop table if exists public.subs;",
+  "alter table public.interval_plans drop column if exists sub_id;",
+  "private.actual_role() in ('manager', 'coordinator', 'specialist')",
+  "contractor_name = coalesce(p_plan->>'contractor_name', '')"
+], "remoção da SUB preservando escopo de Gerente e dados da empreiteira");
+
 containsAll(app, [
   'const OUTBOX_KEY = "gestaoIntervaloRumo.outbox"',
   'const DEVICE_KEY = "gestaoIntervaloRumo.deviceId"',
@@ -139,9 +164,8 @@ containsAll(createUser, [
 containsAll(share, [
   ".eq(\"token_hash\", tokenHash)",
   '.eq("code", "real").eq("kind", "real")',
-  '.eq("is_example", false)',
   '["editor", "manager", "coordinator", "specialist"].includes(ownerProfile.role)',
-  '.select("author_name,author_role,content,created_at")',
+  '.select("author_name,author_role,author_role_gender,content,created_at")',
   '.is("deleted_at", null)',
   '"Cache-Control": "no-store"',
   '"X-Content-Type-Options": "nosniff"'

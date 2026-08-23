@@ -1,0 +1,42 @@
+{
+  "name": "Gestão de Intervalo",
+  "short_name": "Intervalo",
+  "description": "Planejamento, execução e acompanhamento de intervalos de manutenção de via permanente.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FFFFFF",
+  "theme_color": "#003865",
+  "categories": ["productivity", "business"],
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Executar intervalo",
+      "short_name": "Executar",
+      "description": "Registrar horários realizados em campo.",
+      "url": "./executar.html"
+    },
+    {
+      "name": "Visão gerencial",
+      "short_name": "Gestão",
+      "description": "Atrasos, execução ao vivo e histórico.",
+      "url": "./gestao.html"
+    }
+  ]
+}
