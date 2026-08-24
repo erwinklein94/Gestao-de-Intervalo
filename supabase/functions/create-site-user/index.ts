@@ -131,7 +131,7 @@ Deno.serve(async (request) => {
 
     try {
       const { data: profile, error: profileError } = await admin.from("user_profiles").upsert({
-        id: created.user.id, email, full_name: fullName, role, enabled: true, manager_id: null, sub_id: null,
+        id: created.user.id, email, full_name: fullName, role, enabled: true, manager_id: null,
         coordinator_types: classifications, role_gender: roleGender, profile_needs_review: false,
       }, { onConflict: "id" }).select("id,email,full_name,role,role_gender,enabled,manager_id,coordinator_type,coordinator_types,organization_member_id").single();
       if (profileError || !profile) throw profileError || new Error("missing_profile");

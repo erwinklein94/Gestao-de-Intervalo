@@ -86,6 +86,11 @@ $$;
 create index if not exists interval_plans_group_idx
   on public.interval_plans (group_id, front_position);
 
+-- closed_by referencia auth.users; sem indice de cobertura, a exclusao de uma
+-- conta varre interval_plans inteira para checar a chave estrangeira.
+create index if not exists interval_plans_closed_by_idx
+  on public.interval_plans (closed_by) where closed_by is not null;
+
 comment on column public.interval_plans.group_id is
   'Intervalo ao qual esta frente pertence. Frente unica tem grupo proprio.';
 comment on column public.interval_plans.front_position is
