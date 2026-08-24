@@ -174,13 +174,23 @@ includesAll(styles, [
   ".management-tabs button .tab-badge"
 ], "estilos dos componentes novos");
 includesAll(styles, [
-  "grid-template-columns: repeat(auto-fit, minmax(92px, 1fr))",
+  // Uma linha so para a navegação do topo. Com auto-fit e mínimo de 92px, uma
+  // tela de 375px só acomodava três colunas e "Conta" descia sozinha para uma
+  // segunda linha, engordando o cabeçalho de todas as páginas.
+  "grid-template-columns: repeat(var(--nav-count, 4), minmax(0, 1fr))",
   ".management-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
   ".shared-tabs,\n  .detail-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }",
   "max-height: calc(100dvh - 12px)",
   "padding: 14px 14px max(24px, env(safe-area-inset-bottom))",
   ".portal-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }"
 ], "navegação compacta e modais seguros no celular");
+// O CSS agora conta com --nav-count para saber quantas colunas abrir; quem
+// publica essa contagem é o portal.js, ao montar a navegação por perfil. Se um
+// dos dois lados sumir, a barra volta a quebrar em duas linhas em silêncio.
+const portal = read("assets/portal.js");
+assert.match(portal, /nav\.style\.setProperty\("--nav-count", links\.length\)/, "o portal precisa publicar quantos destinos o perfil tem");
+assert.ok(styles.includes("var(--nav-count, 4)"), "o CSS precisa consumir a contagem publicada pelo portal");
+
 assert.match(styles, /@media \(max-width: 720px\)/, "componentes devem compartilhar o breakpoint móvel principal");
 let braceBalance = 0;
 for (const character of styles.replace(/\/\*[\s\S]*?\*\//g, "")) {

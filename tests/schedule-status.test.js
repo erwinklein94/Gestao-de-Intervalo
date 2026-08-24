@@ -26,8 +26,29 @@ const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 vm.runInNewContext(source, sandbox, { filename: "app.js" });
 const { buildTimeline, executionStatus, intervalElapsedTime, snapshotSignature } = sandbox.window.__GESTAO_TEST_API__;
 
-function plan(steps, overrides = {}) {
+// Desde que os horarios do intervalo passaram a guardar data e hora, app.js
+// so aceita carimbo completo (STAMP_PATTERN, YYYY-MM-DDTHH:MM): relogio puro
+// devolve null em stampToAbsolute e a linha do tempo sai inteira vazia. Os
+// cenarios continuam escritos em relogio, que e como se fala deles em campo;
+// o dia do intervalo entra aqui, num lugar so.
+function anchorClocks(candidate) {
+  const anchor = (value) => (/^\d{2}:\d{2}$/.test(value || "") ? `${candidate.date}T${value}` : value);
   return {
+    ...candidate,
+    windowStart: anchor(candidate.windowStart),
+    windowEnd: anchor(candidate.windowEnd),
+    steps: candidate.steps.map((step) => ({
+      ...step,
+      plannedStart: anchor(step.plannedStart),
+      plannedEnd: anchor(step.plannedEnd),
+      actualStart: anchor(step.actualStart),
+      actualEnd: anchor(step.actualEnd)
+    }))
+  };
+}
+
+function plan(steps, overrides = {}) {
+  return anchorClocks({
     date: "2026-08-20",
     windowStart: "08:00",
     windowEnd: "10:00",
@@ -42,7 +63,7 @@ function plan(steps, overrides = {}) {
       ...step
     })),
     ...overrides
-  };
+  });
 }
 
 function statusOf(candidate) {

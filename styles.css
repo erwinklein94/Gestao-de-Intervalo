@@ -1409,7 +1409,12 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
     max-width: none;
     padding: 6px 0 10px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+    /* Uma linha so. O antigo auto-fit com minimo de 92px so acomodava tres
+       colunas numa tela de 375px, e "Conta" descia sozinha para a segunda
+       linha -- 58px de cabecalho a mais, em todas as paginas, o dia inteiro.
+       O --nav-count vem do portal.js, que ja publicava quantos destinos o
+       perfil tem; sem ele (paginas de nav fixa) sao os quatro de sempre. */
+    grid-template-columns: repeat(var(--nav-count, 4), minmax(0, 1fr));
     gap: 6px;
     overflow: visible;
   }
@@ -1421,6 +1426,10 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
     border-radius: 8px;
     background: rgba(255,255,255,.06);
     white-space: normal;
+    /* Rede de seguranca para a navegacao de cinco destinos do gestor num
+       aparelho de 320px: melhor quebrar "Dashboard" do que deixar o rotulo
+       escapar para fora do cabecalho. */
+    overflow-wrap: anywhere;
   }
   .primary-nav a.active { background: rgba(127,224,108,.13); }
   .primary-nav a::after { left: 8px; right: 8px; }
@@ -1524,6 +1533,15 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .overview-kpis .dashboard-kpi { min-height: 104px; padding: 13px; }
   .detail-kpis .dashboard-kpi strong,
   .overview-kpis .dashboard-kpi strong { font-size: 23px; }
+}
+
+/* Aparelhos estreitos (320-360px): "Dashboard" mede 61px em corpo 10 e nao
+   cabia nos 59px uteis da celula, quebrando em duas linhas e engordando a
+   barra inteira. Menos respiro entre as celulas resolve sem diminuir a fonte
+   nem o alvo de toque, que continua sendo a celula toda. */
+@media (max-width: 360px) {
+  .site-header .primary-nav { gap: 4px; }
+  .primary-nav a { padding-inline: 2px; }
 }
 
 @media (max-width: 460px) {
