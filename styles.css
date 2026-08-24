@@ -1237,15 +1237,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .page-export-bar { width: min(100% - 24px, 1280px); align-items: stretch; flex-direction: column; }
   .page-export-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .page-export-actions .button { width: 100%; min-width: 0; padding-inline: 8px; }
-  .status-hero { min-height: auto; padding: 22px 20px; align-items: stretch; gap: 16px; }
-  .status-value strong { font-size: 68px; }
-  .status-clocks { width:100%; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-  .status-clock { min-width: 0; padding: 12px 14px; }
-  .status-clock strong { font-size:23px; }
-  .status-clock small { font-size:9px; }
-  .metric-grid { grid-template-columns: 1fr 1fr; }
-  .metric-card { min-height: 118px; }
-  .metric-card strong, .metric-card small { overflow-wrap: anywhere; }
+  /* Faixa de atraso, frentes e cartoes de resumo: ver "Execucao no celular". */
   .execution-list { padding-inline: 18px; }
   .execution-step-header { grid-template-columns: 40px 1fr; }
   .step-variance { grid-column: 2; justify-self: start; }
@@ -1324,13 +1316,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
 @media (max-width: 460px) {
   .page-hero h1 { font-size: 31px; }
   .hero-actions, .hero-actions .button, .data-actions, .data-actions .button { width: 100%; }
-  .metric-grid { grid-template-columns: 1fr; }
-  .status-value strong { font-size: 60px; }
-  .status-value span:first-child { font-size: 30px; }
-  .status-value span:last-child { font-size: 19px; }
-  .status-clocks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .shared-status-clocks { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .status-clock strong { font-size: 21px; }
   .dialog-actions { flex-direction: column; }
   .realized-times { grid-template-columns: 1fr; }
   .dashboard-kpis { grid-template-columns: 1fr; }
@@ -1549,8 +1535,69 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .data-actions .button { width: auto; min-width: 0; padding-inline: 8px; font-size: 10px; }
   .hero-actions .button:last-child:nth-child(odd),
   .data-actions .button:last-child:nth-child(odd) { grid-column: 1 / -1; }
-  .metric-grid,
   .dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ==========================================================================
+   Execucao no celular: encurtar o caminho ate as etapas
+   --------------------------------------------------------------------------
+   No telefone, tudo que vem antes da lista de etapas -- atraso, titulo,
+   botoes, frentes e os cinco cartoes de resumo -- ocupava quase duas telas.
+   Mas quem abre esta pagina em campo abre para registrar horario, e so
+   chegava na primeira etapa depois de rolar duas vezes.
+
+   Nada e escondido aqui: as mesmas informacoes, na mesma ordem, em
+   tipografia e respiro proporcionais a tela. O bloco fica antes de
+   @media print de proposito -- na impressao as regras de la e que valem.
+   -------------------------------------------------------------------------- */
+@media (max-width: 720px) {
+  /* O numero do atraso continua sendo a maior coisa da tela; o que sai e o
+     respiro de desktop em volta dele. */
+  .status-hero { min-height: auto; padding: 16px 16px 18px; align-items: stretch; gap: 12px; }
+  .status-label { margin-bottom: 2px; font-size: 10px; letter-spacing: .1em; }
+  .status-value strong { font-size: 54px; }
+  .status-value span:first-child { font-size: 27px; }
+  .status-value span:last-child { font-size: 16px; margin-left: 5px; }
+  .status-readable { margin-top: 6px; padding: 4px 8px; font-size: 11px; }
+  .status-clocks { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .status-clock { min-width: 0; padding: 9px 10px; border-radius: 12px; }
+  .status-clock span { font-size: 9px; letter-spacing: .06em; }
+  .status-clock strong { margin: 2px 0 0; font-size: 20px; }
+  .status-clock small { font-size: 9px; }
+
+  /* Identificacao do intervalo. O titulo segue titulo; a linha de baixo e
+     uma tira de metadados e le-se bem em corpo menor. */
+  .execution-workspace { padding-top: 18px; }
+  .execution-heading { gap: 10px; margin-bottom: 14px; }
+  .execution-heading .section-kicker { margin-bottom: 4px; font-size: 9px; }
+  .execution-heading h1 { font-size: 21px; line-height: 1.15; }
+  .execution-heading p:last-child { margin-top: 5px; font-size: 11px; line-height: 1.4; }
+  .execution-heading .silence-chip { margin-top: 6px; padding: 5px 8px; font-size: 10px; }
+
+  /* Exportar e ver planejamento sao acoes de escritorio: cabem em uma linha
+     so, em vez de tres botoes de largura inteira empilhados. */
+  .execution-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .execution-actions .button { min-width: 0; min-height: 38px; padding-inline: 6px; gap: 4px; font-size: 10px; text-align: center; }
+
+  /* Os cinco cartoes de resumo. A previsao de encerramento ocupa a linha
+     inteira porque e a leitura que decide se ainda da tempo. */
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .metric-card { min-height: 0; padding: 11px 12px; border-radius: 11px; }
+  .metric-card > span { font-size: 9px; letter-spacing: .05em; }
+  .metric-card strong { margin: 4px 0 2px; font-size: 16px; overflow-wrap: anywhere; }
+  .metric-card small { font-size: 9px; line-height: 1.3; overflow-wrap: anywhere; }
+  .metric-card.emphasis { grid-column: 1 / -1; }
+  .metric-card.emphasis strong { font-size: 21px; }
+  .progress-track { height: 5px; margin-top: 7px; }
+
+  /* Cabecalho da tabela: o texto de apoio se le uma vez e vale para sempre,
+     entao ele encolhe para nao empurrar as etapas tela abaixo. */
+  .execution-panel .panel-heading { padding: 13px 16px 11px; gap: 8px; }
+  .execution-panel .panel-heading > div:first-child { gap: 10px; }
+  .execution-panel .step-number { width: 28px; height: 28px; font-size: 10px; }
+  .execution-panel .panel-heading h2 { font-size: 15px; }
+  .execution-panel .panel-heading p { margin-top: 3px; font-size: 11px; line-height: 1.35; }
+  .execution-panel .legend { gap: 12px; font-size: 9px; }
 }
 
 @media print {
@@ -1573,7 +1620,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .execution-workspace { width: 100%; padding: 18px 0; }
   .metric-grid { grid-template-columns: repeat(5, 1fr); }
   .metric-card { min-height: 90px; break-inside: avoid; }
-  .metric-card.emphasis { background: white; border-color: var(--blue); }
+  .metric-card.emphasis { grid-column: auto; background: white; border-color: var(--blue); }
   .metric-card.emphasis strong { color: var(--blue); }
   .metric-card.emphasis > span, .metric-card.emphasis small { color:var(--muted); }
   .execution-panel, .execution-notes { box-shadow: none; }
@@ -1653,6 +1700,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   body.shared-printing .shared-step { break-inside:avoid; }
 }
 
+/* ==========================================================================
    Frentes, silencio e encerramento
    -------------------------------------------------------------------------- */
 
@@ -1707,6 +1755,16 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
 
 @media (max-width: 760px) {
   .front-tab { min-width: 0; flex: 1 1 132px; }
+}
+
+/* A faixa de frentes fica entre o titulo e os cartoes de resumo: no celular
+   ela tambem cede altura, para nao adiar as etapas. */
+@media (max-width: 720px) {
+  .front-bar { margin-top: 12px; gap: 6px; }
+  .front-tab { padding: 7px 10px; border-radius: 10px; }
+  .front-tab b { font-size: 11px; }
+  .front-tab small { font-size: 9px; }
+  .front-hint { font-size: 10px; }
 }
 
 html[data-theme="dark"] .front-tab.is-active { border-color: var(--sky); box-shadow: inset 0 0 0 1px var(--sky); }

@@ -190,4 +190,33 @@ for (const character of styles.replace(/\/\*[\s\S]*?\*\//g, "")) {
 }
 assert.equal(braceBalance, 0, "todos os blocos CSS devem ser fechados");
 
+
+// Um /* que nunca abriu faz o parser engolir a regra seguinte inteira, sem
+// erro nenhum: foi assim que .front-bar passou dois commits sem display:grid.
+const semComentarios = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+assert.ok(!semComentarios.includes("*/"), "há um */ sem /* correspondente: a regra logo abaixo dele é descartada pelo navegador");
+assert.ok(!semComentarios.includes("/*"), "há um /* que nunca fecha");
+assert.match(styles, /^\.front-bar \{[^}]*display: grid/m, "a faixa de frentes precisa continuar chegando ao navegador");
+
+// Execução no celular: o caminho até as etapas.
+const compactacao = styles.indexOf("Execucao no celular");
+assert.ok(compactacao > -1, "o bloco que encolhe o topo da execução no celular sumiu");
+assert.ok(compactacao < styles.indexOf("@media print"), "a compactação móvel precisa vir antes de @media print, senão ela vence na hora de gerar o PDF");
+includesAll(styles.slice(compactacao), [
+  ".status-value strong { font-size: 54px; }",
+  ".execution-heading h1 { font-size: 21px; line-height: 1.15; }",
+  ".execution-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }",
+  ".metric-card { min-height: 0;",
+  ".metric-card.emphasis { grid-column: 1 / -1; }",
+  ".execution-panel .panel-heading { padding: 13px 16px 11px;"
+], "compactação do topo da execução no celular");
+// A previsão ocupa a linha toda no celular; na impressão a grade tem 5 colunas
+// e ela precisa voltar a ser um cartão comum.
+assert.match(styles.slice(styles.indexOf("@media print")), /\.metric-card\.emphasis \{ grid-column: auto;/, "a previsão não pode esticar por cinco colunas no PDF");
+// Os valores grandes de antes não podem sobreviver em outro bloco e vencer no
+// final da cascata.
+["font-size: 68px", "min-height: 118px"].forEach((morto) => {
+  assert.ok(!styles.includes(morto), `sobrou a medida antiga ${morto}, que reverteria a compactação`);
+});
+
 console.log("pages-structure: portal, administração e integrações estruturais aprovados");
