@@ -301,6 +301,38 @@ test("estrutura das telas de frente, clima e encerramento", () => {
   }
 });
 
+test("o acompanhamento liga as frentes do mesmo bloqueio", () => {
+  const shared = read("acompanhar.html");
+  for (const marca of ['id="shared-front-bar"', 'id="shared-front-strip"', 'id="shared-front-count"']) {
+    assert.ok(shared.includes(marca), `acompanhamento: ausente ${marca}`);
+  }
+
+  const app = read("app.js");
+  assert.ok(app.includes("function renderSharedFronts()"), "a página precisa desenhar a faixa de frentes");
+  assert.ok(app.includes("function selectSharedFront(key)"), "trocar de frente precisa ser uma ação da página");
+  assert.ok(/bar\.hidden = sharedFronts\.length < 2;/.test(app), "com uma frente só a faixa não aparece");
+  // O link publico manda a frente escolhida; o modo autenticado troca o plano.
+  assert.ok(/body: JSON\.stringify\(activeFront \? \{ token, front: activeFront \} : \{ token \}\)/.test(app), "o token precisa carregar a frente escolhida");
+  assert.ok(/url\.searchParams\.set\("front", key\)/.test(app), "a frente escolhida deve ficar na URL");
+  assert.ok(/url\.searchParams\.set\("plan", key\)/.test(app), "no modo autenticado a troca é por plano");
+  assert.ok(/\.eq\("group_id", plan\.group_id \|\| plan\.id\)/.test(app), "as irmãs vêm pelo group_id, sob a mesma RLS");
+  // Quem serve a frente e a funcao: o cliente segue a decisao dela.
+  assert.ok(/activeFront = payload\.plan\?\.client_id \|\| "";/.test(app), "a faixa deve seguir a frente que a função devolveu");
+
+  const edge = read("supabase/functions/interval-share/index.ts");
+  assert.ok(edge.includes('.eq("group_id", anchor.group_id)'), "a função precisa enxergar o bloqueio inteiro");
+  assert.ok(
+    edge.includes("groupPlans.find((front) => front.client_id === requestedFront)"),
+    "a frente pedida é resolvida dentro do grupo"
+  );
+  assert.ok(
+    /ownerMember\.id === anchor\.coordinator_member_id/.test(edge),
+    "a autorização do dono continua ancorada na frente do link"
+  );
+  assert.ok(/const fronts = groupPlans\.map\(/.test(edge), "a lista de frentes deve ser montada para a navegação");
+  assert.ok(!/fronts = groupPlans\.map\([\s\S]{0,400}interval_steps/.test(edge), "a lista de frentes não pode carregar etapas");
+});
+
 test("PWA registra service worker, manifesto e ícone próprios", () => {
   const manifest = JSON.parse(read("manifest.webmanifest"));
   assert.equal(manifest.display, "standalone");

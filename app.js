@@ -3278,10 +3278,14 @@
   function sharedPage() {
     const params = new URLSearchParams(location.search);
     const token = params.get("token") || "";
-    const requestedPlanId = params.get("plan") || "";
+    let requestedPlanId = params.get("plan") || "";
     const requestedView = params.get("view") || "plan";
     const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const internalMode = Boolean(requestedPlanId);
+    // Qual frente do bloqueio esta na tela. No modo publico e o client_id que a
+    // Edge Function devolve; no modo autenticado, o id do plano.
+    let activeFront = params.get("front") || "";
+    let sharedFronts = [];
     const loading = $("#shared-loading");
     const errorPanel = $("#shared-error");
     const content = $("#shared-content");
@@ -3522,6 +3526,24 @@
         .maybeSingle();
       if (error) throw error;
       if (!plan) throw new Error("Este intervalo não está disponível para o seu perfil.");
+
+      // As frentes irmas vem pelo group_id, dentro do mesmo escopo de RLS: se o
+      // perfil nao enxerga uma delas, ela simplesmente nao aparece na faixa.
+      activeFront = plan.id;
+      const { data: irmas } = await internalClient
+        .from("interval_plans")
+        .select("id,front_position,front_name,service_type,status")
+        .eq("group_id", plan.group_id || plan.id)
+        .order("front_position")
+        .order("created_at");
+      sharedFronts = (irmas || []).map((front) => ({
+        key: front.id,
+        label: String(front.front_name || "").trim() || `Frente ${front.front_position || 1}`,
+        serviceType: front.service_type,
+        status: front.status
+      }));
+      renderSharedFronts();
+
       renderSharedPlan(databaseToPlan(plan), {
         access_mode: "profile",
         fetched_at: new Date().toISOString(),
@@ -3537,9 +3559,24 @@
           return;
         }
         if (!/^[A-Za-z0-9_-]{43,128}$/.test(token)) { showError("O endereço está incompleto ou não contém um código de acesso válido."); return; }
-        const response = await fetch(`${SUPABASE_URL}/functions/v1/interval-share`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }), cache: "no-store" });
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/interval-share`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(activeFront ? { token, front: activeFront } : { token }),
+          cache: "no-store"
+        });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) { showError(payload.error || "O link expirou, foi revogado ou não existe."); clearInterval(refreshTimer); return; }
+        // A funcao decide qual frente serviu: se a pedida nao pertence ao
+        // bloqueio, ela devolve a do link, e a faixa acompanha essa decisao.
+        activeFront = payload.plan?.client_id || "";
+        sharedFronts = (payload.fronts || []).map((front) => ({
+          key: front.client_id,
+          label: String(front.front_name || "").trim() || `Frente ${front.front_position || 1}`,
+          serviceType: front.service_type,
+          status: front.status
+        }));
+        renderSharedFronts();
         renderSharedPlan(databaseToPlan(payload.plan), payload);
       } catch (error) {
         console.warn("Falha ao atualizar acompanhamento.", error);
@@ -3547,6 +3584,47 @@
         else $("#shared-updated").textContent = "Sem conexão · tentando novamente";
       }
     }
+
+    // Cada frente tem a sua propria pagina de acompanhamento; a faixa liga umas
+    // as outras sem obrigar quem recebeu o link a pedir outro.
+    function renderSharedFronts() {
+      const bar = $("#shared-front-bar");
+      const strip = $("#shared-front-strip");
+      if (!bar || !strip) return;
+      bar.hidden = sharedFronts.length < 2;
+      if (sharedFronts.length < 2) { strip.innerHTML = ""; return; }
+      strip.innerHTML = sharedFronts.map((front) => {
+        const active = front.key === activeFront;
+        const estado = front.status === "completed" ? "encerrada"
+          : front.status === "executing" ? "em execução"
+          : "em planejamento";
+        return `<button class="front-tab${active ? " is-active" : ""}" type="button" role="tab" aria-selected="${active}" data-shared-front="${escapeHtml(front.key)}">
+          <b>${escapeHtml(front.label)}</b>
+          <small>${escapeHtml(front.serviceType || estado)}</small>
+        </button>`;
+      }).join("");
+      $("#shared-front-count").textContent = `${sharedFronts.length} frentes no mesmo bloqueio. O acompanhamento de cada uma é separado.`;
+    }
+
+    function selectSharedFront(key) {
+      if (!key || key === activeFront) return;
+      activeFront = key;
+      const url = new URL(location.href);
+      if (internalMode) {
+        requestedPlanId = key;
+        url.searchParams.set("plan", key);
+      } else {
+        url.searchParams.set("front", key);
+      }
+      history.replaceState(null, "", url);
+      sharedPlan = null;
+      loadSharedPlan(true);
+    }
+
+    $("#shared-front-strip")?.addEventListener("click", (event) => {
+      const tab = event.target.closest("[data-shared-front]");
+      if (tab) selectSharedFront(tab.dataset.sharedFront);
+    });
 
     function activateSharedView(tab) {
       $$('[data-shared-tab]').forEach((item) => {

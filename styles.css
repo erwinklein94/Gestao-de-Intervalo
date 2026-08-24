@@ -1726,3 +1726,11 @@ html[data-theme="dark"] .silence-chip,
 html[data-theme="dark"] .card-silence,
 html[data-theme="dark"] .detail-silence { color: #fadfc6; background: #3a2f14; }
 html[data-theme="dark"] .interval-card-tags i.tag-fronts { color: var(--sky); background: rgba(50, 166, 230, .14); }
+
+/* A faixa de frentes na pagina de acompanhamento acompanha a mesma sangria
+   das outras secoes full-bleed dessa tela. */
+.shared-front-bar { margin: 0; padding: 18px max(24px, calc((100vw - 1280px) / 2)) 0; background: var(--white); }
+.shared-front-bar[hidden] { display: none; }
+@media (max-width: 720px) {
+  .shared-front-bar { padding: 14px 12px 0; }
+}

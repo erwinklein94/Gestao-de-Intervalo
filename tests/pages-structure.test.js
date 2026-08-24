@@ -139,7 +139,8 @@ assert.deepEqual(attributeValues(shared, "data-shared-tab"), ["plan", "execution
 assert.deepEqual(attributeValues(shared, "data-shared-view"), ["plan", "execution", "dashboard"]);
 includesAll(shared, ['assets/supabase.min.js', 'assets/jszip.min.js', 'id="export-shared-xlsx"', 'id="export-shared-pdf"', 'id="shared-plan-summary"', 'id="shared-planning-notes"', 'id="shared-planned-steps"', 'id="shared-comments"', 'id="shared-access-title"', 'id="shared-access-description"'], "acompanhamento público e autenticado somente leitura");
 includesAll(read("app.js"), [
-  'const requestedPlanId = params.get("plan")',
+  // Deixou de ser const porque trocar de frente reaponta o plano exibido.
+  'let requestedPlanId = params.get("plan")',
   'const requestedView = params.get("view")',
   'async function loadInternalPlan()',
   '.eq("id", requestedPlanId)',
