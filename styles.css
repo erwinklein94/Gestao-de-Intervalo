@@ -1741,6 +1741,8 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
 .card-silence { width: fit-content; margin-top: 6px; padding: 5px 8px; border-radius: 7px; color: #8a4b12; background: #fff6d1; font-size: 9px; font-weight: 700; cursor: help; }
 .interval-card.is-silent:not(.is-late) { border-left-color: var(--yellow); }
 .detail-silence { margin: 12px 0 0; padding: 9px 12px; border-radius: 9px; color: #8a4b12; background: #fff6d1; font-size: 12px; font-weight: 700; }
+/* Quem encerrou o intervalo, no detalhe gerencial. */
+.detail-closure { margin: 12px 0 0; padding: 9px 12px; border-radius: 9px; color: var(--blue); background: var(--surface); border-left: 3px solid var(--green); font-size: 12px; font-weight: 700; }
 .interval-card-tags i.tag-fronts { color: var(--blue); background: #e5f4fb; font-weight: 700; }
 
 /* Contador de atraso sobre a aba "Em execucao". */

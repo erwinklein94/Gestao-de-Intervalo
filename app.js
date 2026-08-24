@@ -197,10 +197,44 @@
     return plan.frontName?.trim() || `Frente ${plan.frontPosition || 1}`;
   }
 
+  // Quem encerrou e quando. O nome vem gravado no proprio intervalo, no
+  // momento do encerramento -- e nao resolvido na hora de exibir -- para o
+  // historico nao mudar se a pessoa for renomeada ou desativada depois.
+  function closureCredit(plan) {
+    if (!plan?.completedAt) return "";
+    const quando = new Date(plan.completedAt);
+    const carimbo = Number.isNaN(quando.getTime())
+      ? ""
+      : quando.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+    const quem = plan.closedByName?.trim();
+    if (quem && carimbo) return `${quem} · ${carimbo}`;
+    return quem || carimbo || "—";
+  }
+
+  // A posicao da frente nova nao sai do tamanho da lista. A exclusao renumera
+  // as frentes que ficam, mas a lista pode chegar do servidor com buraco --
+  // outro aparelho apagou uma frente e a renumeracao ainda nao sincronizou.
+  // Com fronts.length + 1, posicoes [1, 3] gerariam outra frente na posicao 3
+  // e duas se chamariam "Frente 3". A menor vaga livre nunca colide, e como so
+  // procura ate MAX_FRONTS ela tambem nunca pede ao banco uma posicao que ele
+  // recusaria.
+  function nextFrontPosition(fronts) {
+    const ocupadas = new Set(fronts.map((front) => Number(front.frontPosition) || 1));
+    for (let posicao = 1; posicao <= MAX_FRONTS; posicao += 1) {
+      if (!ocupadas.has(posicao)) return posicao;
+    }
+    return null;
+  }
+
   // O que identifica o bloqueio e um dado so: alterar em uma frente altera em
   // todas, senao a mesma janela apareceria com dois horarios diferentes.
   function propagateSharedFields(source) {
-    const siblings = frontsOf(source).filter((plan) => plan.id !== source.id);
+    // Frente encerrada e historico: o banco recusa a gravacao e
+    // enqueueDirtyPlans descarta o plano antes de enfileirar. Mudar o objeto
+    // local mesmo assim so faria a tela mostrar um titulo que o servidor nunca
+    // recebeu, ate o proximo refreshCloudStore desfazer sozinho.
+    if (source.completedAt) return false;
+    const siblings = frontsOf(source).filter((plan) => plan.id !== source.id && !plan.completedAt);
     if (!siblings.length) return false;
     let changed = false;
     siblings.forEach((plan) => {
@@ -254,6 +288,7 @@
     plan.coordinatorType = plan.coordinatorType || null;
     plan.status = plan.status || "planning";
     plan.completedAt = plan.completedAt || null;
+    plan.closedByName = plan.closedByName || "";
     plan.revision = Number.isFinite(Number(plan.revision)) ? Number(plan.revision) : 0;
     plan.steps.forEach((step) => {
       step.id = step.id || uid();
@@ -433,6 +468,9 @@
       coordinatorType: row.coordinator_type,
       status: row.status || "planning",
       completedAt: row.completed_at,
+      // Quem encerrou vem com o nome ja resolvido pelo banco: closed_by guarda
+      // um id de auth.users que o cliente nao tem permissao de traduzir.
+      closedByName: row.closed_by_name || "",
       revision: Number(row.revision || 0),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -1356,7 +1394,15 @@
     rows.push(`<row r="5">${excelCell(1, 5, "Responsável", 3)}${excelCell(4, 5, plan.coordinator, 5)}${excelCell(7, 5, "Local / trecho", 3)}${excelCell(9, 5, plan.location, 5)}</row>`);
     rows.push(`<row r="6" ht="34" customHeight="1">${excelCell(1, 6, "Observações do planejamento", 3)}${excelCell(4, 6, plan.notes, 9)}</row>`);
     rows.push(`<row r="7" ht="34" customHeight="1">${excelCell(1, 7, "Registro geral da execução", 3)}${excelCell(4, 7, plan.executionNotes, 9)}</row>`);
-    rows.push(`<row r="8" ht="8" customHeight="1"></row>`);
+    // A linha 8 e um respiro fino. Num intervalo encerrado ela vira o registro
+    // de quem encerrou -- aproveitar a linha que ja existe evita renumerar o
+    // cabecalho, a faixa congelada, o autofiltro e a formatacao condicional,
+    // todos presos a numeros fixos daqui para baixo.
+    const credito = closureCredit(plan);
+    const linhaDoEncerramento = credito && credito !== "—";
+    rows.push(linhaDoEncerramento
+      ? `<row r="8">${excelCell(1, 8, "Encerrado por", 3)}${excelCell(4, 8, credito, 5)}</row>`
+      : `<row r="8" ht="8" customHeight="1"></row>`);
     rows.push(`<row r="9" ht="28" customHeight="1">${headers.map((header, index) => excelCell(index + 1, 9, header, 4)).join("")}</row>`);
     dataRows.forEach((values, index) => {
       const rowNumber = index + 10;
@@ -1366,7 +1412,7 @@
     });
     const lastRow = Math.max(9, dataRows.length + 9);
     const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="9" topLeftCell="A10" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="38" customWidth="1"/><col min="3" max="4" width="18" customWidth="1"/><col min="5" max="5" width="24" customWidth="1"/><col min="6" max="7" width="17" customWidth="1"/><col min="8" max="9" width="22" customWidth="1"/><col min="10" max="10" width="16" customWidth="1"/><col min="11" max="11" width="52" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A9:K${lastRow}"/><mergeCells count="17"><mergeCell ref="A1:K1"/><mergeCell ref="A3:C3"/><mergeCell ref="D3:F3"/><mergeCell ref="G3:H3"/><mergeCell ref="I3:K3"/><mergeCell ref="A4:C4"/><mergeCell ref="D4:F4"/><mergeCell ref="G4:H4"/><mergeCell ref="I4:K4"/><mergeCell ref="A5:C5"/><mergeCell ref="D5:F5"/><mergeCell ref="G5:H5"/><mergeCell ref="I5:K5"/><mergeCell ref="A6:C6"/><mergeCell ref="D6:K6"/><mergeCell ref="A7:C7"/><mergeCell ref="D7:K7"/></mergeCells>${lastRow >= 10 ? `<conditionalFormatting sqref="E10:E${lastRow}"><cfRule type="dataBar" priority="1"><dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/><color rgb="FF003865"/></dataBar></cfRule></conditionalFormatting><conditionalFormatting sqref="H10:H${lastRow}"><cfRule type="dataBar" priority="2"><dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/><color rgb="FF22A884"/></dataBar></cfRule></conditionalFormatting>` : ""}</worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="9" topLeftCell="A10" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="38" customWidth="1"/><col min="3" max="4" width="18" customWidth="1"/><col min="5" max="5" width="24" customWidth="1"/><col min="6" max="7" width="17" customWidth="1"/><col min="8" max="9" width="22" customWidth="1"/><col min="10" max="10" width="16" customWidth="1"/><col min="11" max="11" width="52" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A9:K${lastRow}"/><mergeCells count="${linhaDoEncerramento ? 19 : 17}"><mergeCell ref="A1:K1"/><mergeCell ref="A3:C3"/><mergeCell ref="D3:F3"/><mergeCell ref="G3:H3"/><mergeCell ref="I3:K3"/><mergeCell ref="A4:C4"/><mergeCell ref="D4:F4"/><mergeCell ref="G4:H4"/><mergeCell ref="I4:K4"/><mergeCell ref="A5:C5"/><mergeCell ref="D5:F5"/><mergeCell ref="G5:H5"/><mergeCell ref="I5:K5"/><mergeCell ref="A6:C6"/><mergeCell ref="D6:K6"/><mergeCell ref="A7:C7"/><mergeCell ref="D7:K7"/>${linhaDoEncerramento ? '<mergeCell ref="A8:C8"/><mergeCell ref="D8:K8"/>' : ""}</mergeCells>${lastRow >= 10 ? `<conditionalFormatting sqref="E10:E${lastRow}"><cfRule type="dataBar" priority="1"><dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/><color rgb="FF003865"/></dataBar></cfRule></conditionalFormatting><conditionalFormatting sqref="H10:H${lastRow}"><cfRule type="dataBar" priority="2"><dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/><color rgb="FF22A884"/></dataBar></cfRule></conditionalFormatting>` : ""}</worksheet>`;
     const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Verdana"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font></fonts><fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF003865"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF32A6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE5EBEE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9F8F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF0ED"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF6D1"/></patternFill></fill></fills><borders count="2"><border/><border><left style="thin"><color rgb="FFCAD6DD"/></left><right style="thin"><color rgb="FFCAD6DD"/></right><top style="thin"><color rgb="FFCAD6DD"/></top><bottom style="thin"><color rgb="FFCAD6DD"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0"/><xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFont="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
     const zip = new JSZip();
@@ -1674,7 +1720,8 @@
     function addFront() {
       const source = activePlan();
       const fronts = frontsOf(source);
-      if (fronts.length >= MAX_FRONTS) {
+      const posicao = nextFrontPosition(fronts);
+      if (posicao === null) {
         showToast(`Um intervalo comporta no máximo ${MAX_FRONTS} frentes.`);
         return;
       }
@@ -1682,10 +1729,10 @@
       const front = blankPlan(source.title, {
         ...inherited,
         groupId: source.groupId || source.id,
-        // Posicao contigua e nome em branco: gravar "Frente 2" como texto
-        // congelaria o rotulo, e ele deixaria de acompanhar a numeracao depois
-        // de qualquer exclusao. O nome padrao e derivado, nao armazenado.
-        frontPosition: fronts.length + 1,
+        // Nome em branco: gravar "Frente 2" como texto congelaria o rotulo, e
+        // ele deixaria de acompanhar a numeracao depois de qualquer exclusao.
+        // O nome padrao e derivado, nao armazenado.
+        frontPosition: posicao,
         frontName: ""
       });
       resequencePlanStamps(front);
@@ -2341,7 +2388,12 @@
       const hint = $("#closing-description");
       if (!hint) return;
       if (state.closed) {
-        hint.textContent = "Intervalo encerrado. O registro passou a fazer parte do histórico.";
+        // Quem encerrou fica a vista de quem abre a execucao depois: era o
+        // dado que o banco guardava e nenhuma tela mostrava.
+        const credito = closureCredit(plan);
+        hint.textContent = credito && credito !== "—"
+          ? `Intervalo encerrado por ${credito}. O registro passou a fazer parte do histórico.`
+          : "Intervalo encerrado. O registro passou a fazer parte do histórico.";
       } else if (!state.ready) {
         const abertas = state.detail.filter((entry) => !entry.ready);
         hint.textContent = state.fronts.length > 1
@@ -2556,9 +2608,21 @@
         const { data, error } = await cloudClient.rpc("finalize_interval_plan", { p_plan_id: plan.databaseId });
         if (error) throw error;
         const closedAt = data?.completed_at || new Date().toISOString();
+        // close_interval encerra o grupo inteiro, entao o banco incrementa a
+        // revisao de todas as frentes -- nao so desta. Adotar as revisoes que
+        // ela devolve mantem a copia local igual a do servidor. Sem isso, as
+        // irmas ficariam com revisao velha, e o unico motivo de nada quebrar
+        // seria enqueueDirtyPlans pular plano concluido: mascaramento, nao
+        // correcao.
+        const confirmadas = new Map((data?.fronts_detail || []).map((front) => [front.plan_id, front]));
         state.fronts.forEach((front) => {
           front.status = "completed";
           front.completedAt = closedAt;
+          const confirmada = confirmadas.get(front.databaseId);
+          if (confirmada) {
+            front.revision = Number(confirmada.revision);
+            front.closedByName = confirmada.closed_by_name || "";
+          }
           dirtyPlanIds.delete(front.id);
         });
         plan.revision = Number(data?.revision || plan.revision || 0);
@@ -3367,7 +3431,8 @@
         ["Título", plan.title || "—"], ["Tipo", plan.serviceType || "—"], ["Data", plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
         ["Local", plan.location || "—"], ["Empreiteira", plan.contractorName || "—"], ["Encarregado", plan.foremanName || "—"],
         ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—"],
-        ...(sharedFront ? [["Frente", sharedFront]] : [])
+        ...(sharedFront ? [["Frente", sharedFront]] : []),
+        ...(plan.completedAt ? [["Encerrado por", closureCredit(plan)]] : [])
       ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
       $("#shared-planning-notes").textContent = plan.notes || "Nenhuma observação registrada.";
       $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
@@ -3865,7 +3930,8 @@
       buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation,
       stepScheduleDeviation, wholeMinutes, snapshotSignature, exportPlanToXlsx,
       blankPlan, normalizePlan, planToDatabase, databaseToPlan,
-      frontsOf, frontLabel, propagateSharedFields, silenceMinutes, lastOperationalStamp,
+      frontsOf, frontLabel, nextFrontPosition, propagateSharedFields, closureCredit,
+      silenceMinutes, lastOperationalStamp,
       setStore: (next) => { store = next; },
       getStore: () => store
     };

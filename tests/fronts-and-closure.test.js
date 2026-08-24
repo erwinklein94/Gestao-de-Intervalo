@@ -97,7 +97,11 @@ test("nova frente nasce sem nome gravado e em posição contígua", () => {
   // Gravar "Frente 2" como texto congelaria o rótulo: depois de uma exclusão
   // ele deixaria de acompanhar a numeração.
   assert.ok(!/frontName: `Frente \$\{/.test(app), "o nome padrão não pode ser materializado");
-  assert.ok(/frontPosition: fronts\.length \+ 1/.test(app), "a posição nova deve fechar a sequência");
+  // A posição saía de fronts.length + 1, que só está certo enquanto a
+  // numeração é contígua — e ela não é, quando a exclusão feita em outro
+  // aparelho ainda não sincronizou. Agora sai da menor vaga livre.
+  assert.ok(/frontPosition: posicao/.test(app), "a posição nova deve vir da menor vaga livre");
+  assert.ok(!/frontPosition: fronts\.length \+ 1/.test(app), "a posição não pode voltar a sair do tamanho da lista");
   assert.ok(!/Math\.max\(\.\.\.fronts\.map/.test(app), "posição por max deixaria buracos e estouraria o teto de 12");
 });
 
@@ -467,6 +471,111 @@ test("encerramento vale para o intervalo inteiro, não para a frente", () => {
   // quebrar quem ja chamava a RPC por plano.
   const finalize = fronts.split("create or replace function public.finalize_interval_plan")[1];
   assert.ok(finalize.includes("public.close_interval(target.group_id)"), "a finalização por plano deve delegar para o intervalo");
+});
+
+test("a frente nova ocupa a menor vaga livre, não o tamanho da lista", () => {
+  const api = loadAppApi();
+  // Buraco na numeração: outro aparelho apagou a Frente 2 e a renumeração
+  // ainda não chegou. Com fronts.length + 1 a nova cairia na posição 3, junto
+  // com uma que já existe, e as duas se chamariam "Frente 3".
+  assert.equal(api.nextFrontPosition([{ frontPosition: 1 }, { frontPosition: 3 }]), 2);
+  assert.equal(api.nextFrontPosition([{ frontPosition: 1 }, { frontPosition: 2 }]), 3);
+  assert.equal(api.nextFrontPosition([]), 1);
+  // Doze ocupadas: não existe décima terceira posição para pedir ao banco.
+  const cheio = Array.from({ length: 12 }, (_, indice) => ({ frontPosition: indice + 1 }));
+  assert.equal(api.nextFrontPosition(cheio), null);
+  // E o limite é o mesmo dos dois lados.
+  const app = stripJsComments(read("app.js"));
+  assert.ok(app.includes("const MAX_FRONTS = 12;"), "o limite do cliente precisa continuar em 12");
+  assert.ok(!app.includes("frontPosition: fronts.length + 1"), "a posição não pode voltar a sair do tamanho da lista");
+});
+
+test("o banco recusa posição fora da faixa em vez de truncar em silêncio", () => {
+  const sql = stripSqlComments(read("supabase/migrations/20260824190000_group_fields_and_front_position.sql"));
+  assert.ok(!sql.includes("least(12"), "o clamp silencioso não pode voltar: ele grava 12 e responde sucesso");
+  assert.ok(sql.includes("INTERVAL_FRONT_POSITION_OUT_OF_RANGE"), "posição fora da faixa precisa levantar erro");
+  assert.ok(sql.includes("coalesce(requested_front_position, front_position)"), "a atualização deve usar a posição validada");
+});
+
+test("frente concluída não é alterada pela propagação nem enfileirada", () => {
+  const api = loadAppApi();
+  const aberta = api.blankPlan("Renovação km 141", { title: "Renovação km 141" });
+  const encerrada = api.blankPlan("Renovação km 141", {
+    groupId: aberta.groupId, frontPosition: 2, completedAt: "2026-08-20T18:00:00.000Z", status: "completed"
+  });
+  api.setStore({ version: 4, activePlanId: aberta.id, plans: [aberta, encerrada], deletedPlanIds: [] });
+  aberta.title = "Renovação km 141 — revisada";
+  api.propagateSharedFields(aberta);
+  assert.equal(encerrada.title, "Renovação km 141",
+    "a frente encerrada não pode mudar na tela: o servidor recusaria a gravação e o refresh desfaria");
+
+  // E a origem encerrada não propaga nada.
+  encerrada.title = "Título que ninguém pediu";
+  assert.equal(api.propagateSharedFields(encerrada), false);
+  assert.equal(aberta.title, "Renovação km 141 — revisada");
+});
+
+test("o encerramento devolve a revisão de cada frente, não só a da que apertou o botão", () => {
+  const sql = stripSqlComments(read("supabase/migrations/20260824190000_group_fields_and_front_position.sql"));
+  assert.ok(sql.includes("'fronts_detail', fronts_detail"), "close_interval precisa devolver o detalhe por frente");
+  assert.ok(sql.includes("'revision', plan.revision"), "o detalhe precisa trazer a revisão de cada frente");
+  assert.ok(sql.includes("'fronts_detail', resultado->'fronts_detail'"), "finalize_interval_plan precisa repassar o detalhe");
+
+  const app = stripJsComments(read("app.js"));
+  assert.ok(app.includes("data?.fronts_detail"), "o cliente precisa adotar as revisões devolvidas");
+  assert.ok(app.includes("front.revision = Number(confirmada.revision)"),
+    "sem isso as irmãs ficam com revisão velha, mascarada pelo pulo de plano concluído");
+});
+
+test("o banco garante que as frentes de um grupo compartilhem janela, data, título e local", () => {
+  const sql = stripSqlComments(read("supabase/migrations/20260824190000_group_fields_and_front_position.sql"));
+  assert.ok(sql.includes("create or replace function private.propagate_interval_group_fields()"),
+    "faltou a propagação no banco: hoje só o cliente propaga");
+  assert.ok(sql.includes("create trigger interval_plans_propagate_group"), "a propagação precisa de gatilho");
+
+  const propagacao = sql.split("function private.propagate_interval_group_fields")[1].split("$function$;")[0];
+  for (const campo of ["title = new.title", "interval_date = new.interval_date", "window_start = new.window_start", "window_end = new.window_end", "location = new.location"]) {
+    assert.ok(propagacao.includes(campo), `a propagação precisa cobrir ${campo}`);
+  }
+  assert.ok(propagacao.includes("revision = sibling.revision"),
+    "incrementar a revisão das irmãs faria a fila do cliente bater em SYNC_CONFLICT e travar");
+  assert.ok(propagacao.includes("sibling.completed_at is null"), "frente encerrada é histórico e não se reescreve");
+  assert.ok(propagacao.includes("pg_trigger_depth() > 1"), "sem corte de profundidade a propagação se chama para sempre");
+
+  // A frente que chega adota o grupo; não é ela que dita a janela.
+  const guard = sql.split("function private.guard_interval_plan")[1].split("$function$;")[0];
+  assert.ok(guard.includes("new.window_start := group_lead.window_start"),
+    "uma frente nova não pode entrar no grupo com outra janela");
+});
+
+test("quem encerrou o intervalo é gravado com nome e aparece nas telas e na exportação", () => {
+  const sql = stripSqlComments(read("supabase/migrations/20260824193000_record_who_closed_the_interval.sql"));
+  assert.ok(sql.includes("add column if not exists closed_by_name text"), "faltou a coluna com o nome");
+  assert.ok(sql.includes("new.closed_by_name := coalesce(nullif(new.closed_by_name, ''), member.full_name"),
+    "o nome precisa ser carimbado no encerramento, não resolvido na exibição");
+  assert.ok(sql.includes("new.closed_by_name := old.closed_by_name"),
+    "uma atualização posterior não pode apagar quem encerrou");
+
+  const api = loadAppApi();
+  assert.equal(api.closureCredit({ completedAt: null }), "");
+  const credito = api.closureCredit({ completedAt: "2026-08-20T18:30:00.000Z", closedByName: "Raquel Klein" });
+  assert.ok(credito.startsWith("Raquel Klein · "), `crédito inesperado: ${credito}`);
+
+  // Tela, exportação e Edge Function: os três lugares que não liam o dado.
+  const app = stripJsComments(read("app.js"));
+  assert.ok(app.includes("closedByName: row.closed_by_name"), "o cliente precisa ler a coluna");
+  assert.ok(app.includes("Intervalo encerrado por ${credito}"), "a execução precisa mostrar quem encerrou");
+  assert.ok(app.includes('["Encerrado por", closureCredit(plan)]'), "o acompanhamento precisa mostrar quem encerrou");
+  assert.ok(app.includes('excelCell(1, 8, "Encerrado por", 3)'), "o Excel do intervalo precisa registrar quem encerrou");
+
+  const portal = stripJsComments(read("assets/portal.js"));
+  assert.ok(portal.includes("function closureCredit"), "o portal precisa saber montar o crédito");
+  assert.ok(portal.includes("detail-closure"), "o detalhe gerencial precisa mostrar quem encerrou");
+  assert.ok(portal.includes('"Encerrado por"'), "a exportação gerencial precisa da coluna");
+
+  assert.ok(read("supabase/functions/interval-share/index.ts").includes("closed_by_name"),
+    "o link compartilhado também precisa trazer o dado");
+  assert.ok(read("styles.css").includes(".detail-closure"), "o aviso precisa de estilo");
 });
 
 console.log("fronts-and-closure: frentes, silêncio, encerramento, PWA e remoção da SUB aprovados");
