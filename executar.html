@@ -14,10 +14,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <script src="assets/pwa.js" defer></script>
-<link rel="stylesheet" href="styles.css?v=20260824-4" />
+<link rel="stylesheet" href="styles.css?v=20260824-5" />
     <script src="assets/jszip.min.js" defer></script>
     <script src="assets/supabase.min.js" defer></script>
-<script src="app.js?v=20260824-4" defer></script>
+<script src="app.js?v=20260824-5" defer></script>
   </head>
   <body data-page="execution">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -125,28 +125,10 @@
             </article>
           </section>
 
-          <section class="panel weather-panel" aria-labelledby="weather-title">
-            <div class="panel-heading compact">
-              <div>
-                <span class="step-number">01</span>
-                <div>
-                  <h2 id="weather-title">Como está o clima agora?</h2>
-                  <p>O tempo em campo explica boa parte dos desvios. Registre no começo do intervalo e atualize se virar.</p>
-                </div>
-              </div>
-              <p class="weather-stamp" id="weather-stamp" hidden></p>
-            </div>
-            <div class="weather-choices" id="weather-choices" role="radiogroup" aria-labelledby="weather-title"></div>
-            <label class="field">
-              <span>Observação sobre as condições (opcional)</span>
-              <input id="weather-note" type="text" maxlength="240" placeholder="Ex.: chuva forte desde as 02h, plataforma alagada" />
-            </label>
-          </section>
-
           <section class="panel execution-panel" aria-labelledby="execution-table-title">
             <div class="panel-heading execution-panel-heading">
               <div>
-                <span class="step-number">02</span>
+                <span class="step-number">01</span>
                 <div>
                   <h2 id="execution-table-title">Programado x realizado</h2>
                   <p>O programado está protegido. Registre os horários reais; é possível manter várias etapas em andamento ao mesmo tempo.</p>
@@ -164,7 +146,7 @@
           <section class="execution-notes panel">
             <div class="panel-heading compact">
               <div>
-                <span class="step-number">03</span>
+                <span class="step-number">02</span>
                 <div>
                   <h2>Registro geral do intervalo</h2>
                   <p>Consolide ocorrências, restrições e decisões que afetaram a execução.</p>
@@ -179,7 +161,7 @@
 
           <section class="execution-comments panel" id="execution-comments-panel">
             <div class="panel-heading compact">
-              <div><span class="step-number">04</span><div><h2>Comentários da execução</h2><p>Atualizações registradas com autor, perfil, data e horário permanecem no histórico.</p></div></div>
+              <div><span class="step-number">03</span><div><h2>Comentários da execução</h2><p>Atualizações registradas com autor, perfil, data e horário permanecem no histórico.</p></div></div>
             </div>
             <div class="execution-comments-body">
               <div class="comments-list" id="execution-comments"></div>
@@ -193,7 +175,7 @@
 
           <section class="execution-finish-panel" id="execution-finish-panel" hidden aria-labelledby="execution-finish-title">
             <div>
-              <span class="step-number light">05</span>
+              <span class="step-number light">04</span>
               <div>
                 <h2 id="execution-finish-title">Encerrar o intervalo</h2>
                 <p id="closing-description">Finalize somente depois que todas as etapas estiverem concluídas ou marcadas como não executadas. O registro passará a fazer parte do histórico.</p>

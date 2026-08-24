@@ -116,7 +116,7 @@ As migrações mantêm as tabelas operacionais originais e ampliam o modelo de f
 
 - `user_profiles`: conta Auth, papel, habilitação e dados organizacionais reais.
 - `organization_members`: diretório e hierarquia organizacional.
-- `interval_plans` e `interval_steps`: cada linha de `interval_plans` é uma **frente de serviço**; `group_id` reúne as frentes do mesmo intervalo e `front_position`/`front_name` dão a elas ordem e nome. A linha guarda ainda plano, execução, status, responsáveis, revisões, empreiteira, encarregado, clima e o encerramento.
+- `interval_plans` e `interval_steps`: cada linha de `interval_plans` é uma **frente de serviço**; `group_id` reúne as frentes do mesmo intervalo e `front_position`/`front_name` dão a elas ordem e nome. A linha guarda ainda plano, execução, status, responsáveis, revisões, empreiteira, encarregado e o encerramento.
 - `datasets`: identificação do conjunto de dados real.
 - `interval_comments`: comentários históricos com autoria e exclusão lógica.
 - `interval_sync_receipts`: recibos de idempotência da sincronização offline.
@@ -129,7 +129,7 @@ As políticas RLS calculam o escopo a partir do usuário autenticado e da hierar
 
 Um bloqueio da via costuma abrigar mais de uma frente trabalhando ao mesmo tempo, cada uma com cronograma e execução próprios. O intervalo comporta até **12 frentes**, e o mesmo responsável cria todas elas.
 
-O que descreve o **bloqueio** é único e vale para todas as frentes: nome do plano, data, janela e local. Alterar qualquer um deles em uma frente altera nas demais — a janela autorizada é uma só. O que é **da frente** fica isolado: nome da frente, tipo de serviço, etapas, observações, clima e execução.
+O que descreve o **bloqueio** é único e vale para todas as frentes: nome do plano, data, janela e local. Alterar qualquer um deles em uma frente altera nas demais — a janela autorizada é uma só. O que é **da frente** fica isolado: nome da frente, tipo de serviço, etapas, observações e execução.
 
 - No planejamento, a faixa de frentes fica abaixo do seletor de intervalos. **+ Frente** cria uma nova frente já com os dados do bloqueio preenchidos e o cronograma em branco.
 - O rótulo da frente sai sempre de `front_position`, nunca da posição na lista: a exportação e o link compartilhado enxergam uma frente de cada vez e não teriam lista para indexar. Por isso o nome padrão é **derivado**, não gravado — e excluir uma frente renumera as restantes, para que posição e ordem continuem sendo a mesma coisa. Um nome próprio digitado em **Nome da frente** sempre tem prioridade.
@@ -148,12 +148,6 @@ Com mais de uma frente, o encerramento passa a valer para o **intervalo**, não 
 No banco, a validação de `private.guard_interval_plan` olha as etapas de todas as frentes do grupo, e `public.close_interval(group_id)` grava `completed_at` em todas de uma vez. `public.finalize_interval_plan(plan_id)` continua existindo e delega para o grupo do plano informado — para intervalo de frente única, que é o caso de tudo que já estava gravado, o comportamento é idêntico ao anterior.
 
 Depois disso o intervalo é histórico: a tela continua legível, mas nada mais é editável e o banco recusa gravações.
-
-## Clima do intervalo
-
-A execução abre perguntando **como está o clima agora**. O registro usa um vocabulário fechado — bom, nublado, garoa, chuva, chuva forte, neblina, vento forte, calor extremo e frio intenso — porque clima em texto livre não vira indicador depois; a descrição livre fica no campo de observação ao lado. Cada registro guarda o horário, e clicar de novo na mesma condição limpa o valor.
-
-O clima aparece no acompanhamento gerencial e no link compartilhado, junto com a execução da frente.
 
 ## Detecção de silêncio
 
@@ -202,7 +196,7 @@ A interface informa estados como **Salvo**, **Sem conexão**, **Sincronizando**,
 
 ## Migrações Supabase
 
-As migrações ficam em `supabase/migrations/` e devem ser aplicadas na ordem do timestamp. A expansão organizacional está em `20260821115809_expand_organizational_interval_management.sql`; as seguintes cobrem auditoria, `executive_manager`, hierarquia compartilhada entre Gerentes, solicitação de acesso, flexão de gênero, finalização explícita da execução e o escopo operacional do Gerente. As duas últimas mudam o modelo de forma relevante: `20260823090000_remove_sub_catalog.sql` **apaga** o catálogo de SUBs e as colunas `sub_id` (não há caminho de volta por migração), e `20260823100000_interval_fronts_weather_and_closure.sql` introduz frentes, clima e o encerramento por intervalo.
+As migrações ficam em `supabase/migrations/` e devem ser aplicadas na ordem do timestamp. A expansão organizacional está em `20260821115809_expand_organizational_interval_management.sql`; as seguintes cobrem auditoria, `executive_manager`, hierarquia compartilhada entre Gerentes, solicitação de acesso, flexão de gênero, finalização explícita da execução e o escopo operacional do Gerente. As duas últimas mudam o modelo de forma relevante: `20260823090000_remove_sub_catalog.sql` **apaga** o catálogo de SUBs e as colunas `sub_id` (não há caminho de volta por migração), e `20260823100000_interval_fronts_weather_and_closure.sql` introduz frentes e o encerramento por intervalo. `20260824120000_remove_interval_weather.sql` retira o registro de clima, que nunca chegou a ser preenchido.
 
 Com a CLI autenticada e o projeto correto vinculado:
 
@@ -247,9 +241,9 @@ Os testes de cálculo usam o runtime nativo do Node.js:
 node --test tests/*.test.js
 ```
 
-Eles validam cenários de etapas simultâneas, seleção do marco operacional, encerramento, tempo decorrido, métricas gerenciais, filtros, capacidades por perfil, estrutura das páginas, RLS, hierarquia, histórico, fila offline e Edge Functions. `tests/fronts-weather-closure.test.js` cobre especificamente frentes, propagação dos dados do bloqueio, clima, detecção de silêncio, encerramento por intervalo, PWA e a ausência de SUB.
+Eles validam cenários de etapas simultâneas, seleção do marco operacional, encerramento, tempo decorrido, métricas gerenciais, filtros, capacidades por perfil, estrutura das páginas, RLS, hierarquia, histórico, fila offline e Edge Functions. `tests/fronts-and-closure.test.js` cobre especificamente frentes, propagação dos dados do bloqueio, detecção de silêncio, encerramento por intervalo, PWA e a ausência de SUB e de clima.
 
-Antes de publicar, faça também um teste funcional com cada papel, confirmando a equivalência entre Gerente Executivo e Diretor, bloqueios de rota, escopo do Gerente, edição exclusiva de Coordenador/Editor, comentários, perda e retorno da conexão, link compartilhado revogado ou expirado e — no fluxo novo — criar duas frentes no mesmo intervalo, verificar que a janela alterada em uma vale para a outra, registrar clima, conferir o contador de atrasos na aba **Em execução** e encerrar o intervalo pela frente que terminou por último.
+Antes de publicar, faça também um teste funcional com cada papel, confirmando a equivalência entre Gerente Executivo e Diretor, bloqueios de rota, escopo do Gerente, edição exclusiva de Coordenador/Editor, comentários, perda e retorno da conexão, link compartilhado revogado ou expirado e — no fluxo novo — criar duas frentes no mesmo intervalo, verificar que a janela alterada em uma vale para a outra, conferir o contador de atrasos na aba **Em execução** e encerrar o intervalo pela frente que terminou por último.
 
 ## Publicação no GitHub Pages
 

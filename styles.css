@@ -1653,7 +1653,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   body.shared-printing .shared-step { break-inside:avoid; }
 }
 
-   Frentes, clima, silencio e encerramento
+   Frentes, silencio e encerramento
    -------------------------------------------------------------------------- */
 
 /* Frentes de servico do mesmo bloqueio. */
@@ -1669,16 +1669,6 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
 .front-tab.front-add { min-width: 0; display: flex; align-items: center; border-style: dashed; color: var(--blue); font-size: 12px; font-weight: 700; }
 .front-hint { margin: 0; color: var(--muted); font-size: 11px; }
 .detail-fronts { margin: 0 26px 6px; }
-
-/* Clima registrado na abertura da execucao. */
-.weather-choices { margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 8px; }
-.weather-chip { padding: 9px 14px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 99px; background: var(--white); color: var(--ink); font-size: 12px; cursor: pointer; transition: border-color .18s ease, background .18s ease; }
-.weather-chip i { font-size: 15px; font-style: normal; line-height: 1; }
-.weather-chip:hover:not(:disabled) { border-color: var(--sky); }
-.weather-chip:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
-.weather-chip.is-active { border-color: var(--blue); background: #e5f4fb; color: var(--blue); font-weight: 700; }
-.weather-chip:disabled { opacity: .55; cursor: default; }
-.weather-stamp { margin: 0; color: var(--muted); font-size: 11px; white-space: nowrap; }
 
 /* Silencio: intervalo em execucao que parou de receber registro. */
 .silence-chip { width: fit-content; margin: 8px 0 0; padding: 7px 11px; border-radius: 9px; color: #8a4b12; background: #fff6d1; font-size: 11px; font-weight: 700; }
@@ -1719,7 +1709,6 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .front-tab { min-width: 0; flex: 1 1 132px; }
 }
 
-html[data-theme="dark"] .weather-chip.is-active { background: rgba(50, 166, 230, .16); color: var(--sky); border-color: var(--sky); }
 html[data-theme="dark"] .front-tab.is-active { border-color: var(--sky); box-shadow: inset 0 0 0 1px var(--sky); }
 html[data-theme="dark"] .front-tab b, html[data-theme="dark"] .front-tab.front-add { color: var(--sky); }
 html[data-theme="dark"] .silence-chip,

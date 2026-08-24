@@ -49,20 +49,6 @@
   const SHARED_INTERVAL_FIELDS = ["title", "date", "windowStart", "windowEnd", "location", "coordinator", "coordinatorMemberId", "managerMemberId", "coordinatorType"];
   const MAX_FRONTS = 12;
 
-  // Vocabulario fechado: clima em texto livre nao vira indicador depois.
-  const WEATHER_OPTIONS = [
-    { value: "clear", label: "Bom", icon: "☀" },
-    { value: "cloudy", label: "Nublado", icon: "☁" },
-    { value: "drizzle", label: "Garoa", icon: "🌦" },
-    { value: "rain", label: "Chuva", icon: "🌧" },
-    { value: "storm", label: "Chuva forte", icon: "⛈" },
-    { value: "fog", label: "Neblina", icon: "🌫" },
-    { value: "wind", label: "Vento forte", icon: "🌬" },
-    { value: "heat", label: "Calor extremo", icon: "🔥" },
-    { value: "cold", label: "Frio intenso", icon: "❄" }
-  ];
-  const WEATHER_LABELS = Object.fromEntries(WEATHER_OPTIONS.map((option) => [option.value, option.label]));
-
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -165,9 +151,6 @@
       serviceType: "",
       contractorName: "",
       foremanName: "",
-      weather: "",
-      weatherNote: "",
-      weatherRecordedAt: null,
       coordinator: isOperatorRole(currentProfile?.role) ? (currentProfile.full_name || "") : "",
       date: todayISO(),
       location: "",
@@ -268,9 +251,6 @@
     plan.groupId = plan.groupId || plan.id;
     plan.frontPosition = Math.min(MAX_FRONTS, Math.max(1, Number(plan.frontPosition) || 1));
     plan.frontName = typeof plan.frontName === "string" ? plan.frontName : "";
-    plan.weather = WEATHER_LABELS[plan.weather] ? plan.weather : "";
-    plan.weatherNote = plan.weatherNote || "";
-    plan.weatherRecordedAt = plan.weatherRecordedAt || null;
     plan.coordinatorType = plan.coordinatorType || null;
     plan.status = plan.status || "planning";
     plan.completedAt = plan.completedAt || null;
@@ -408,10 +388,7 @@
       coordinator_type: plan.coordinatorType || null,
       group_id: plan.groupId || plan.id,
       front_position: plan.frontPosition || 1,
-      front_name: plan.frontName || "",
-      weather: plan.weather || "",
-      weather_note: plan.weatherNote || "",
-      weather_recorded_at: plan.weatherRecordedAt || null
+      front_name: plan.frontName || ""
     };
   }
 
@@ -444,9 +421,6 @@
       groupId: row.group_id || row.client_id,
       frontPosition: Number(row.front_position || 1),
       frontName: row.front_name || "",
-      weather: row.weather || "",
-      weatherNote: row.weather_note || "",
-      weatherRecordedAt: row.weather_recorded_at || null,
       location: row.location,
       windowStart: stampInput(row.window_start),
       windowEnd: stampInput(row.window_end),
@@ -1870,9 +1844,6 @@
       copy.groupId = copy.id;
       copy.frontPosition = 1;
       copy.frontName = "";
-      copy.weather = "";
-      copy.weatherNote = "";
-      copy.weatherRecordedAt = null;
       copy.completedAt = null;
       copy.status = "planning";
       copy.revision = 0;
@@ -2322,25 +2293,6 @@
         : "";
     }
 
-    function renderWeather() {
-      const root = $("#weather-choices");
-      if (!root) return;
-      const editable = plan.status !== "completed";
-      root.innerHTML = WEATHER_OPTIONS.map((option) => `
-        <button class="weather-chip${plan.weather === option.value ? " is-active" : ""}" type="button" role="radio"
-          aria-checked="${plan.weather === option.value}" data-weather="${option.value}" ${editable ? "" : "disabled"}>
-          <i aria-hidden="true">${option.icon}</i><span>${escapeHtml(option.label)}</span>
-        </button>`).join("");
-      const stamp = $("#weather-stamp");
-      stamp.hidden = !plan.weatherRecordedAt;
-      if (plan.weatherRecordedAt) {
-        stamp.textContent = `Registrado às ${new Date(plan.weatherRecordedAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`;
-      }
-      const note = $("#weather-note");
-      if (document.activeElement !== note) note.value = plan.weatherNote || "";
-      note.disabled = !editable;
-    }
-
     function renderSilence() {
       const chip = $("#execution-silence");
       if (!chip) return;
@@ -2639,24 +2591,6 @@
       renderPage();
     });
 
-    $("#weather-choices")?.addEventListener("click", (event) => {
-      const chip = event.target.closest("[data-weather]");
-      if (!chip || plan.status === "completed") return;
-      // Clicar de novo na mesma condicao limpa o registro.
-      plan.weather = plan.weather === chip.dataset.weather ? "" : chip.dataset.weather;
-      plan.weatherRecordedAt = plan.weather ? new Date().toISOString() : null;
-      persist(true);
-      renderWeather();
-      showToast(plan.weather ? `Clima registrado: ${WEATHER_LABELS[plan.weather]}.` : "Registro de clima removido.");
-    });
-
-    $("#weather-note")?.addEventListener("input", (event) => {
-      if (plan.status === "completed") return;
-      plan.weatherNote = event.target.value;
-      if (!plan.weatherRecordedAt) plan.weatherRecordedAt = new Date().toISOString();
-      persist();
-    });
-
     function renderPage() {
       plan = activePlan();
       const fronts = frontsOf(plan);
@@ -2681,7 +2615,6 @@
       // abaixo: reabilitar aqui apagaria a regra do encerramento.
       if (plan.status === "completed" && finishFeedback) finishFeedback.textContent = "Execução finalizada e registrada no histórico.";
       renderFronts();
-      renderWeather();
       preserveFocusWithin(root, renderSteps);
       renderDashboard();
       renderSilence();
@@ -3417,7 +3350,6 @@
       // Aqui a frente vem do proprio payload: o acompanhamento nao carrega as
       // outras frentes do bloqueio, entao nao ha lista para consultar.
       const sharedFront = plan.frontName?.trim() || (plan.frontPosition > 1 ? `Frente ${plan.frontPosition}` : "");
-      const sharedWeather = [WEATHER_LABELS[plan.weather], plan.weatherNote].filter(Boolean).join(" · ");
 
       $("#shared-title").textContent = plan.title || "Intervalo sem nome";
       $("#shared-subtitle").textContent = [sharedFront, plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
@@ -3435,8 +3367,7 @@
         ["Título", plan.title || "—"], ["Tipo", plan.serviceType || "—"], ["Data", plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
         ["Local", plan.location || "—"], ["Empreiteira", plan.contractorName || "—"], ["Encarregado", plan.foremanName || "—"],
         ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—"],
-        ...(sharedFront ? [["Frente", sharedFront]] : []),
-        ...(sharedWeather ? [["Clima", sharedWeather]] : [])
+        ...(sharedFront ? [["Frente", sharedFront]] : [])
       ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
       $("#shared-planning-notes").textContent = plan.notes || "Nenhuma observação registrada.";
       $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;

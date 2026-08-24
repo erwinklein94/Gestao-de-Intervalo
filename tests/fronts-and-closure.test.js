@@ -1,7 +1,7 @@
 "use strict";
 
-// Frentes de servico, clima, deteccao de silencio, encerramento explicito,
-// PWA e remocao da SUB.
+// Frentes de servico, deteccao de silencio, encerramento explicito, PWA e
+// remocao da SUB.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -51,7 +51,6 @@ test("intervalo novo nasce como frente única dona do próprio grupo", () => {
   const plano = api.blankPlan("Renovação km 141");
   assert.equal(plano.groupId, plano.id);
   assert.equal(plano.frontPosition, 1);
-  assert.equal(plano.weather, "");
 });
 
 test("frentes do mesmo intervalo se enxergam e recebem rótulo em ordem", () => {
@@ -175,37 +174,28 @@ test("plano gravado antes das frentes vira frente única e perde a SUB", () => {
   assert.ok(!("subId" in legado), "subId legado deve ser descartado");
 });
 
-test("payload de sincronização leva frente e clima e não leva sub_id", () => {
+test("payload de sincronização leva frente e não leva sub_id nem clima", () => {
   const api = loadAppApi();
   const plano = api.blankPlan("Intervalo", { ownerId: "user-1", frontPosition: 2, frontName: "Frente sul" });
-  plano.weather = "rain";
-  plano.weatherNote = "chuva desde as 02h";
   const payload = api.planToDatabase(plano);
   assert.equal(payload.group_id, plano.groupId);
   assert.equal(payload.front_position, 2);
   assert.equal(payload.front_name, "Frente sul");
-  assert.equal(payload.weather, "rain");
-  assert.equal(payload.weather_note, "chuva desde as 02h");
   assert.ok(!("sub_id" in payload), "sub_id não deve mais ser enviado");
+  for (const campo of ["weather", "weather_note", "weather_recorded_at"]) {
+    assert.ok(!(campo in payload), `${campo} saiu do produto e não pode voltar no payload`);
+  }
 });
 
-test("leitura do banco reconstrói frente e clima", () => {
+test("leitura do banco reconstrói a frente", () => {
   const api = loadAppApi();
   const plano = api.databaseToPlan({
-    client_id: "c1", id: "db1", group_id: "g1", front_position: 3, front_name: "Frente A",
-    weather: "storm", weather_note: "raio", weather_recorded_at: "2026-08-23T03:00:00Z", interval_steps: []
+    client_id: "c1", id: "db1", group_id: "g1", front_position: 3, front_name: "Frente A", interval_steps: []
   });
   assert.equal(plano.groupId, "g1");
   assert.equal(plano.frontPosition, 3);
   assert.equal(plano.frontName, "Frente A");
-  assert.equal(plano.weather, "storm");
-});
-
-test("clima fora do vocabulário fechado é descartado na normalização", () => {
-  const api = loadAppApi();
-  const plano = { id: "p1", steps: [], weather: "furacão" };
-  api.normalizePlan(plano);
-  assert.equal(plano.weather, "");
+  assert.ok(!("weather" in plano), "o plano não deve mais carregar clima");
 });
 
 test("silêncio só acusa intervalo em execução parado além do limite", () => {
@@ -276,14 +266,14 @@ test("resumo gerencial conta intervalos e frentes separadamente", () => {
   assert.deepEqual(resumo.kpis.find((kpi) => kpi[0] === "Frentes de serviço"), ["Frentes de serviço", 3]);
 });
 
-test("estrutura das telas de frente, clima e encerramento", () => {
+test("estrutura das telas de frente e encerramento", () => {
   const planning = read("index.html");
   for (const marca of ['id="front-strip"', 'id="front-count"', 'name="frontName"', 'name="location"']) {
     assert.ok(planning.includes(marca), `planejamento: ausente ${marca}`);
   }
   const execution = read("executar.html");
   for (const marca of [
-    'id="front-strip"', 'id="weather-choices"', 'id="weather-note"', 'id="weather-stamp"',
+    'id="front-strip"',
     'id="execution-silence"', 'id="execution-finish-panel"', 'id="closing-fronts"',
     'id="finish-execution-button"', 'id="closing-description"'
   ]) {
@@ -293,7 +283,6 @@ test("estrutura das telas de frente, clima e encerramento", () => {
   for (const marca of [
     'cloudClient.rpc("finalize_interval_plan"',
     "function closingState()",
-    "const WEATHER_OPTIONS",
     "const SHARED_INTERVAL_FIELDS",
     "if (plan.completedAt) continue;"
   ]) {
@@ -421,13 +410,43 @@ test("a SUB não existe mais em código, telas nem sincronização", () => {
   assert.ok(!/sub_id/.test(funcoesReescritas), "as funções reescritas não podem mais citar sub_id");
 });
 
+test("o clima saiu do produto inteiro", () => {
+  // A pergunta abria a execução e nunca foi respondida: zero registros nas três
+  // colunas. Sem alimentação não vira indicador nem explica desvio, e ocupava o
+  // topo da tela que o coordenador usa com pressa.
+  for (const file of [
+    "app.js", "assets/portal.js", "executar.html", "styles.css",
+    "supabase/functions/interval-share/index.ts"
+  ]) {
+    const source = read(file);
+    assert.ok(!/weather/i.test(source), `${file} ainda cita clima`);
+  }
+  assert.ok(!/Como está o clima/.test(read("executar.html")), "o painel de clima deve ter saído da execução");
+
+  const removal = read("supabase/migrations/20260824120000_remove_interval_weather.sql");
+  for (const marca of [
+    "drop column if exists weather,",
+    "drop column if exists weather_note,",
+    "drop column if exists weather_recorded_at;",
+    "create or replace function public.sync_interval_plan("
+  ]) {
+    assert.ok(removal.includes(marca), `migração de remoção do clima: ausente ${marca}`);
+  }
+  // A sincronizacao reescrita nao pode citar as colunas que acabaram de cair.
+  const sync = stripSqlComments(removal).split("alter table public.interval_plans")[0];
+  assert.ok(!/weather/.test(sync), "a sincronização reescrita não pode mais citar clima");
+  // E nao pode ter levado junto o que divide a tela com ele.
+  for (const preservado of ["front_position", "front_name", "group_id", "contractor_name", "foreman_name"]) {
+    assert.ok(sync.includes(preservado), `a remoção do clima não pode levar ${preservado} junto`);
+  }
+});
+
 test("encerramento vale para o intervalo inteiro, não para a frente", () => {
   const fronts = read("supabase/migrations/20260823100000_interval_fronts_weather_and_closure.sql");
   for (const marca of [
     "add column if not exists group_id uuid",
     "add column if not exists front_position integer not null default 1",
     "check (front_position between 1 and 12)",
-    "check (weather in ('', 'clear', 'cloudy', 'drizzle', 'rain', 'storm', 'fog', 'wind', 'heat', 'cold'))",
     "create or replace function public.close_interval(p_group_id uuid)",
     "INTERVAL_HAS_OPEN_STEPS",
     "INTERVAL_FRONT_WITHOUT_STEPS",
@@ -450,4 +469,4 @@ test("encerramento vale para o intervalo inteiro, não para a frente", () => {
   assert.ok(finalize.includes("public.close_interval(target.group_id)"), "a finalização por plano deve delegar para o intervalo");
 });
 
-console.log("fronts-weather-closure: frentes, clima, silêncio, encerramento, PWA e remoção da SUB aprovados");
+console.log("fronts-and-closure: frentes, silêncio, encerramento, PWA e remoção da SUB aprovados");

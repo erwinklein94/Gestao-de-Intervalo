@@ -126,10 +126,9 @@ includesAll(execution, [
   'id="print-button"',
   'assets/jszip.min.js',
   'id="front-strip"',
-  'id="weather-choices"',
   'id="execution-silence"',
   'id="closing-fronts"'
-], "comentários, frentes, clima e encerramento da execução");
+], "comentários, frentes, silêncio e encerramento da execução");
 
 const dashboard = read("dashboard.html");
 includesAll(dashboard, ['id="export-dashboard-xlsx"', 'id="export-dashboard-pdf"', 'assets/jszip.min.js'], "exportações do dashboard");
@@ -169,7 +168,6 @@ includesAll(styles, [
   ".admin-row",
   ".comments-list",
   ".front-tab",
-  ".weather-chip",
   ".silence-chip",
   ".card-silence",
   ".closing-fronts",
