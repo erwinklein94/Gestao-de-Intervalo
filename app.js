@@ -66,6 +66,42 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
+  // Campo de data e hora se preenche por partes -- dia, mes, ano, hora, minuto
+  // -- e isso leva segundos. Enquanto isso, qualquer redesenho que troque o
+  // innerHTML da lista destroi o elemento e joga fora o que ja foi digitado.
+  function isEditingField() {
+    const active = document.activeElement;
+    if (!active) return false;
+    if (active.isContentEditable) return true;
+    return ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) && !active.disabled && !active.readOnly;
+  }
+
+  // Guarda onde o foco estava e devolve depois do redesenho, para que Tab e
+  // cursor nao se percam quando a etapa e redesenhada.
+  function preserveFocusWithin(root, render) {
+    const active = document.activeElement;
+    const card = root && active && root.contains(active) ? active.closest("[data-step-id]") : null;
+    const seletor = !card ? null
+      : active.dataset.field ? `[data-field="${active.dataset.field}"]`
+      : active.dataset.now ? `[data-now="${active.dataset.now}"]`
+      : active.dataset.stepAction ? `[data-step-action="${active.dataset.stepAction}"]`
+      : null;
+    let start = null;
+    let end = null;
+    if (seletor) {
+      // Campos de data e hora nao expoem selecao; so os de texto respondem.
+      try { start = active.selectionStart; end = active.selectionEnd; } catch { start = null; }
+    }
+    const stepId = card?.dataset.stepId;
+    render();
+    if (!seletor || !stepId) return;
+    const alvo = $(`[data-step-id="${CSS.escape(stepId)}"] ${seletor}`, root);
+    if (!alvo) return;
+    alvo.focus();
+    if (start == null || typeof alvo.setSelectionRange !== "function") return;
+    try { alvo.setSelectionRange(start, end); } catch { /* tipo de campo sem selecao */ }
+  }
+
   function initializeTheme() {
     let theme = "light";
     try {
@@ -1729,11 +1765,21 @@
 
     // Redesenha so ao confirmar: em input o campo em foco seria destruido a
     // cada tecla. E no redesenho que o dia recalculado aparece nas etapas.
+    //
+    // O change dispara durante o blur, antes de o foco chegar ao proximo campo.
+    // Redesenhar ali destroi o campo que o Tab acabou de escolher -- quem sai
+    // de Inicio para Fim perde o destino e precisa clicar de novo. Por isso o
+    // redesenho espera o foco assentar e depois o devolve.
+    let redesenhoAgendado = null;
     stepsRoot.addEventListener("change", (event) => {
       const plan = activePlan();
       if (plan.locked) return;
       if (!String(event.target.dataset.field || "").startsWith("planned")) return;
-      renderSteps();
+      clearTimeout(redesenhoAgendado);
+      redesenhoAgendado = setTimeout(() => {
+        redesenhoAgendado = null;
+        preserveFocusWithin(stepsRoot, renderSteps);
+      }, 0);
     });
 
     stepsRoot.addEventListener("click", (event) => {
@@ -2413,12 +2459,24 @@
       const field = event.target.dataset.field;
       if (!updateActualTime(step, field, event.target.value)) event.target.value = stampInput(step[field]);
       else if (event.target.value) showToast(`${field === "actualStart" ? "Início" : "Fim"} realizado registrado em ${stampHuman(event.target.value)}.`);
-      renderSteps();
-      renderDashboard();
-      renderFronts();
-      renderSilence();
-      renderClosing();
+      agendarRedesenho();
     });
+
+    // O change dispara durante o blur, antes de o foco chegar ao proximo campo.
+    // Redesenhar ali destroi justamente o campo que o Tab acabou de escolher,
+    // entao o redesenho espera o foco assentar.
+    let redesenhoAgendado = null;
+    function agendarRedesenho() {
+      clearTimeout(redesenhoAgendado);
+      redesenhoAgendado = setTimeout(() => {
+        redesenhoAgendado = null;
+        preserveFocusWithin(root, renderSteps);
+        renderDashboard();
+        renderFronts();
+        renderSilence();
+        renderClosing();
+      }, 0);
+    }
 
     root.addEventListener("click", (event) => {
       const button = event.target.closest("[data-now], [data-step-action]");
@@ -2445,7 +2503,7 @@
         persist(true);
         showToast("Etapa reativada para execução.");
       }
-      renderSteps();
+      preserveFocusWithin(root, renderSteps);
       renderDashboard();
       renderFronts();
       renderSilence();
@@ -2624,7 +2682,7 @@
       if (plan.status === "completed" && finishFeedback) finishFeedback.textContent = "Execução finalizada e registrada no histórico.";
       renderFronts();
       renderWeather();
-      renderSteps();
+      preserveFocusWithin(root, renderSteps);
       renderDashboard();
       renderSilence();
       renderClosing();
@@ -2985,6 +3043,11 @@
 
   async function refreshCloudStore() {
     if (!cloudClient || !currentUser || cloudRefreshRunning || cloudSyncing || store.pendingSync || document.hidden) return;
+    // Trocar a store redesenha a pagina inteira. Com alguem preenchendo um
+    // horario, isso apagaria o que ja foi digitado -- e como o updated_at local
+    // nunca coincide com o do servidor depois de salvar, essa troca cai logo
+    // apos cada edicao. A atualizacao espera o campo ser liberado.
+    if (isEditingField()) return;
     cloudRefreshRunning = true;
     try {
       const { data, error } = await operationalPlansQuery();

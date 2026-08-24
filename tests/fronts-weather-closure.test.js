@@ -301,6 +301,39 @@ test("estrutura das telas de frente, clima e encerramento", () => {
   }
 });
 
+test("preencher data e hora não é interrompido por redesenho", () => {
+  const app = read("app.js");
+
+  // A atualização automática troca a store inteira e redesenha a página. Como
+  // o updated_at local nunca coincide com o do servidor depois de salvar, isso
+  // caía logo após cada edição e apagava o campo meio preenchido.
+  const refresh = app.split("async function refreshCloudStore()")[1].split("\n  }")[0];
+  assert.ok(refresh.includes("if (isEditingField()) return;"), "a atualização precisa esperar o campo ser liberado");
+  assert.ok(app.includes("function isEditingField()"), "falta o teste de campo em edição");
+  assert.ok(
+    /\["INPUT", "TEXTAREA", "SELECT"\]\.includes\(active\.tagName\)/.test(app),
+    "campo de texto, área de texto e seletor contam como edição em curso"
+  );
+
+  // O change dispara durante o blur: redesenhar ali mata o campo que o Tab
+  // acabou de escolher.
+  assert.ok(app.includes("function preserveFocusWithin(root, render)"), "falta o auxiliar que devolve o foco");
+  assert.ok(/setSelectionRange\(start, end\)/.test(app), "o cursor precisa voltar para onde estava");
+  assert.ok(
+    (app.match(/preserveFocusWithin\(/g) || []).length >= 4,
+    "os redesenhos de etapa precisam passar pelo auxiliar"
+  );
+  assert.ok(
+    !/^      renderSteps\(\);$/m.test(app.split("function renderPage()")[1] || ""),
+    "renderPage não pode redesenhar as etapas sem preservar o foco"
+  );
+
+  // Planejamento e execução adiam o redesenho para o foco assentar.
+  const planejamento = app.split('stepsRoot.addEventListener("change"')[1].split("});")[0];
+  assert.ok(/setTimeout\(\(\) => \{[\s\S]*preserveFocusWithin\(stepsRoot, renderSteps\)/.test(planejamento), "o planejamento deve adiar o redesenho");
+  assert.ok(app.includes("function agendarRedesenho()"), "a execução deve adiar o redesenho");
+});
+
 test("o acompanhamento liga as frentes do mesmo bloqueio", () => {
   const shared = read("acompanhar.html");
   for (const marca of ['id="shared-front-bar"', 'id="shared-front-strip"', 'id="shared-front-count"']) {
