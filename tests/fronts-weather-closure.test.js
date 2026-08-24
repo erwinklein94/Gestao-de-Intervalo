@@ -74,11 +74,14 @@ test("dados do bloqueio se propagam entre frentes; dados da frente não", () => 
 
   primeira.title = "Renovação km 200";
   primeira.location = "km 200+000";
-  primeira.windowEnd = "2026-08-23T05:00";
+  // A janela e reancorada na data do plano ao propagar, entao a assercao olha
+  // o relogio: prender a data faria o teste quebrar na virada do dia.
+  primeira.windowEnd = `${primeira.date}T05:00`;
   assert.equal(api.propagateSharedFields(primeira), true);
   assert.equal(segunda.title, "Renovação km 200");
   assert.equal(segunda.location, "km 200+000");
-  assert.equal(segunda.windowEnd, "2026-08-23T05:00");
+  assert.equal(segunda.windowEnd.slice(-5), "05:00");
+  assert.equal(segunda.windowEnd, primeira.windowEnd);
 
   segunda.serviceType = "Socaria";
   segunda.notes = "só desta frente";
