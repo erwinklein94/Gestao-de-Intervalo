@@ -132,6 +132,7 @@ Um bloqueio da via costuma abrigar mais de uma frente trabalhando ao mesmo tempo
 O que descreve o **bloqueio** é único e vale para todas as frentes: nome do plano, data, janela e local. Alterar qualquer um deles em uma frente altera nas demais — a janela autorizada é uma só. O que é **da frente** fica isolado: nome da frente, tipo de serviço, etapas, observações, clima e execução.
 
 - No planejamento, a faixa de frentes fica abaixo do seletor de intervalos. **+ Frente** cria uma nova frente já com os dados do bloqueio preenchidos e o cronograma em branco.
+- O rótulo da frente sai sempre de `front_position`, nunca da posição na lista: a exportação e o link compartilhado enxergam uma frente de cada vez e não teriam lista para indexar. Por isso o nome padrão é **derivado**, não gravado — e excluir uma frente renumera as restantes, para que posição e ordem continuem sendo a mesma coisa. Um nome próprio digitado em **Nome da frente** sempre tem prioridade.
 - Na execução, a mesma faixa alterna entre as frentes; cada uma tem seu próprio indicador de atraso, projeção e comentários.
 - No portal gerencial, um card representa o **intervalo inteiro**: o progresso soma as etapas de todas as frentes e o desvio exibido é o pior entre elas. A etiqueta “N frentes” identifica os bloqueios com mais de uma.
 - No banco, a frente continua sendo uma linha de `interval_plans`. Todo o motor de projeção, dashboard, exportação e RLS segue valendo sem alteração.

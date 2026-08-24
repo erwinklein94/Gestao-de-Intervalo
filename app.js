@@ -170,10 +170,12 @@
       .sort((a, b) => (a.frontPosition || 1) - (b.frontPosition || 1) || String(a.createdAt).localeCompare(String(b.createdAt)));
   }
 
-  function frontLabel(plan, fronts = null) {
-    const list = fronts || frontsOf(plan);
-    const index = Math.max(0, list.findIndex((candidate) => candidate.id === plan.id));
-    return plan.frontName?.trim() || `Frente ${index + 1}`;
+  // O rotulo sai sempre da posicao gravada, nunca do indice na lista: a
+  // exportacao e o link compartilhado enxergam uma frente de cada vez e nao
+  // teriam lista para indexar. Com a renumeracao na exclusao, posicao e ordem
+  // andam juntas, entao as quatro telas dizem o mesmo nome.
+  function frontLabel(plan) {
+    return plan.frontName?.trim() || `Frente ${plan.frontPosition || 1}`;
   }
 
   // O que identifica o bloqueio e um dado so: alterar em uma frente altera em
@@ -1492,7 +1494,7 @@
         const active = front.id === plan.id;
         const state = front.completedAt ? "encerrada" : front.locked ? "travada" : hasExecutionData(front) ? "em execução" : "em planejamento";
         return `<button class="front-tab${active ? " is-active" : ""}" type="button" role="tab" aria-selected="${active}" data-front="${escapeHtml(front.id)}">
-          <b>${escapeHtml(frontLabel(front, fronts))}</b>
+          <b>${escapeHtml(frontLabel(front))}</b>
           <small>${escapeHtml(front.serviceType || state)}</small>
         </button>`;
       }).join("") + (fronts.length < MAX_FRONTS
@@ -1670,8 +1672,11 @@
       const front = blankPlan(source.title, {
         ...inherited,
         groupId: source.groupId || source.id,
-        frontPosition: Math.max(...fronts.map((item) => item.frontPosition || 1)) + 1,
-        frontName: `Frente ${fronts.length + 1}`
+        // Posicao contigua e nome em branco: gravar "Frente 2" como texto
+        // congelaria o rotulo, e ele deixaria de acompanhar a numeracao depois
+        // de qualquer exclusao. O nome padrao e derivado, nao armazenado.
+        frontPosition: fronts.length + 1,
+        frontName: ""
       });
       resequencePlanStamps(front);
       store.plans.push(front);
@@ -1860,12 +1865,24 @@
       }
       const fronts = frontsOf(plan);
       const alvo = fronts.length > 1
-        ? `a ${frontLabel(plan, fronts)} de “${plan.title || "Plano sem nome"}”`
+        ? `a ${frontLabel(plan)} de “${plan.title || "Plano sem nome"}”`
         : `“${plan.title || "Plano sem nome"}”`;
       if (!confirm(`Excluir ${alvo}? Esta ação não pode ser desfeita.`)) return;
       store.deletedPlanIds.push({ clientId: plan.id, databaseId: plan.databaseId || null, ownerId: plan.ownerId || currentUser?.id || null });
+      // Quem excluiu uma frente quer continuar no mesmo bloqueio, nao ser
+      // jogado para o primeiro intervalo da lista.
+      const irmas = fronts.filter((item) => item.id !== plan.id);
       store.plans = store.plans.filter((item) => item.id !== plan.id);
-      store.activePlanId = store.plans[0].id;
+      store.activePlanId = (irmas[0] || store.plans[0]).id;
+      // Renumera o grupo para a posicao continuar sendo a ordem: sem isso a
+      // Frente 3 sobreviveria a exclusao da 2 e apareceria como "Frente 3"
+      // numa lista de duas.
+      irmas.forEach((front, index) => {
+        if (front.frontPosition === index + 1) return;
+        front.frontPosition = index + 1;
+        front.updatedAt = new Date().toISOString();
+        dirtyPlanIds.add(front.id);
+      });
       persist(true);
       renderForm();
     });
@@ -2248,7 +2265,7 @@
           : status.started ? `${status.resolved.length}/${status.steps.length} etapas`
           : "não iniciada";
         return `<button class="front-tab${front.id === plan.id ? " is-active" : ""}${status.finished && front.status !== "completed" ? " is-done" : ""}" type="button" role="tab" aria-selected="${front.id === plan.id}" data-front="${escapeHtml(front.id)}">
-          <b>${escapeHtml(frontLabel(front, fronts))}</b>
+          <b>${escapeHtml(frontLabel(front))}</b>
           <small>${escapeHtml(state)}</small>
         </button>`;
       }).join("");
@@ -2297,7 +2314,7 @@
           .filter(Number.isFinite);
         return {
           front,
-          label: frontLabel(front, fronts),
+          label: frontLabel(front),
           ready: status.steps.length > 0 && status.finished,
           pending: status.steps.length - status.resolved.length,
           empty: status.steps.length === 0,
@@ -2341,6 +2358,14 @@
       }
       if (finishButton) {
         finishButton.textContent = state.fronts.length > 1 ? "Encerrar intervalo e todas as frentes" : "Finalizar execução";
+        // O botao so fica clicavel quando o encerramento e mesmo possivel:
+        // acao principal habilitada que recusa no clique engana quem esta em
+        // campo. O handler mantem a mesma checagem porque o estado pode virar
+        // entre o desenho e o clique.
+        const podeEncerrar = state.ready
+          && !state.closed
+          && (state.fronts.length === 1 || state.last?.front.id === plan.id);
+        finishButton.disabled = !podeEncerrar;
       }
     }
 
@@ -2544,7 +2569,8 @@
             : /INTERVAL_HAS_OPEN_STEPS/.test(error.message || "")
               ? "Há etapas em aberto em alguma frente. Atualize a página e revise antes de encerrar."
               : error.message || "Não foi possível finalizar a execução.";
-        finishButton.disabled = false;
+        // renderClosing devolve o botao ao estado correto; reabilitar direto
+        // deixaria clicavel um encerramento que o servidor acabou de recusar.
         renderClosing();
       }
     });
@@ -2583,7 +2609,7 @@
       $("#execution-title").textContent = plan.title || "Intervalo sem nome";
       const dateLabel = plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Data não informada";
       $("#execution-subtitle").textContent = [
-        fronts.length > 1 ? frontLabel(plan, fronts) : "",
+        fronts.length > 1 ? frontLabel(plan) : "",
         dateLabel, plan.serviceType, plan.location,
         plan.contractorName && `Empreiteira: ${plan.contractorName}`,
         plan.foremanName && `Encarregado: ${plan.foremanName}`,
@@ -2593,7 +2619,8 @@
       $("#execution-notes").disabled = !executionAvailable || plan.status === "completed";
       const canFinish = executionAvailable && isOperatorRole(currentProfile?.role) && plan.status !== "completed";
       if (finishPanel) finishPanel.hidden = !canFinish;
-      if (finishButton) finishButton.disabled = false;
+      // Quem decide se o botao fica clicavel e renderClosing, chamado logo
+      // abaixo: reabilitar aqui apagaria a regra do encerramento.
       if (plan.status === "completed" && finishFeedback) finishFeedback.textContent = "Execução finalizada e registrada no histórico.";
       renderFronts();
       renderWeather();
@@ -2643,7 +2670,7 @@
       selector.innerHTML = store.plans.map((plan) => {
         const fronts = frontsOf(plan);
         const label = fronts.length > 1
-          ? `${plan.title || "Plano sem nome"} · ${frontLabel(plan, fronts)}`
+          ? `${plan.title || "Plano sem nome"} · ${frontLabel(plan)}`
           : (plan.title || "Plano sem nome");
         return `<option value="${plan.id}" ${plan.id === store.activePlanId ? "selected" : ""}>${escapeHtml(label)}</option>`;
       }).join("");

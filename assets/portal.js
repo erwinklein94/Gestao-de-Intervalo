@@ -155,8 +155,10 @@
     return valid.length ? Math.max(...valid) : null;
   }
 
-  function frontLabel(plan, index) {
-    return String(plan.front_name || "").trim() || `Frente ${index + 1}`;
+  // Mesma regra do app: o rotulo sai da posicao gravada, nunca do indice na
+  // lista. A exportacao percorre frentes soltas e nao teria lista para indexar.
+  function frontLabel(plan) {
+    return String(plan.front_name || "").trim() || `Frente ${plan.front_position || 1}`;
   }
 
   function groupPlans(plans) {
@@ -522,7 +524,7 @@
       const metrics = intervalMetrics(plan);
       const deadline = metrics.variance == null || metrics.variance === 0 ? "No prazo" : metrics.variance > 0 ? "Em atraso" : "Adiantado";
       const title = groupSizes[plan.group_id || plan.id] > 1
-        ? `${plan.title || ""} · ${frontLabel(plan, (plan.front_position || 1) - 1)}`
+        ? `${plan.title || ""} · ${frontLabel(plan)}`
         : plan.title;
       const values = [title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${stampLabel(plan.window_start, plan.interval_date)}-${stampLabel(plan.window_end, plan.interval_date)}`];
       rows.push(`<row r="${row}" ht="25" customHeight="1">${values.map((value, column) => excelCell(column + 1, row, value, [0, 9, 10].includes(column) ? 9 : 5)).join("")}</row>`);
@@ -700,9 +702,9 @@
       .sort((a, b) => (a.front_position || 1) - (b.front_position || 1)
         || String(a.created_at).localeCompare(String(b.created_at)));
     const frontStrip = fronts.length > 1
-      ? `<div class="front-strip detail-fronts" role="tablist" aria-label="Frentes deste intervalo">${fronts.map((front, index) => `<button class="front-tab${front.id === plan.id ? " is-active" : ""}" type="button" role="tab" aria-selected="${front.id === plan.id}" data-detail-front="${escapeHtml(front.id)}"><b>${escapeHtml(frontLabel(front, index))}</b><small>${escapeHtml(front.service_type || STATUS_LABELS[front.status] || "")}</small></button>`).join("")}</div>`
+      ? `<div class="front-strip detail-fronts" role="tablist" aria-label="Frentes deste intervalo">${fronts.map((front) => `<button class="front-tab${front.id === plan.id ? " is-active" : ""}" type="button" role="tab" aria-selected="${front.id === plan.id}" data-detail-front="${escapeHtml(front.id)}"><b>${escapeHtml(frontLabel(front))}</b><small>${escapeHtml(front.service_type || STATUS_LABELS[front.status] || "")}</small></button>`).join("")}</div>`
       : "";
-    root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Prévia do acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}${fronts.length > 1 ? ` · ${escapeHtml(frontLabel(plan, fronts.indexOf(plan)))} de ${fronts.length}` : ""}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header>${frontStrip}<div class="detail-full-page-bar"><span><strong>Quer ver todos os detalhes?</strong><small>Abra o acompanhamento completo com plano, execução e dashboard.</small></span><a class="button button-secondary" data-full-tracking-link href="${escapeHtml(fullTrackingUrl(plan, initialTab))}">Abrir página completa <i aria-hidden="true">↗</i></a></div><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link público temporário</button><span class="auth-feedback"></span></div>' : ""}</div>`;
+    root.innerHTML = `<header class="detail-dialog-header"><div><p class="section-kicker">Prévia do acompanhamento do intervalo</p><h2>${escapeHtml(plan.title || "Intervalo")}</h2><span>${escapeHtml(plan.location || "Local não informado")} · ${escapeHtml(plan.coordinatorName)}${fronts.length > 1 ? ` · ${escapeHtml(frontLabel(plan))} de ${fronts.length}` : ""}</span></div><button type="button" data-detail-close aria-label="Fechar">×</button></header>${frontStrip}<div class="detail-full-page-bar"><span><strong>Quer ver todos os detalhes?</strong><small>Abra o acompanhamento completo com plano, execução e dashboard.</small></span><a class="button button-secondary" data-full-tracking-link href="${escapeHtml(fullTrackingUrl(plan, initialTab))}">Abrir página completa <i aria-hidden="true">↗</i></a></div><nav class="detail-tabs" aria-label="Detalhes do intervalo" role="tablist"><button type="button" role="tab" data-detail-tab="plan">Plano do intervalo</button><button type="button" role="tab" data-detail-tab="execution">Execução do intervalo</button><button type="button" role="tab" data-detail-tab="dashboard">Dashboard do intervalo</button></nav><div class="detail-dialog-body"><section role="tabpanel" data-detail-view="plan">${planTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="execution">${executionTabMarkup(plan)}</section><section role="tabpanel" data-detail-view="dashboard">${dashboardTabMarkup(plan)}</section>${shareAllowed ? '<div class="detail-share"><button class="button button-ghost" type="button" data-create-share>Gerar link público temporário</button><span class="auth-feedback"></span></div>' : ""}</div>`;
     const activate = (tab) => {
       $$('[data-detail-tab]', root).forEach((button) => { const active = button.dataset.detailTab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); });
       $$('[data-detail-view]', root).forEach((view) => { view.hidden = view.dataset.detailView !== tab; });

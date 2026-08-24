@@ -62,8 +62,84 @@ test("frentes do mesmo intervalo se enxergam e recebem rótulo em ordem", () => 
   assert.equal(api.frontsOf(primeira).length, 2);
   assert.equal(api.frontLabel(primeira), "Frente 1");
   assert.equal(api.frontLabel(segunda), "Frente 2");
-  segunda.frontName = "Frente sul";
-  assert.equal(api.frontLabel(segunda), "Frente sul");
+  segunda.frontName = "  Frente sul  ";
+  assert.equal(api.frontLabel(segunda), "Frente sul", "nome informado tem prioridade e vem aparado");
+});
+
+test("o rótulo da frente sai da posição gravada, não do índice na lista", () => {
+  const api = loadAppApi();
+  const portal = loadPortalApi();
+
+  // A exportação e o link compartilhado veem uma frente de cada vez e não têm
+  // lista para indexar. Se o rótulo dependesse da lista, a mesma frente teria
+  // um nome na tela e outro no Excel.
+  const solta = { frontName: "", frontPosition: 3 };
+  assert.equal(api.frontLabel(solta), "Frente 3", "o rótulo não pode depender do store");
+  assert.equal(
+    portal.frontLabel({ front_name: "", front_position: 3 }),
+    api.frontLabel(solta),
+    "app e portal precisam dizer o mesmo nome"
+  );
+
+  // A página compartilhada aplica a mesma regra sobre a linha que recebe.
+  const compartilhada = read("app.js").split("const sharedFront =")[1].split(";")[0];
+  assert.ok(
+    /plan\.frontPosition/.test(compartilhada) && !/frontsOf/.test(compartilhada),
+    "o acompanhamento compartilhado deve usar a posição gravada"
+  );
+  assert.ok(
+    !/frontLabel\([^)]+,/.test(read("app.js")) && !/frontLabel\([^)]+,/.test(read("assets/portal.js")),
+    "frontLabel não deve mais receber lista nem índice"
+  );
+});
+
+test("nova frente nasce sem nome gravado e em posição contígua", () => {
+  const app = read("app.js");
+  // Gravar "Frente 2" como texto congelaria o rótulo: depois de uma exclusão
+  // ele deixaria de acompanhar a numeração.
+  assert.ok(!/frontName: `Frente \$\{/.test(app), "o nome padrão não pode ser materializado");
+  assert.ok(/frontPosition: fronts\.length \+ 1/.test(app), "a posição nova deve fechar a sequência");
+  assert.ok(!/Math\.max\(\.\.\.fronts\.map/.test(app), "posição por max deixaria buracos e estouraria o teto de 12");
+});
+
+test("excluir uma frente mantém o bloqueio e renumera o grupo", () => {
+  const app = read("app.js");
+  // Recorta só o handler de exclusão: o bootstrap tem um fallback legítimo
+  // para o primeiro plano quando o plano ativo salvo deixou de existir.
+  const exclusao = app.split('$("#delete-plan-button").addEventListener')[1].split("\n    });")[0];
+  assert.ok(
+    exclusao.includes("const irmas = fronts.filter((item) => item.id !== plan.id);"),
+    "a exclusão precisa conhecer as frentes irmãs"
+  );
+  assert.ok(
+    exclusao.includes("store.activePlanId = (irmas[0] || store.plans[0]).id;"),
+    "quem excluiu uma frente deve continuar no mesmo intervalo"
+  );
+  assert.ok(
+    /irmas\.forEach\(\(front, index\) => \{[\s\S]*front\.frontPosition = index \+ 1;/.test(exclusao),
+    "as frentes restantes precisam ser renumeradas"
+  );
+  assert.ok(
+    !/store\.activePlanId = store\.plans\[0\]\.id;/.test(exclusao),
+    "o salto direto para o primeiro plano da lista deve sumir da exclusão"
+  );
+});
+
+test("o botão de encerrar só fica clicável quando o encerramento é possível", () => {
+  const app = read("app.js");
+  const fechamento = app.split("function renderClosing()")[1].split("\n    }")[0];
+  assert.ok(fechamento.includes("finishButton.disabled = !podeEncerrar;"), "renderClosing deve governar o botão");
+  assert.ok(
+    /state\.ready[\s\S]*!state\.closed[\s\S]*state\.fronts\.length === 1 \|\| state\.last\?\.front\.id === plan\.id/.test(fechamento),
+    "a liberação depende de todas as frentes prontas e de ser a última a concluir"
+  );
+  // Nada pode reabilitar o botão por fora e apagar a regra.
+  assert.ok(
+    !/if \(finishButton\) finishButton\.disabled = false;/.test(app),
+    "renderPage não pode reabilitar o botão"
+  );
+  const erro = app.split("Não foi possível finalizar a execução.")[1].split("});")[0];
+  assert.ok(!/finishButton\.disabled = false/.test(erro), "o caminho de erro deve devolver o botão via renderClosing");
 });
 
 test("dados do bloqueio se propagam entre frentes; dados da frente não", () => {
