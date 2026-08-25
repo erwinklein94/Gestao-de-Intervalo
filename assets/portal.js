@@ -1339,7 +1339,7 @@
           .select("id,requester_email,message,created_at")
           .order("created_at", { ascending: false }),
         baseClient.from("user_profiles")
-          .select("id,full_name")
+          .select("id,full_name,role")
       ]);
       if (accessResult.error) throw accessResult.error;
       if (requestResult.error) throw requestResult.error;
@@ -1347,8 +1347,10 @@
       const accesses = accessResult.data || [];
       const requests = requestResult.data || [];
       const profileNames = new Map((profileResult.data || []).map((profile) => [profile.id, profile.full_name || "Nome não informado"]));
-      $("#audit-accesses").innerHTML = accesses.map((access) => auditRowMarkup(access, profileNames)).join("");
-      $("#audit-empty").hidden = accesses.length > 0;
+      const profileRoles = new Map((profileResult.data || []).map((profile) => [profile.id, profile.role]));
+      const visibleAccesses = accesses.filter((access) => access.user_id !== currentUser.id && profileRoles.get(access.user_id) !== "editor");
+      $("#audit-accesses").innerHTML = visibleAccesses.map((access) => auditRowMarkup(access, profileNames)).join("");
+      $("#audit-empty").hidden = visibleAccesses.length > 0;
       $("#audit-change-requests").innerHTML = requests.map(auditRequestMarkup).join("");
       $("#audit-requests-empty").hidden = requests.length > 0;
       const refreshedAt = new Date();
