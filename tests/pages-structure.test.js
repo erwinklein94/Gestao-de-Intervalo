@@ -96,8 +96,8 @@ assert.ok(!admin.includes("SUB"), "administração não deve expor cadastro de S
 const audit = read("auditoria.html");
 assert.match(audit, /<body[^>]*data-page="audit"/);
 assert.ok(audit.indexOf("assets/auth-guard.js") < audit.indexOf("assets/portal.js"), "proteção de autenticação deve carregar antes da auditoria");
-includesAll(audit, ['id="audit-last-updated"', 'id="audit-refresh"', 'id="audit-accesses"', 'id="audit-empty"', 'id="audit-change-requests"', 'id="audit-requests-empty"', "100 acessos mais recentes"], "estrutura da auditoria de acessos e solicitações");
-includesAll(read("assets/portal.js"), ['["auditoria.html", "Auditoria", "audit"]', 'async function registerSiteAccess()', 'async function loadAuditAccesses()', '.from("site_access_audit")', '.limit(100)', '.from("profile_change_requests")'], "navegação e atualização da auditoria");
+includesAll(audit, ['id="audit-last-updated"', 'id="audit-refresh"', 'id="audit-accesses"', 'id="audit-empty"', 'id="audit-change-requests"', 'id="audit-requests-empty"', "100 acessos mais recentes", "Nome do usuário", "E-mail", "Página acessada", "Data e horário"], "estrutura da auditoria de acessos e solicitações");
+includesAll(read("assets/portal.js"), ['["auditoria.html", "Auditoria", "audit"]', 'async function registerSiteAccess()', 'async function loadAuditAccesses()', '.from("site_access_audit")', '.limit(100)', '.from("profile_change_requests")', '.from("user_profiles")', '.select("id,full_name")', 'profileNames.get(access.user_id)'], "navegação e atualização da auditoria");
 
 // Integrações estruturais das páginas existentes que receberam as novas funções.
 const account = read("conta.html");

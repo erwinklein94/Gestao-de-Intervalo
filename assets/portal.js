@@ -1314,9 +1314,10 @@
     if (error) console.warn("Não foi possível registrar o acesso.", error);
   }
 
-  function auditRowMarkup(access) {
+  function auditRowMarkup(access, profileNames) {
     const timestamp = new Date(access.accessed_at);
-    return `<tr><td><strong>${escapeHtml(access.email)}</strong></td><td>${escapeHtml(AUDIT_PAGE_LABELS[access.page] || access.page)}</td><td><time datetime="${escapeHtml(access.accessed_at)}">${escapeHtml(timestamp.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" }))}</time></td></tr>`;
+    const userName = profileNames.get(access.user_id) || (access.user_id ? "Nome não disponível" : "Usuário removido");
+    return `<tr><td><strong>${escapeHtml(userName)}</strong></td><td>${escapeHtml(access.email)}</td><td>${escapeHtml(AUDIT_PAGE_LABELS[access.page] || access.page)}</td><td><time datetime="${escapeHtml(access.accessed_at)}">${escapeHtml(timestamp.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" }))}</time></td></tr>`;
   }
 
   function auditRequestMarkup(request) {
@@ -1329,20 +1330,24 @@
     if (button) { button.disabled = true; button.textContent = "Atualizando…"; }
     setState("Atualizando auditoria…", "syncing");
     try {
-      const [accessResult, requestResult] = await Promise.all([
+      const [accessResult, requestResult, profileResult] = await Promise.all([
         baseClient.from("site_access_audit")
-          .select("id,email,page,accessed_at")
+          .select("id,user_id,email,page,accessed_at")
           .order("accessed_at", { ascending: false })
           .limit(100),
         baseClient.from("profile_change_requests")
           .select("id,requester_email,message,created_at")
-          .order("created_at", { ascending: false })
+          .order("created_at", { ascending: false }),
+        baseClient.from("user_profiles")
+          .select("id,full_name")
       ]);
       if (accessResult.error) throw accessResult.error;
       if (requestResult.error) throw requestResult.error;
+      if (profileResult.error) throw profileResult.error;
       const accesses = accessResult.data || [];
       const requests = requestResult.data || [];
-      $("#audit-accesses").innerHTML = accesses.map(auditRowMarkup).join("");
+      const profileNames = new Map((profileResult.data || []).map((profile) => [profile.id, profile.full_name || "Nome não informado"]));
+      $("#audit-accesses").innerHTML = accesses.map((access) => auditRowMarkup(access, profileNames)).join("");
       $("#audit-empty").hidden = accesses.length > 0;
       $("#audit-change-requests").innerHTML = requests.map(auditRequestMarkup).join("");
       $("#audit-requests-empty").hidden = requests.length > 0;
