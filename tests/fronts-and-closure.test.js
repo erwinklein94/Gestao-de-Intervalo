@@ -236,13 +236,13 @@ test("portal agrupa frentes em um intervalo e herda a pior leitura", () => {
   }, extra);
 
   const frenteConcluida = { ...base, id: "p1", front_position: 1, interval_steps: [step({ actual_start: "2026-08-23T02:00:00", actual_end: "2026-08-23T03:00:00", status: "completed" })] };
-  const frenteAtrasada = { ...base, id: "p2", front_position: 2, front_name: "Frente sul", interval_steps: [step({ actual_start: "2026-08-23T02:00:00", status: "running", planned_end: "2026-08-23T04:30:00" })] };
+  const frenteAtrasada = { ...base, id: "p2", front_position: 2, front_name: "Frente sul", interval_steps: [step({ actual_start: "2026-08-23T02:30:00", status: "running", planned_end: "2026-08-23T04:30:00" })] };
   const avulso = { ...base, group_id: "g2", id: "p3", front_position: 1, interval_steps: [step({ actual_start: "2026-08-23T02:00:00", status: "running" })] };
 
   const grupos = api.groupPlans([frenteAtrasada, frenteConcluida, avulso]);
   assert.equal(grupos.length, 2, "três frentes em dois bloqueios");
   const bloqueio = grupos.find((grupo) => grupo.id === "g1");
-  assert.deepEqual(bloqueio.fronts.map((front) => front.id), ["p1", "p2"], "frentes vêm na ordem da posição");
+  assert.deepEqual(Array.from(bloqueio.fronts, (front) => front.id), ["p1", "p2"], "frentes vêm na ordem da posição");
 
   const metrics = api.groupMetrics(bloqueio, agora);
   assert.equal(metrics.steps, 2);
@@ -251,6 +251,27 @@ test("portal agrupa frentes em um intervalo e herda a pior leitura", () => {
   assert.equal(metrics.status, "executing");
   assert.equal(metrics.variance, 30, "o intervalo herda o pior desvio entre as frentes");
   assert.equal(metrics.deadline, "late");
+});
+
+test("card agrupado usa o mesmo marco da pagina de acompanhamento", () => {
+  const api = loadPortalApi();
+  const step = (position, plannedStart, plannedEnd, actualStart) => ({
+    position, activity_name: `Etapa ${position + 1}`, planned_start: plannedStart,
+    planned_end: plannedEnd, actual_start: actualStart, actual_end: null,
+    actual_notes: "", status: "running"
+  });
+  const base = {
+    group_id: "raquel", interval_date: "2026-08-25", window_start: "2026-08-25T08:00:00",
+    window_end: "2026-08-25T18:00:00", status: "executing", updated_at: "2026-08-25T11:15:00"
+  };
+  const group = api.groupPlans([
+    { ...base, id: "141200", front_position: 1, interval_steps: [step(0, "2026-08-25T10:00:00", "2026-08-25T10:40:00", "2026-08-25T08:58:00")] },
+    { ...base, id: "141800", front_position: 2, interval_steps: [step(0, "2026-08-25T10:30:00", "2026-08-25T10:50:00", "2026-08-25T08:55:00")] }
+  ])[0];
+  const metrics = api.groupMetrics(group, new Date("2026-08-25T11:15:00"));
+  assert.equal(metrics.variance, -62, "o grupo herda a frente menos adiantada, sem atraso correndo pelo fim aberto");
+  assert.equal(metrics.deadline, "ahead");
+  assert.match(api.cardMarkup(group), /Adiantado/);
 });
 
 test("intervalo só é concluído quando todas as frentes são", () => {
@@ -266,8 +287,8 @@ test("resumo gerencial conta intervalos e frentes separadamente", () => {
   const api = loadPortalApi();
   const frente = (id, group) => ({ id, group_id: group, status: "executing", interval_date: "2026-08-23", service_type: "Socaria", coordinator_type: "infrastructure", interval_steps: [] });
   const resumo = api.managementSummary([frente("a", "g1"), frente("b", "g1"), frente("c", "g2")]);
-  assert.deepEqual(resumo.kpis.find((kpi) => kpi[0] === "Total de intervalos"), ["Total de intervalos", 2]);
-  assert.deepEqual(resumo.kpis.find((kpi) => kpi[0] === "Frentes de serviço"), ["Frentes de serviço", 3]);
+  assert.deepEqual(Array.from(resumo.kpis.find((kpi) => kpi[0] === "Total de intervalos")), ["Total de intervalos", 2]);
+  assert.deepEqual(Array.from(resumo.kpis.find((kpi) => kpi[0] === "Frentes de serviço")), ["Frentes de serviço", 3]);
 });
 
 test("estrutura das telas de frente e encerramento", () => {

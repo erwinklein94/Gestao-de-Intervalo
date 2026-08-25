@@ -89,6 +89,10 @@
     return ["completed", "skipped"].includes(step.status) || Boolean(step.actual_end) || String(step.actual_notes || "").startsWith("[[ETAPA_NAO_EXECUTADA]]");
   }
 
+  function isSkipped(step) {
+    return step.status === "skipped" || String(step.actual_notes || "").startsWith("[[ETAPA_NAO_EXECUTADA]]");
+  }
+
   function intervalMetrics(plan, now = new Date()) {
     const steps = [...(plan.interval_steps || [])].sort((a, b) => a.position - b.position);
     // O prazo do intervalo e o fim da janela mais o que o CCO concedeu. Sem
@@ -104,26 +108,28 @@
       const actualEnds = steps.map((step) => stampMinutes(step.actual_end)).filter(Number.isFinite);
       if (actualEnds.length && windowEnd != null) variance = Math.max(...actualEnds) - windowEnd;
     } else if (plan.status === "executing") {
-      const milestones = [];
-      steps.forEach((step) => {
-        const plannedStart = stampMinutes(step.planned_start);
-        const plannedEnd = stampMinutes(step.planned_end);
-        const actualStart = stampMinutes(step.actual_start);
-        const actualEnd = stampMinutes(step.actual_end);
-        if (actualEnd != null && plannedEnd != null) milestones.push({ position: step.position * 2 + 1, variance: actualEnd - plannedEnd });
-        else if (actualStart != null && plannedStart != null) milestones.push({ position: step.position * 2, variance: actualStart - plannedStart });
-      });
-      if (milestones.length) variance = milestones.sort((a, b) => b.position - a.position)[0].variance;
-      // Etapa aberta que ja passou do previsto: o atraso corre agora. Com
-      // timestamp nao ha mais o recorte "so se for hoje" que existia quando o
-      // dia precisava ser adivinhado.
-      const current = now.getTime() / 60000;
-      const running = steps.filter((step) => step.actual_start && !step.actual_end && !isResolved(step));
-      const worst = running.map((step) => {
-        const plannedEnd = stampMinutes(step.planned_end);
-        return plannedEnd == null ? null : current - plannedEnd;
-      }).filter(Number.isFinite);
-      if (worst.length) variance = Math.max(variance ?? -Infinity, ...worst);
+      // Mesma regra da pagina de acompanhamento: o saldo vem do marco mais
+      // avancado da sequencia. Enquanto a etapa esta aberta, so existe inicio
+      // real para comparar; o termino nao pode virar atraso antes de ser
+      // registrado. Isso tambem permite frentes concomitantes sem falso atraso.
+      const reached = steps
+        .filter((step) => !isSkipped(step) && stampMinutes(step.actual_start) != null)
+        .sort((a, b) => a.position - b.position);
+      const frontier = reached.at(-1) || null;
+      if (frontier) {
+        const actualEnd = stampMinutes(frontier.actual_end);
+        const plannedEnd = stampMinutes(frontier.planned_end);
+        const actualStart = stampMinutes(frontier.actual_start);
+        const plannedStart = stampMinutes(frontier.planned_start);
+        variance = actualEnd != null && plannedEnd != null
+          ? actualEnd - plannedEnd
+          : actualStart != null && plannedStart != null ? actualStart - plannedStart : null;
+      } else {
+        const firstPending = steps.find((step) => !isSkipped(step) && !isResolved(step));
+        const plannedStart = stampMinutes(firstPending?.planned_start);
+        const current = now.getTime() / 60000;
+        if (plannedStart != null && current > plannedStart) variance = current - plannedStart;
+      }
     }
 
     const deadline = variance == null || Math.abs(variance) < 1 ? "ontime" : variance > 0 ? "late" : "ahead";

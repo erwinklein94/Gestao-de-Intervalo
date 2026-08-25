@@ -84,9 +84,9 @@ test("a visão do sistema reaproveita card, métricas e filtros da gestão", () 
   const grupos = api.groupPlans(dados).map((g) => ({ ...g, metrics: api.groupMetrics(g) }));
   assert.equal(grupos.length, 4, "cinco frentes, quatro bloqueios");
   const porStatus = (s) => grupos.filter((g) => g.metrics.status === s).map((g) => g.lead.title);
-  assert.deepEqual(porStatus("planning"), ["No papel"]);
-  assert.deepEqual(porStatus("executing").sort(), ["Atrasado", "Duas frentes"]);
-  assert.deepEqual(porStatus("completed"), ["Fechado"]);
+  assert.deepEqual(Array.from(porStatus("planning")), ["No papel"]);
+  assert.deepEqual(Array.from(porStatus("executing")).sort(), ["Atrasado", "Duas frentes"]);
+  assert.deepEqual(Array.from(porStatus("completed")), ["Fechado"]);
 
   // Verde no prazo, vermelho em atraso — a mesma dinâmica dos cards da gestão.
   const classe = (titulo) => api.cardMarkup(grupos.find((g) => g.lead.title === titulo));
@@ -104,7 +104,7 @@ test("a visão do sistema reaproveita card, métricas e filtros da gestão", () 
   assert.equal(api.filterPlans(dados, { coordinator: "c1" }).length, 5);
   assert.equal(api.filterPlans(dados, { coordinator: "outro" }).length, 0);
   assert.equal(api.filterPlans(dados, { dateFrom: "2030-01-01" }).length, 0);
-  assert.deepEqual(api.filterPlans(dados, { query: "fechado" }).map((p) => p.title), ["Fechado"]);
+  assert.deepEqual(Array.from(api.filterPlans(dados, { query: "fechado" }), (p) => p.title), ["Fechado"]);
 });
 
 console.log("editor-intervals: visão do sistema, status, cards e filtros aprovados");

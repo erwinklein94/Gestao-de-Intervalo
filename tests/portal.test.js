@@ -153,9 +153,9 @@ assert.equal(stampLabel(null, "2026-08-21"), "—");
   assert.equal(metrics.deadline, "ahead");
 }
 
-// Etapa aberta que passou do prazo conta como atraso mesmo em outro dia. Com
-// hora solta isso era impossível: comparar "08:00" com agora não dizia nada
-// sobre qual dia, e a regra só valia para o dia corrente.
+// Etapa aberta continua usando o inicio como marco, mesmo depois do fim
+// planejado. Sem termino real, transformar o relogio atual em atraso diverge
+// da pagina de acompanhamento e cria falso atraso em frentes concomitantes.
 {
   const plan = makePlan({
     status: "executing",
@@ -170,11 +170,11 @@ assert.equal(stampLabel(null, "2026-08-21"), "—");
     ]
   });
   const metrics = intervalMetrics(plan, new Date(2026, 7, 21, 3, 30));
-  assert.equal(metrics.variance, 90);
+  assert.equal(metrics.variance, 10);
   assert.equal(metrics.deadline, "late");
 }
 
-// Uma etapa aberta no dia corrente passa a refletir o atraso contra o próprio fim.
+// Uma etapa aberta no horario planejado permanece no prazo ate registrar fim.
 {
   const now = new Date(2026, 7, 21, 10, 30);
   const plan = makePlan({
@@ -183,8 +183,8 @@ assert.equal(stampLabel(null, "2026-08-21"), "—");
     interval_steps: [makeStep({ status: "running", actual_start: "2026-08-21T08:00:00", planned_end: "2026-08-21T09:00:00" })]
   });
   const metrics = intervalMetrics(plan, now);
-  assert.equal(metrics.variance, 90);
-  assert.equal(metrics.deadline, "late");
+  assert.equal(metrics.variance, 0);
+  assert.equal(metrics.deadline, "ontime");
 }
 
 const plans = [
