@@ -4219,10 +4219,11 @@
       : [ownMember?.coordinator_type]).map((entry) => classificationLabels[entry]).filter(Boolean);
     $("#account-detail-type").textContent = ownClassifications.join(" · ") || "Cadastro pendente de revisão";
 
-    await renderAccountHistory();
-
-    // O Editor administra o sistema e nao possui intervalos proprios.
-    if (currentProfile.role === "editor") $("#account-history-card").hidden = true;
+    // Perfis exclusivamente gerenciais e o Editor nao executam intervalos;
+    // portanto, a Minha Conta nao consulta nem exibe um historico operacional.
+    const showsPersonalHistory = ![...READ_ONLY_MANAGEMENT_ROLES, "editor"].includes(currentProfile.role);
+    $("#account-history-card").hidden = !showsPersonalHistory;
+    if (showsPersonalHistory) await renderAccountHistory();
 
     bindPasswordChange();
     bindProfileChangeRequest();

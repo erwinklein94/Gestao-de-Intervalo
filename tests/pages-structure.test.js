@@ -118,7 +118,10 @@ assert.ok(!read("app.js").includes("const roleLabel = roleLabel("), "Minha Conta
 includesAll(read("app.js"), [
   "const profileRoleLabel = roleLabel(currentProfile.role, currentProfile.role_gender)",
   '$("#account-role").textContent = profileRoleLabel',
-  '$("#account-detail-role").textContent = profileRoleLabel'
+  '$("#account-detail-role").textContent = profileRoleLabel',
+  'const showsPersonalHistory = ![...READ_ONLY_MANAGEMENT_ROLES, "editor"].includes(currentProfile.role)',
+  '$("#account-history-card").hidden = !showsPersonalHistory',
+  "if (showsPersonalHistory) await renderAccountHistory()"
 ], "Minha Conta deve preencher a função flexionada sem interromper os demais dados");
 
 const planning = read("index.html");
