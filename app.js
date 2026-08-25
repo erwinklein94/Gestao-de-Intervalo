@@ -3144,7 +3144,7 @@
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (currentProfile.role === "editor") {
       // O Editor administra o sistema; nao planeja nem executa intervalos.
-      links = [["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
+      links = [["intervalos.html", "Intervalos", "intervals"], ["admin.html", "Administração", "admin"], ["auditoria.html", "Auditoria", "audit"], ["conta.html", "Minha conta", "account"]];
     } else if (READ_ONLY_MANAGEMENT_ROLES.includes(currentProfile.role)) {
       links = [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
     } else {
@@ -3355,6 +3355,12 @@
     sessionStorage.removeItem("gestaoIntervaloRumo.dataset");
     sessionStorage.removeItem("gestaoIntervaloRumo.demoPersona");
     renderRoleNavigation();
+    const { error: accessAuditError } = await cloudClient.from("site_access_audit").insert({
+      user_id: currentUser.id,
+      email: currentProfile.email,
+      page
+    });
+    if (accessAuditError) console.warn("Não foi possível registrar o acesso.", accessAuditError);
     if (!routeAllowedForRole()) {
       location.replace(landingPageForRole(currentProfile?.role));
       return;

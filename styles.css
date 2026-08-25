@@ -935,6 +935,18 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .admin-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .admin-form-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
 .admin-list { display: grid; gap: 10px; }
+.audit-heading { margin-bottom: 22px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.audit-heading h2 { margin: 0; color: var(--blue); font-size: 25px; letter-spacing: -.025em; }
+.audit-heading p:last-child { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+.audit-heading time { color: var(--blue); font-weight: 700; }
+.audit-card { overflow: hidden; }
+.audit-table-wrap { overflow-x: auto; }
+.audit-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.audit-table th { padding: 12px 18px; color: var(--muted); background: var(--surface); text-align: left; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; }
+.audit-table td { padding: 15px 18px; border-bottom: 1px solid var(--surface-2); }
+.audit-table tbody tr:last-child td { border-bottom: 0; }
+.audit-table td strong { color: var(--blue); }
+.audit-table time { white-space: nowrap; }
 .admin-row { padding: 14px; display: grid; grid-template-columns: 1.15fr repeat(5, minmax(115px, 1fr)) auto; align-items: end; gap: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--white); }
 .admin-row label { min-width: 0; display: grid; gap: 4px; }
 .admin-row label > span { color: var(--muted); font-size: 8px; font-weight: 700; text-transform: uppercase; }
@@ -1410,6 +1422,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .management-workspace, .admin-workspace { width: min(100% - 24px, 1280px); padding-top: 24px; }
   .portal-filters { padding: 16px; }
   .portal-filters-heading, .portal-section-heading { align-items: stretch; flex-direction: column; }
+  .audit-heading { align-items: stretch; flex-direction: column; }
   .portal-filters-heading .button { width: 100%; }
   .portal-filter-grid { grid-template-columns: 1fr 1fr; }
   .portal-search { grid-column: 1 / -1; }

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR" class="auth-checking">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
+  <script src="assets/auth-guard.js"></script><meta name="description" content="Auditoria dos acessos à Gestão de Intervalo.">
+  <title>Gestão de Intervalo | Auditoria</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
+  <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="assets/icon.svg"><script src="assets/pwa.js" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20260825-5"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260825-5" defer></script>
+</head>
+<body data-page="audit">
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+  <header class="site-header"><a class="brand" href="admin.html"><img src="assets/rumo-logo-white.png" alt="Rumo"><span>Gestão de Intervalo</span></a><nav class="primary-nav" aria-label="Navegação principal" data-role-nav></nav><div class="header-tools"><span class="save-state" id="portal-state">Verificando acesso…</span><button class="theme-toggle" type="button" data-theme-toggle><span>☾</span><b>Tema escuro</b></button></div></header>
+  <main id="conteudo">
+    <section class="admin-hero"><p class="eyebrow">Acesso de Editor</p><h1>Auditoria</h1><p>Acompanhe os acessos autenticados ao sistema, com identificação da conta, página e horário.</p></section>
+    <section class="admin-workspace audit-workspace">
+      <header class="audit-heading">
+        <div><p class="section-kicker">Histórico de acessos</p><h2>Acessos mais recentes</h2><p>Última atualização: <time id="audit-last-updated">Aguardando dados…</time></p></div>
+        <button class="button button-secondary" id="audit-refresh" type="button">Atualizar agora</button>
+      </header>
+      <article class="chart-card audit-card">
+        <div class="audit-table-wrap">
+          <table class="audit-table"><thead><tr><th>E-mail</th><th>Página acessada</th><th>Data e horário</th></tr></thead><tbody id="audit-accesses"></tbody></table>
+        </div>
+        <div class="portal-empty" id="audit-empty" hidden><strong>Nenhum acesso registrado</strong><span>Os próximos acessos autenticados aparecerão aqui automaticamente.</span></div>
+      </article>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div><footer class="site-footer"><img src="assets/rumo-logo-blue.png" alt="Rumo"><span>Gestão de Intervalo · Auditoria protegida por perfil</span></footer>
+</body>
+</html>

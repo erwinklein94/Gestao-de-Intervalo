@@ -346,7 +346,7 @@
     } else if (role === "editor") {
       // O Editor administra o sistema; nao planeja nem executa intervalos, mas
       // enxerga todos eles -- e a unica funcao que enxerga.
-      links = [["intervalos.html", "Intervalos", "intervals"], ["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
+      links = [["intervalos.html", "Intervalos", "intervals"], ["admin.html", "Administração", "admin"], ["auditoria.html", "Auditoria", "audit"], ["conta.html", "Minha conta", "account"]];
     } else if (roleCapabilities(role).canUseManagement) {
       links = [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
     } else {
@@ -1299,6 +1299,58 @@
     });
   }
 
+  const AUDIT_PAGE_LABELS = {
+    planning: "Planejamento", execution: "Execução", dashboard: "Dashboard",
+    management: "Gestão", admin: "Administração", audit: "Auditoria", account: "Minha conta"
+  };
+
+  async function registerSiteAccess() {
+    const page = document.body.dataset.page || "desconhecida";
+    const { error } = await baseClient.from("site_access_audit").insert({
+      user_id: currentUser.id,
+      email: actualProfile.email,
+      page
+    });
+    if (error) console.warn("Não foi possível registrar o acesso.", error);
+  }
+
+  function auditRowMarkup(access) {
+    const timestamp = new Date(access.accessed_at);
+    return `<tr><td><strong>${escapeHtml(access.email)}</strong></td><td>${escapeHtml(AUDIT_PAGE_LABELS[access.page] || access.page)}</td><td><time datetime="${escapeHtml(access.accessed_at)}">${escapeHtml(timestamp.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" }))}</time></td></tr>`;
+  }
+
+  async function loadAuditAccesses() {
+    const button = $("#audit-refresh");
+    if (button) { button.disabled = true; button.textContent = "Atualizando…"; }
+    setState("Atualizando auditoria…", "syncing");
+    try {
+      const { data, error } = await baseClient.from("site_access_audit")
+        .select("id,email,page,accessed_at")
+        .order("accessed_at", { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      const accesses = data || [];
+      $("#audit-accesses").innerHTML = accesses.map(auditRowMarkup).join("");
+      $("#audit-empty").hidden = accesses.length > 0;
+      const refreshedAt = new Date();
+      $("#audit-last-updated").dateTime = refreshedAt.toISOString();
+      $("#audit-last-updated").textContent = refreshedAt.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" });
+      setState("Auditoria atualizada", "ok");
+    } catch (error) {
+      console.error("Falha ao atualizar auditoria.", error);
+      setState("Erro ao atualizar", "error");
+      showToast("Não foi possível atualizar os acessos.");
+    } finally {
+      if (button) { button.disabled = false; button.textContent = "Atualizar agora"; }
+    }
+  }
+
+  async function initializeAudit() {
+    await loadAuditAccesses();
+    $("#audit-refresh").addEventListener("click", loadAuditAccesses);
+    setInterval(() => { if (!document.hidden) loadAuditAccesses(); }, 15000);
+  }
+
   async function initialize() {
     initializeTheme();
     if (!window.supabase?.createClient) throw new Error("Biblioteca de dados indisponível.");
@@ -1312,14 +1364,16 @@
     configureContext();
     if (!roleCapabilities(effectiveProfile.role).canUseManagement) { location.replace("conta.html"); return; }
     renderNavigation(effectiveProfile.role);
+    await registerSiteAccess();
     if (document.body.dataset.page === "intervals") {
       // A visao do sistema inteiro e do Editor: a RLS ja devolve todos os
       // intervalos para ele, e para mais ninguem.
       if (actualProfile.role !== "editor") { location.replace("gestao.html"); return; }
       await initializeIntervals();
-    } else if (document.body.dataset.page === "admin") {
+    } else if (["admin", "audit"].includes(document.body.dataset.page)) {
       if (actualProfile.role !== "editor") { location.replace("gestao.html"); return; }
-      await initializeAdmin();
+      if (document.body.dataset.page === "admin") await initializeAdmin();
+      else await initializeAudit();
     } else {
       // O Editor administra o sistema; a Gestao nao lhe cabe.
       if (actualProfile.role === "editor") { location.replace("admin.html"); return; }

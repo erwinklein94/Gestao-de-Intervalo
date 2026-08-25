@@ -31,6 +31,9 @@ containsAll(migration, [
   "create table if not exists public.interval_comments",
   "create table if not exists public.interval_sync_receipts",
   "create table if not exists public.interval_audit_log",
+  "create table public.site_access_audit",
+  "Enabled users register own access",
+  "Editors read site access audit",
   "create or replace function private.can_read_plan",
   "create or replace function private.can_write_plan",
   "create or replace function public.sync_interval_plan",
@@ -83,7 +86,7 @@ containsAll(coordinatorScopeBackfill, [
 ], "reparo idempotente do escopo legado da Coordenadora");
 assert.ok(!coordinatorScopeBackfill.includes("lower(btrim(plan.coordinator))"), "texto livre não pode reatribuir um plano legado");
 
-for (const table of ["interval_plans", "interval_steps", "user_profiles", "datasets", "subs", "organization_members", "coordinator_sub_assignments", "manager_operator_assignments", "interval_comments", "interval_sync_receipts", "interval_audit_log"]) {
+for (const table of ["interval_plans", "interval_steps", "user_profiles", "datasets", "subs", "organization_members", "coordinator_sub_assignments", "manager_operator_assignments", "interval_comments", "interval_sync_receipts", "interval_audit_log", "site_access_audit"]) {
   assert.ok(migration.includes(`alter table public.${table} enable row level security`), `RLS deve estar ativa em ${table}`);
 }
 assert.ok(commentAuthorization.includes("private.can_write_plan(plan.dataset_id, plan.coordinator_member_id)"), "comentários devem exigir permissão operacional");
