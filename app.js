@@ -46,8 +46,75 @@
   // dentro dele. O que identifica o bloqueio -- titulo, data, janela e local --
   // pertence ao intervalo e vale igual para todas as frentes. O que muda de
   // frente para frente sao as etapas, o tipo de servico e a execucao.
-  const SHARED_INTERVAL_FIELDS = ["title", "date", "windowStart", "windowEnd", "location", "coordinator", "coordinatorMemberId", "managerMemberId", "coordinatorType"];
+  const SHARED_INTERVAL_FIELDS = ["title", "date", "windowStart", "windowEnd", "ccoGrantMinutes", "ccoGrantUnit", "location", "coordinator", "coordinatorMemberId", "managerMemberId", "coordinatorType"];
   const MAX_FRONTS = 12;
+
+  // Concessao do CCO: tempo extra autorizado para o termino do intervalo. Fica
+  // guardado ao lado da janela, e nao somado dentro dela, porque as duas coisas
+  // sao diferentes -- a janela e o que foi planejado, a concessao e o que o CCO
+  // liberou depois. O relatorio precisa mostrar as duas, e o desvio final passa
+  // a ser medido contra a soma.
+  const MAX_CCO_GRANT_MINUTES = 1440;
+
+  function ccoGrantMinutes(plan) {
+    const value = Number(plan?.ccoGrantMinutes);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return Math.min(MAX_CCO_GRANT_MINUTES, Math.round(value));
+  }
+
+  // O numero de volta na unidade em que foi digitado: quem lancou "1 h" espera
+  // reler "1 h", nao "60".
+  function ccoGrantAmount(plan) {
+    const minutes = ccoGrantMinutes(plan);
+    if (!minutes) return "";
+    if (plan.ccoGrantUnit !== "hours") return String(minutes);
+    const horas = minutes / 60;
+    return Number.isInteger(horas) ? String(horas) : String(Number(horas.toFixed(2)));
+  }
+
+  function ccoGrantLabel(plan) {
+    const minutes = ccoGrantMinutes(plan);
+    if (!minutes) return "";
+    if (plan.ccoGrantUnit === "hours") return `${ccoGrantAmount(plan).replace(".", ",")} h`;
+    return `${minutes} min`;
+  }
+
+  // Prazo final do intervalo: fim da janela mais a concessao. E este o horario
+  // contra o qual a execucao passa a ser medida.
+  function planDeadlineStamp(plan) {
+    if (!plan?.windowEnd) return "";
+    const grant = ccoGrantMinutes(plan);
+    if (!grant) return plan.windowEnd;
+    const absolute = stampToAbsolute(plan.windowEnd, plan.date);
+    return absolute == null ? plan.windowEnd : absoluteToStamp(absolute + grant, plan.date);
+  }
+
+  // Ajuste de inicio: o bloqueio saiu mais tarde (ou mais cedo) do que o
+  // planejado. Desloca a abertura da janela e todas as etapas pelo mesmo tanto,
+  // para que essa diferenca nao vire atraso etapa por etapa. O fim da janela
+  // fica onde esta de proposito: esticar o prazo e o que a concessao do CCO faz,
+  // e misturar as duas coisas apagaria de quem partiu cada decisao.
+  function shiftPlanSchedule(plan, minutes) {
+    const delta = Math.round(Number(minutes) || 0);
+    if (!delta) return false;
+    const desloca = (stamp) => {
+      const absolute = stampToAbsolute(stamp, plan.date);
+      return absolute == null ? stamp : absoluteToStamp(absolute + delta, plan.date);
+    };
+    plan.windowStart = desloca(plan.windowStart);
+    plan.steps.forEach((step) => {
+      step.plannedStart = desloca(step.plannedStart);
+      step.plannedEnd = desloca(step.plannedEnd);
+    });
+    return true;
+  }
+
+  // O ajuste em bloco reescreve o programado. Depois que a execucao registrou o
+  // primeiro horario real, mover o programado por baixo mudaria um desvio que
+  // ja foi medido e ja foi lido -- por isso ele so vale antes do primeiro marco.
+  function hasStartedExecution(plan) {
+    return (plan?.steps || []).some((step) => step.actualStart || step.actualEnd);
+  }
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -156,6 +223,8 @@
       location: "",
       windowStart: "",
       windowEnd: "",
+      ccoGrantMinutes: 0,
+      ccoGrantUnit: "minutes",
       notes: "",
       executionNotes: "",
       locked: false,
@@ -289,6 +358,8 @@
     plan.status = plan.status || "planning";
     plan.completedAt = plan.completedAt || null;
     plan.closedByName = plan.closedByName || "";
+    plan.ccoGrantUnit = plan.ccoGrantUnit === "hours" ? "hours" : "minutes";
+    plan.ccoGrantMinutes = ccoGrantMinutes(plan);
     plan.revision = Number.isFinite(Number(plan.revision)) ? Number(plan.revision) : 0;
     plan.steps.forEach((step) => {
       step.id = step.id || uid();
@@ -414,6 +485,8 @@
       location: plan.location || "",
       window_start: plan.windowStart || null,
       window_end: plan.windowEnd || null,
+      cco_grant_minutes: ccoGrantMinutes(plan),
+      cco_grant_unit: plan.ccoGrantUnit === "hours" ? "hours" : "minutes",
       planning_notes: plan.notes || "",
       execution_notes: plan.executionNotes || "",
       is_locked: Boolean(plan.locked),
@@ -459,6 +532,8 @@
       location: row.location,
       windowStart: stampInput(row.window_start),
       windowEnd: stampInput(row.window_end),
+      ccoGrantMinutes: Number(row.cco_grant_minutes || 0),
+      ccoGrantUnit: row.cco_grant_unit === "hours" ? "hours" : "minutes",
       notes: row.planning_notes,
       executionNotes: row.execution_notes,
       locked: row.is_locked,
@@ -838,7 +913,16 @@
         skipped: step.executionStatus === "skipped"
       };
     });
-    return { windowStart, windowEnd, duration: windowStart != null && windowEnd != null ? windowEnd - windowStart : null, steps };
+    // deadline e o prazo que vale de verdade: a janela programada mais o que o
+    // CCO concedeu. windowEnd continua sendo o planejado puro, porque o
+    // relatorio precisa mostrar os dois e nao dá para separar depois de somar.
+    const grant = ccoGrantMinutes(plan);
+    return {
+      windowStart, windowEnd, grant,
+      deadline: windowEnd == null ? null : windowEnd + grant,
+      duration: windowStart != null && windowEnd != null ? windowEnd - windowStart : null,
+      steps
+    };
   }
 
   function currentAbsolute(plan, timeline) {
@@ -846,7 +930,7 @@
     const startDate = new Date(`${plan.date}T00:00:00`);
     if (Number.isNaN(startDate.getTime())) return null;
     const absolute = (Date.now() - startDate.getTime()) / 60000;
-    const lastPlannedEnd = timeline.windowEnd ?? Math.max(timeline.windowStart, ...timeline.steps.map((step) => step.end || timeline.windowStart));
+    const lastPlannedEnd = timeline.deadline ?? Math.max(timeline.windowStart, ...timeline.steps.map((step) => step.end || timeline.windowStart));
     if (absolute < timeline.windowStart - 720) return null;
     if (absolute > lastPlannedEnd + 2160) return null;
     return absolute;
@@ -975,7 +1059,9 @@
     if (timeline.steps.length && timeline.steps.every(isStepResolved)) {
       const finalEnds = completed.map((step) => step.actualEndMinutes).filter(Number.isFinite);
       const finalActualEnd = finalEnds.length ? Math.max(...finalEnds) : null;
-      const plannedEnd = timeline.windowEnd ?? plannedWorkEnd(timeline);
+      // O saldo final e medido contra o prazo concedido, nao contra a janela
+      // programada: foi para isso que a concessao do CCO entrou.
+      const plannedEnd = timeline.deadline ?? plannedWorkEnd(timeline);
       return { value: finalActualEnd == null || plannedEnd == null ? null : finalActualEnd - plannedEnd, type: "interval-complete", step: null };
     }
 
@@ -1321,7 +1407,7 @@
       if (!step.name.trim() || step.start == null || step.end == null) errors.push(`complete a etapa ${index + 1}`);
       if (step.duration != null && step.duration > 720) errors.push(`a duração da etapa ${index + 1} supera 12 horas`);
       if (timeline.windowStart != null && step.start != null && step.start < timeline.windowStart) warnings.push(`a etapa ${index + 1} começa antes da janela`);
-      if (timeline.windowEnd != null && step.end != null && step.end > timeline.windowEnd) errors.push(`a etapa ${index + 1} termina após a janela`);
+      if (timeline.deadline != null && step.end != null && step.end > timeline.deadline) errors.push(`a etapa ${index + 1} termina após o prazo final`);
       if (index > 0) {
         const previous = timeline.steps[index - 1];
         if (previous.end != null && step.start != null) {
@@ -1390,7 +1476,12 @@
     rows.push(`<row r="1" ht="30" customHeight="1">${excelCell(1, 1, "GESTÃO DE INTERVALO — PROGRAMADO X REALIZADO", 1)}</row>`);
     rows.push(`<row r="2" ht="8" customHeight="1"></row>`);
     rows.push(`<row r="3">${excelCell(1, 3, "Nome do plano", 3)}${excelCell(4, 3, plan.title, 5)}${excelCell(7, 3, "Data", 3)}${excelCell(9, 3, plan.date, 5)}</row>`);
-    rows.push(`<row r="4">${excelCell(1, 4, "Tipo de serviço", 3)}${excelCell(4, 4, plan.serviceType, 5)}${excelCell(7, 4, "Janela", 3)}${excelCell(9, 4, `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}`, 5)}</row>`);
+    // A janela programada e a concessao do CCO andam juntas na mesma celula:
+    // separar as duas e o ponto, somar antes de exportar apagaria de quem
+    // partiu cada horario.
+    const janelaTexto = `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}`;
+    const concessao = ccoGrantLabel(plan);
+    rows.push(`<row r="4">${excelCell(1, 4, "Tipo de serviço", 3)}${excelCell(4, 4, plan.serviceType, 5)}${excelCell(7, 4, "Janela", 3)}${excelCell(9, 4, concessao ? `${janelaTexto} · CCO +${concessao} · prazo final ${stampShort(planDeadlineStamp(plan))}` : janelaTexto, 5)}</row>`);
     rows.push(`<row r="5">${excelCell(1, 5, "Responsável", 3)}${excelCell(4, 5, plan.coordinator, 5)}${excelCell(7, 5, "Local / trecho", 3)}${excelCell(9, 5, plan.location, 5)}</row>`);
     rows.push(`<row r="6" ht="34" customHeight="1">${excelCell(1, 6, "Observações do planejamento", 3)}${excelCell(4, 6, plan.notes, 9)}</row>`);
     rows.push(`<row r="7" ht="34" customHeight="1">${excelCell(1, 7, "Registro geral da execução", 3)}${excelCell(4, 7, plan.executionNotes, 9)}</row>`);
@@ -1591,6 +1682,18 @@
       $("#lock-plan-button").textContent = plan.locked ? "Cronograma travado" : hasExecution ? "Confirmar planejamento atualizado" : "Revisar e travar cronograma";
       $("#add-step-button").disabled = plan.locked;
       $("#chain-times-button").disabled = plan.locked;
+      const grantAmount = form.elements.ccoGrantAmount;
+      const grantUnit = form.elements.ccoGrantUnit;
+      if (grantAmount) {
+        grantAmount.value = ccoGrantAmount(plan);
+        grantAmount.disabled = Boolean(plan.completedAt);
+      }
+      if (grantUnit) {
+        grantUnit.value = plan.ccoGrantUnit === "hours" ? "hours" : "minutes";
+        grantUnit.disabled = Boolean(plan.completedAt);
+      }
+      renderGrantReadout();
+      renderShiftBar();
       renderSteps();
       renderValidation();
       renderGantt();
@@ -1628,6 +1731,7 @@
                 <button class="row-action" type="button" data-action="up" aria-label="Mover etapa ${index + 1} para cima" title="Mover para cima" ${plan.locked || index === 0 ? "disabled" : ""}>↑</button>
                 <button class="row-action" type="button" data-action="down" aria-label="Mover etapa ${index + 1} para baixo" title="Mover para baixo" ${plan.locked || index === plan.steps.length - 1 ? "disabled" : ""}>↓</button>
                 <button class="row-action delete" type="button" data-action="delete" aria-label="Excluir etapa ${index + 1}" title="Excluir" ${plan.locked ? "disabled" : ""}>×</button>
+                <button class="row-action add-below" type="button" data-action="insert" aria-label="Adicionar etapa depois da etapa ${index + 1}" title="Adicionar etapa depois desta" ${plan.locked ? "disabled" : ""}>+ etapa</button>
               </div>
             </td>
           </tr>`;
@@ -1674,13 +1778,69 @@
       }).join("");
     }
 
-    function addStep() {
+    function applyGrantFromForm(plan, reescreverCampo) {
+      const unidade = form.elements.ccoGrantUnit?.value === "hours" ? "hours" : "minutes";
+      const bruto = Number(form.elements.ccoGrantAmount?.value);
+      plan.ccoGrantUnit = unidade;
+      plan.ccoGrantMinutes = !Number.isFinite(bruto) || bruto <= 0
+        ? 0
+        : Math.min(MAX_CCO_GRANT_MINUTES, Math.round(unidade === "hours" ? bruto * 60 : bruto));
+      // A concessao vale para o bloqueio inteiro, como a janela.
+      propagateSharedFields(plan);
+      persist();
+      // Reescrever o campo enquanto se digita destruiria o que ja foi digitado;
+      // na troca de unidade e o oposto -- sem reescrever, "30" viraria 24 h em
+      // silencio por causa do teto.
+      if (reescreverCampo && form.elements.ccoGrantAmount) {
+        form.elements.ccoGrantAmount.value = ccoGrantAmount(plan);
+      }
+      renderGrantReadout();
+      renderValidation();
+      renderGantt();
+    }
+
+    function renderGrantReadout() {
+      const plan = activePlan();
+      const grant = ccoGrantMinutes(plan);
+      const deadline = planDeadlineStamp(plan);
+      $("#grant-deadline").textContent = deadline ? stampShort(deadline) : "—";
+      $("#grant-note").textContent = !plan.windowEnd
+        ? "Preencha o fim da janela para ver o prazo final."
+        : grant
+        ? `Janela até ${stampShort(plan.windowEnd)} · concessão de ${ccoGrantLabel(plan)}.`
+        : "Sem concessão registrada. O prazo final é o fim da janela.";
+    }
+
+    function renderShiftBar() {
+      const plan = activePlan();
+      // O bloqueio abriu tarde para todas as frentes, entao o impedimento
+      // tambem olha o grupo: se qualquer frente ja registrou horario real, o
+      // programado de nenhuma delas pode mais ser deslocado.
+      const iniciada = frontsOf(plan).some(hasStartedExecution);
+      const bloqueado = plan.locked || iniciada || Boolean(plan.completedAt);
+      $("#shift-amount").disabled = bloqueado;
+      $("#shift-unit").disabled = bloqueado;
+      $("#shift-apply").disabled = bloqueado;
+      $("#shift-bar").classList.toggle("is-blocked", bloqueado);
+      $("#shift-hint").textContent = iniciada
+        ? "A execução já registrou horário real. Deslocar o programado agora mudaria um desvio que já foi medido e já foi lido, então o ajuste em bloco não vale mais."
+        : plan.locked
+        ? "Destrave o cronograma para deslocar o início: o ajuste reescreve o programado, que fica protegido enquanto travado."
+        : "O bloqueio saiu mais tarde do que o planejado? Desloque a abertura da janela e todas as etapas de uma vez, para a diferença não virar atraso etapa por etapa. O fim da janela não se move — para esticar o prazo, use a concessão do CCO.";
+    }
+
+    // position = null acrescenta no fim; um numero insere logo depois daquela
+    // etapa. E o que o botao discreto no fim de cada linha faz: quem esta
+    // preenchendo a etapa 7 nao precisa subir a pagina inteira para pedir a 8.
+    function addStep(position = null) {
       const plan = activePlan();
       if (plan.locked) return;
-      const previous = plan.steps.at(-1);
+      const index = position == null ? plan.steps.length - 1 : position;
+      const previous = plan.steps[index];
       const step = blankStep();
       if (previous?.plannedEnd) step.plannedStart = previous.plannedEnd;
-      plan.steps.push(step);
+      plan.steps.splice(index + 1, 0, step);
+      plan.structureDirty = true;
       persist();
       renderSteps();
       renderValidation();
@@ -1690,8 +1850,17 @@
 
     form.addEventListener("input", (event) => {
       const plan = activePlan();
-      if (plan.locked) return;
       const field = event.target.name;
+      // A concessao do CCO nao faz parte do programado: ela quase sempre e
+      // autorizada com o intervalo ja em campo, entao continua editavel com o
+      // cronograma travado. windowEnd nao se mexe -- e por isso que travar o
+      // cronograma continua significando o que significava.
+      if (field === "ccoGrantAmount" || field === "ccoGrantUnit") {
+        if (plan.completedAt) return;
+        applyGrantFromForm(plan, field === "ccoGrantUnit");
+        return;
+      }
+      if (plan.locked) return;
       if (field === "coordinator" && event.target.dataset.coordinatorSelector !== undefined) {
         const member = coordinatorDirectory.find((candidate) => candidate.id === event.target.value);
         plan.coordinator = member?.full_name || "";
@@ -1826,14 +1995,65 @@
         [plan.steps[index], plan.steps[index + 1]] = [plan.steps[index + 1], plan.steps[index]];
         plan.structureDirty = true;
       }
+      if (button.dataset.action === "insert") {
+        addStep(index);
+        return;
+      }
       persist();
       renderSteps();
       renderValidation();
       renderGantt();
     });
 
-    $("#add-step-button").addEventListener("click", addStep);
-    $$('[data-add-step]').forEach((button) => button.addEventListener("click", addStep));
+    // O listener recebe o evento como argumento; sem o wrapper ele viraria a
+    // posicao de insercao.
+    $("#shift-apply").addEventListener("click", () => {
+      const plan = activePlan();
+      if (plan.locked || plan.completedAt) return;
+      const fronts = frontsOf(plan);
+      if (fronts.some(hasStartedExecution)) {
+        showToast("A execução já registrou horário real; o ajuste em bloco não vale mais.");
+        renderShiftBar();
+        return;
+      }
+      const bruto = Number($("#shift-amount").value);
+      if (!Number.isFinite(bruto) || bruto === 0) {
+        showToast("Informe quantos minutos ou horas deslocar.");
+        return;
+      }
+      const minutos = Math.round($("#shift-unit").value === "hours" ? bruto * 60 : bruto);
+      if (!minutos) {
+        showToast("O deslocamento precisa ser de pelo menos um minuto.");
+        return;
+      }
+      if (Math.abs(minutos) > MAX_CCO_GRANT_MINUTES) {
+        showToast("O deslocamento não pode passar de 24 horas.");
+        return;
+      }
+      if (!plan.windowStart && !plan.steps.some((step) => step.plannedStart)) {
+        showToast("Preencha a janela e os horários das etapas antes de deslocar.");
+        return;
+      }
+      // O bloqueio inteiro escorregou, entao todas as frentes escorregam junto:
+      // deslocar so a frente aberta deixaria as irmas desencontradas da janela,
+      // que e compartilhada.
+      fronts.forEach((front) => {
+        shiftPlanSchedule(front, minutos);
+        if (front.id === plan.id) return;
+        front.updatedAt = new Date().toISOString();
+        dirtyPlanIds.add(front.id);
+      });
+      persist();
+      $("#shift-amount").value = "";
+      renderForm();
+      const quanto = formatMinutes(Math.abs(minutos));
+      showToast(fronts.length > 1
+        ? `${minutos > 0 ? "Início adiado" : "Início antecipado"} em ${quanto} nas ${fronts.length} frentes.`
+        : `${minutos > 0 ? "Início adiado" : "Início antecipado"} em ${quanto}. Janela e etapas acompanharam.`);
+    });
+
+    $("#add-step-button").addEventListener("click", () => addStep());
+    $$('[data-add-step]').forEach((button) => button.addEventListener("click", () => addStep()));
 
     $("#chain-times-button").addEventListener("click", () => {
       const plan = activePlan();
@@ -2282,8 +2502,18 @@
         : `Pelo ritmo atual · planejado ${baselineText}`;
 
       // ---------- cartões de resumo ----------
-      $("#metric-window").textContent = timeline.windowStart == null ? "—" : `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}`;
-      $("#metric-duration").textContent = timeline.duration == null ? "Janela não definida" : `${formatMinutes(timeline.duration)} de janela`;
+      // Com concessão do CCO o cartão passa a mostrar o prazo que vale, e a
+      // linha de baixo diz de onde ele veio -- ninguém em campo deve precisar
+      // somar de cabeça para saber até que horas pode ir.
+      const prazo = planDeadlineStamp(plan);
+      $("#metric-window").textContent = timeline.windowStart == null
+        ? "—"
+        : `${stampShort(plan.windowStart)}–${stampShort(timeline.grant ? prazo : plan.windowEnd)}`;
+      $("#metric-duration").textContent = timeline.duration == null
+        ? "Janela não definida"
+        : timeline.grant
+        ? `Janela até ${stampShort(plan.windowEnd)} + ${ccoGrantLabel(plan)} do CCO`
+        : `${formatMinutes(timeline.duration)} de janela`;
       $("#metric-progress").textContent = `${resolved.length} / ${steps.length}`;
       $("#progress-bar").style.width = steps.length ? `${(resolved.length / steps.length) * 100}%` : "0%";
 
@@ -3431,6 +3661,7 @@
         ["Título", plan.title || "—"], ["Tipo", plan.serviceType || "—"], ["Data", plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"],
         ["Local", plan.location || "—"], ["Empreiteira", plan.contractorName || "—"], ["Encarregado", plan.foremanName || "—"],
         ["Responsável", plan.coordinator || "—"], ["Janela", plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—"],
+        ...(ccoGrantMinutes(plan) ? [["Concessão do CCO", `+${ccoGrantLabel(plan)}`], ["Prazo final", stampShort(planDeadlineStamp(plan))]] : []),
         ...(sharedFront ? [["Frente", sharedFront]] : []),
         ...(plan.completedAt ? [["Encerrado por", closureCredit(plan)]] : [])
       ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
@@ -3467,10 +3698,16 @@
       $("#shared-forecast").textContent = absoluteToClock(forecast);
       $("#shared-forecast-note").textContent = forecast == null
         ? "Aguardando primeiro marco"
-        : `Planejado ${baselineText}${plan.windowEnd && stampShort(plan.windowEnd) !== baselineText ? ` · prazo final ${stampShort(plan.windowEnd)}` : ""}`;
+        : `Planejado ${baselineText}${planDeadlineStamp(plan) && stampShort(planDeadlineStamp(plan)) !== baselineText ? ` · prazo final ${stampShort(planDeadlineStamp(plan))}` : ""}`;
 
-      $("#shared-window").textContent = plan.windowStart && plan.windowEnd ? `${stampShort(plan.windowStart)}–${stampShort(plan.windowEnd)}` : "—";
-      $("#shared-window-note").textContent = timeline.duration == null ? "Janela não definida" : formatMinutes(timeline.duration);
+      $("#shared-window").textContent = plan.windowStart && plan.windowEnd
+        ? `${stampShort(plan.windowStart)}–${stampShort(timeline.grant ? planDeadlineStamp(plan) : plan.windowEnd)}`
+        : "—";
+      $("#shared-window-note").textContent = timeline.duration == null
+        ? "Janela não definida"
+        : timeline.grant
+        ? `Janela até ${stampShort(plan.windowEnd)} + ${ccoGrantLabel(plan)} do CCO`
+        : formatMinutes(timeline.duration);
       $("#shared-progress").textContent = `${resolved.length} / ${timeline.steps.length}`;
       $("#shared-progress-note").textContent = `${progress}% das etapas encerradas`;
       $("#shared-current").textContent = running.length > 1 ? `${running.length} simultâneas` : running[0]?.name || (resolved.length === timeline.steps.length && timeline.steps.length ? "Concluído" : "Aguardando");
@@ -3931,6 +4168,7 @@
       stepScheduleDeviation, wholeMinutes, snapshotSignature, exportPlanToXlsx,
       blankPlan, normalizePlan, planToDatabase, databaseToPlan,
       frontsOf, frontLabel, nextFrontPosition, propagateSharedFields, closureCredit,
+      ccoGrantMinutes, ccoGrantLabel, planDeadlineStamp, shiftPlanSchedule, hasStartedExecution,
       silenceMinutes, lastOperationalStamp,
       setStore: (next) => { store = next; },
       getStore: () => store

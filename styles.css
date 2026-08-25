@@ -1623,7 +1623,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   :root, html[data-theme="dark"] { --surface:#f2f5f6; --surface-2:#e5ebee; --line:#cad6dd; --ink:#123047; --muted:#627888; --white:#ffffff; --blue:#003865; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   body { background: white; font-size: 11px; }
-  .skip-link, .site-header, .shared-header, .site-footer, .execution-actions, .now-button, .step-status-button, .toast, .dashboard-hero, .page-export-bar, .page-export-actions, .chart-tooltip { display: none !important; }
+  .skip-link, .site-header, .shared-header, .site-footer, .execution-actions, .now-button, .step-status-button, .toast, .dashboard-hero, .page-export-bar, .page-export-actions, .chart-tooltip, .shift-bar, .row-action { display: none !important; }
   .status-hero { min-height: auto; padding: 22px; color: var(--blue); background: white !important; border: 2px solid var(--blue); }
   .status-clocks { width:100%; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
   .status-clock { padding:12px 15px; color: var(--blue); border-color: var(--line); }
@@ -1801,3 +1801,78 @@ html[data-theme="dark"] .interval-card-tags i.tag-fronts { color: var(--sky); ba
 @media (max-width: 720px) {
   .shared-front-bar { padding: 14px 12px 0; }
 }
+
+/* ==========================================================================
+   Concessao do CCO e ajuste de inicio
+   --------------------------------------------------------------------------
+   Dois controles que mexem em horario sem mexer no mesmo horario: a concessao
+   estica o prazo final, o ajuste desloca a abertura. Ficam visualmente
+   distintos de proposito, porque confundir um com o outro apagaria de quem
+   partiu cada decisao.
+   -------------------------------------------------------------------------- */
+.grant-grid {
+  display: grid;
+  grid-template-columns: 160px 160px minmax(0, 1fr);
+  gap: 18px;
+  align-items: end;
+  padding: 22px 28px 26px;
+}
+.grant-readout {
+  min-width: 0;
+  padding: 12px 16px;
+  display: grid;
+  gap: 2px;
+  border-radius: 12px;
+  background: var(--surface);
+  border-left: 3px solid var(--green);
+}
+.grant-readout > span { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.grant-readout strong { color: var(--blue); font-size: 22px; letter-spacing: -.02em; }
+.grant-readout small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+
+.shift-bar {
+  margin: 18px 28px 0;
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.shift-copy { min-width: 0; flex: 1 1 320px; display: grid; gap: 3px; }
+.shift-copy strong { color: var(--blue); font-size: 13px; }
+.shift-copy span { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.shift-controls { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.shift-controls .field { width: 110px; }
+.shift-bar.is-blocked { opacity: .72; }
+
+@media (max-width: 720px) {
+  .grant-grid { grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px 18px 20px; }
+  .grant-readout { grid-column: 1 / -1; }
+  .grant-readout strong { font-size: 19px; }
+  .shift-bar { margin-inline: 18px; align-items: stretch; flex-direction: column; gap: 12px; }
+  .shift-controls { display: grid; grid-template-columns: 1fr 1fr; }
+  .shift-controls .field { width: auto; }
+  .shift-controls .button { grid-column: 1 / -1; width: 100%; }
+}
+
+/* O atalho para acrescentar etapa logo abaixo da que esta sendo preenchida.
+   Discreto porque nao disputa com as acoes de mover e excluir -- ele so evita
+   a subida ate o topo da pagina a cada etapa nova. */
+.row-action.add-below {
+  width: auto;
+  padding: 0 9px;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.row-action.add-below:hover:not(:disabled) { color: var(--white); background: var(--green); }
+
+html[data-theme="dark"] .grant-readout,
+html[data-theme="dark"] .shift-bar { background: var(--surface); }
+html[data-theme="dark"] .grant-readout strong,
+html[data-theme="dark"] .shift-copy strong { color: var(--sky); }

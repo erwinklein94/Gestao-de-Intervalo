@@ -14,10 +14,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <script src="assets/pwa.js" defer></script>
-<link rel="stylesheet" href="styles.css?v=20260824-8" />
+<link rel="stylesheet" href="styles.css?v=20260825-1" />
     <script src="assets/jszip.min.js" defer></script>
     <script src="assets/supabase.min.js" defer></script>
-<script src="app.js?v=20260824-8" defer></script>
+<script src="app.js?v=20260825-1" defer></script>
   </head>
   <body data-page="planning">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -90,10 +90,40 @@
         </div>
 
         <form id="plan-form" novalidate>
-          <section class="panel details-panel" aria-labelledby="details-title">
+          <section class="panel grant-panel" aria-labelledby="grant-title">
             <div class="panel-heading">
               <div>
                 <span class="step-number">01</span>
+                <div>
+                  <h3 id="grant-title">Concessão do CCO</h3>
+                  <p>Tempo extra autorizado para o término do intervalo. A execução deixa de ser medida pelo fim da janela e passa a ser medida por ele.</p>
+                </div>
+              </div>
+            </div>
+            <div class="grant-grid">
+              <label class="field">
+                <span>Tempo concedido</span>
+                <input name="ccoGrantAmount" type="number" min="0" step="1" inputmode="numeric" placeholder="0" />
+              </label>
+              <label class="field">
+                <span>Unidade</span>
+                <select name="ccoGrantUnit">
+                  <option value="minutes">Minutos</option>
+                  <option value="hours">Horas</option>
+                </select>
+              </label>
+              <div class="grant-readout" id="grant-readout" role="status" aria-live="polite">
+                <span>Prazo final do intervalo</span>
+                <strong id="grant-deadline">—</strong>
+                <small id="grant-note">Sem concessão registrada.</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel details-panel" aria-labelledby="details-title">
+            <div class="panel-heading">
+              <div>
+                <span class="step-number">02</span>
                 <div>
                   <h3 id="details-title">Dados do intervalo</h3>
                   <p>Nome, data, janela e local identificam o bloqueio e valem para todas as frentes. Nome da frente e tipo de serviço são só desta frente.</p>
@@ -151,7 +181,7 @@
           <section class="panel schedule-panel" aria-labelledby="schedule-title">
             <div class="panel-heading schedule-heading">
               <div>
-                <span class="step-number">02</span>
+                <span class="step-number">03</span>
                 <div>
                   <h3 id="schedule-title">Etapas executivas</h3>
                   <p>Defina a ordem correta de início. Os horários continuam livres para permitir etapas concomitantes e sobrepostas.</p>
@@ -160,6 +190,27 @@
               <div class="schedule-actions">
                 <button class="button button-ghost" id="chain-times-button" type="button">Encadear horários</button>
                 <button class="button button-secondary" id="add-step-button" type="button">+ Adicionar etapa</button>
+              </div>
+            </div>
+
+            <div class="shift-bar" id="shift-bar">
+              <div class="shift-copy">
+                <strong>Ajuste de início</strong>
+                <span id="shift-hint">O bloqueio saiu mais tarde do que o planejado? Desloque a abertura da janela e todas as etapas de uma vez, para a diferença não virar atraso etapa por etapa. O fim da janela não se move — para esticar o prazo, use a concessão do CCO.</span>
+              </div>
+              <div class="shift-controls">
+                <label class="field">
+                  <span>Deslocar</span>
+                  <input id="shift-amount" type="number" step="1" inputmode="numeric" placeholder="30" />
+                </label>
+                <label class="field">
+                  <span>Unidade</span>
+                  <select id="shift-unit">
+                    <option value="minutes">Minutos</option>
+                    <option value="hours">Horas</option>
+                  </select>
+                </label>
+                <button class="button button-ghost" id="shift-apply" type="button">Aplicar a todas as etapas</button>
               </div>
             </div>
 
@@ -202,7 +253,7 @@
 
           <section class="finalize-panel" aria-labelledby="finalize-title">
             <div>
-              <span class="step-number light">03</span>
+              <span class="step-number light">04</span>
               <div>
                 <h3 id="finalize-title">Confirme antes de ir a campo</h3>
                 <p>Ao travar, o programado fica protegido contra alterações acidentais.</p>

@@ -106,7 +106,8 @@ test("Excel gerencial contém escopo, indicadores e gráficos filtráveis", asyn
   assert.match(sheet, /RESUMO E GRÁFICOS/);
   assert.match(sheet, /DADOS DOS INTERVALOS/);
   assert.match(sheet, /type="dataBar"/);
-  // A tabela vai ate M porque ganhou a coluna "Encerrado por".
-  assert.match(sheet, /<autoFilter ref="A\d+:M\d+"/);
+  // A tabela vai ate N: ganhou "Concessão do CCO" e "Encerrado por".
+  assert.match(sheet, /<autoFilter ref="A\d+:N\d+"/);
   assert.match(sheet, /Encerrado por/);
+  assert.match(sheet, /Concessão do CCO/);
 });

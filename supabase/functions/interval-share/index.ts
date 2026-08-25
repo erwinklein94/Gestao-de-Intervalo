@@ -71,7 +71,7 @@ Deno.serve(async (request) => {
     if (!ownerAuthorized) return json(origin, { error: "Link inválido ou indisponível." }, 404);
 
     const { data: groupPlans, error: groupError } = await admin.from("interval_plans")
-      .select("id,dataset_id,coordinator_member_id,client_id,title,service_type,contractor_name,foreman_name,coordinator,interval_date,location,window_start,window_end,planning_notes,execution_notes,is_locked,locked_at,status,completed_at,closed_by_name,created_at,updated_at,front_position,front_name,interval_steps(client_id,position,activity_name,planned_start,planned_end,actual_start,actual_end,actual_notes,status,skip_reason,updated_at)")
+      .select("id,dataset_id,coordinator_member_id,client_id,title,service_type,contractor_name,foreman_name,coordinator,interval_date,location,window_start,window_end,planning_notes,execution_notes,is_locked,locked_at,status,completed_at,closed_by_name,cco_grant_minutes,cco_grant_unit,created_at,updated_at,front_position,front_name,interval_steps(client_id,position,activity_name,planned_start,planned_end,actual_start,actual_end,actual_notes,status,skip_reason,updated_at)")
       .eq("group_id", anchor.group_id).eq("dataset_id", realDataset.id)
       .order("front_position").order("created_at");
     if (groupError) throw groupError;

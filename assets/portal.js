@@ -91,7 +91,11 @@
 
   function intervalMetrics(plan, now = new Date()) {
     const steps = [...(plan.interval_steps || [])].sort((a, b) => a.position - b.position);
-    const windowEnd = stampMinutes(plan.window_end);
+    // O prazo do intervalo e o fim da janela mais o que o CCO concedeu. Sem
+    // somar aqui, o card gerencial marcaria em vermelho um intervalo que a tela
+    // de execucao mostra dentro do prazo.
+    const plannedEnd = stampMinutes(plan.window_end);
+    const windowEnd = plannedEnd == null ? null : plannedEnd + ccoGrantMinutes(plan);
     const resolved = steps.filter(isResolved).length;
     const progress = steps.length ? Math.round((resolved / steps.length) * 100) : 0;
     let variance = null;
@@ -155,6 +159,22 @@
   // lista. A exportacao percorre frentes soltas e nao teria lista para indexar.
   function frontLabel(plan) {
     return String(plan.front_name || "").trim() || `Frente ${plan.front_position || 1}`;
+  }
+
+  // Concessao do CCO: tempo extra autorizado para o termino. Guardado ao lado
+  // da janela, nao dentro dela, para o relatorio poder mostrar as duas coisas.
+  function ccoGrantMinutes(plan) {
+    const value = Number(plan?.cco_grant_minutes);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return Math.min(1440, Math.round(value));
+  }
+
+  function ccoGrantLabel(plan) {
+    const minutes = ccoGrantMinutes(plan);
+    if (!minutes) return "";
+    if (plan.cco_grant_unit !== "hours") return `${minutes} min`;
+    const horas = minutes / 60;
+    return `${(Number.isInteger(horas) ? String(horas) : String(Number(horas.toFixed(2)))).replace(".", ",")} h`;
   }
 
   // Quem encerrou e quando. O nome chega gravado na propria linha: closed_by
@@ -523,7 +543,7 @@
     rows.push(`<row r="${dataHeaderRow - 1}" ht="24" customHeight="1">${excelCell(1, dataHeaderRow - 1, "DADOS DOS INTERVALOS", 2)}</row>`);
     // "Encerrado por" fecha a tabela: era o dado que o banco guardava desde o
     // primeiro encerramento e que nao aparecia em lugar nenhum.
-    const headers = ["Título", "Data", "Status", "Situação do prazo", "Desvio (min)", "Progresso (%)", "Gerente", "Responsável", "Classificação", "Tipo", "Local", "Janela", "Encerrado por"];
+    const headers = ["Título", "Data", "Status", "Situação do prazo", "Desvio (min)", "Progresso (%)", "Gerente", "Responsável", "Classificação", "Tipo", "Local", "Janela", "Concessão do CCO", "Encerrado por"];
     rows.push(`<row r="${dataHeaderRow}" ht="28" customHeight="1">${headers.map((header, index) => excelCell(index + 1, dataHeaderRow, header, 4)).join("")}</row>`);
     // Cada linha e uma frente; o titulo carrega o nome dela quando o bloqueio
     // tem mais de uma, para as linhas nao parecerem duplicadas.
@@ -539,12 +559,12 @@
       const title = groupSizes[plan.group_id || plan.id] > 1
         ? `${plan.title || ""} · ${frontLabel(plan)}`
         : plan.title;
-      const values = [title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${stampLabel(plan.window_start, plan.interval_date)}-${stampLabel(plan.window_end, plan.interval_date)}`, closureCredit(plan)];
+      const values = [title, plan.interval_date, STATUS_LABELS[plan.status] || plan.status, deadline, metrics.variance, metrics.progress, plan.managerName, plan.coordinatorName, TYPE_LABELS[plan.coordinator_type] || "Não informado", plan.service_type, plan.location, `${stampLabel(plan.window_start, plan.interval_date)}-${stampLabel(plan.window_end, plan.interval_date)}`, ccoGrantLabel(plan) || "—", closureCredit(plan)];
       rows.push(`<row r="${row}" ht="25" customHeight="1">${values.map((value, column) => excelCell(column + 1, row, value, [0, 9, 10].includes(column) ? 9 : 5)).join("")}</row>`);
     });
     const lastRow = Math.max(dataHeaderRow, dataStartRow + filtered.length - 1);
     const barRange = (column, count, priority, color) => count ? `<conditionalFormatting sqref="${column}7:${column}${6 + count}"><cfRule type="dataBar" priority="${priority}"><dataBar showValue="1"><cfvo type="min"/><cfvo type="max"/><color rgb="${color}"/></dataBar></cfRule></conditionalFormatting>` : "";
-    const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${dataHeaderRow}" topLeftCell="A${dataStartRow}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="6" width="16" customWidth="1"/><col min="7" max="8" width="25" customWidth="1"/><col min="9" max="10" width="18" customWidth="1"/><col min="11" max="12" width="24" customWidth="1"/><col min="13" max="13" width="30" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A${dataHeaderRow}:M${lastRow}"/><mergeCells count="4"><mergeCell ref="A1:M1"/><mergeCell ref="A3:M3"/><mergeCell ref="A5:M5"/><mergeCell ref="A${dataHeaderRow - 1}:M${dataHeaderRow - 1}"/></mergeCells>${barRange("B", summary.classification.length, 1, "FF003865")}${barRange("E", summary.punctuality.length, 2, "FF22A884")}${barRange("H", summary.services.length, 3, "FF32A6E6")}</worksheet>`;
+    const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="${dataHeaderRow}" topLeftCell="A${dataStartRow}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="6" width="16" customWidth="1"/><col min="7" max="8" width="25" customWidth="1"/><col min="9" max="10" width="18" customWidth="1"/><col min="11" max="12" width="24" customWidth="1"/><col min="13" max="13" width="18" customWidth="1"/><col min="14" max="14" width="30" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData><autoFilter ref="A${dataHeaderRow}:N${lastRow}"/><mergeCells count="4"><mergeCell ref="A1:N1"/><mergeCell ref="A3:N3"/><mergeCell ref="A5:N5"/><mergeCell ref="A${dataHeaderRow - 1}:N${dataHeaderRow - 1}"/></mergeCells>${barRange("B", summary.classification.length, 1, "FF003865")}${barRange("E", summary.punctuality.length, 2, "FF22A884")}${barRange("H", summary.services.length, 3, "FF32A6E6")}</worksheet>`;
     const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Verdana"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font></fonts><fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF003865"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF32A6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE5EBEE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9F8F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF0ED"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF6D1"/></patternFill></fill></fills><borders count="2"><border/><border><left style="thin"><color rgb="FFCAD6DD"/></left><right style="thin"><color rgb="FFCAD6DD"/></right><top style="thin"><color rgb="FFCAD6DD"/></top><bottom style="thin"><color rgb="FFCAD6DD"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0"/><xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0"/><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0"><alignment wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0"/><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
     const zip = new JSZip();
     zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);

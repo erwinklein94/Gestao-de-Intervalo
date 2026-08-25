@@ -578,4 +578,135 @@ test("quem encerrou o intervalo é gravado com nome e aparece nas telas e na exp
   assert.ok(read("styles.css").includes(".detail-closure"), "o aviso precisa de estilo");
 });
 
+test("a concessão do CCO estica o prazo sem apagar a janela planejada", () => {
+  const api = loadAppApi();
+  const plano = api.blankPlan("Renovação km 141", {
+    date: "2026-09-01",
+    windowStart: "2026-09-01T08:00",
+    windowEnd: "2026-09-01T12:00",
+    ccoGrantMinutes: 30,
+    ccoGrantUnit: "minutes"
+  });
+  const timeline = api.buildTimeline(plano);
+  // A janela continua sendo a planejada; quem soma é o prazo.
+  assert.equal(timeline.windowEnd, 12 * 60);
+  assert.equal(timeline.grant, 30);
+  assert.equal(timeline.deadline, 12 * 60 + 30);
+  assert.equal(api.planDeadlineStamp(plano), "2026-09-01T12:30");
+  assert.equal(api.ccoGrantLabel(plano), "30 min");
+
+  // Em horas o rótulo respeita a unidade digitada, e o prazo é o mesmo minuto.
+  const emHoras = api.blankPlan("Renovação km 141", {
+    date: "2026-09-01", windowStart: "2026-09-01T08:00", windowEnd: "2026-09-01T12:00",
+    ccoGrantMinutes: 120, ccoGrantUnit: "hours"
+  });
+  assert.equal(api.ccoGrantLabel(emHoras), "2 h");
+  assert.equal(api.planDeadlineStamp(emHoras), "2026-09-01T14:00");
+
+  // Sem concessão, prazo e fim de janela são a mesma coisa.
+  const semConcessao = api.blankPlan("Renovação km 141", {
+    date: "2026-09-01", windowStart: "2026-09-01T08:00", windowEnd: "2026-09-01T12:00"
+  });
+  assert.equal(api.buildTimeline(semConcessao).deadline, 12 * 60);
+  assert.equal(api.ccoGrantLabel(semConcessao), "");
+});
+
+test("o saldo final do intervalo é medido contra o prazo concedido", () => {
+  const api = loadAppApi();
+  const monta = (grant) => {
+    const plano = api.blankPlan("Renovação km 141", {
+      date: "2026-09-01", windowStart: "2026-09-01T08:00", windowEnd: "2026-09-01T12:00",
+      ccoGrantMinutes: grant, ccoGrantUnit: "minutes"
+    });
+    plano.steps = [{
+      id: "s1", name: "Etapa", plannedStart: "2026-09-01T08:00", plannedEnd: "2026-09-01T12:00",
+      actualStart: "2026-09-01T08:00", actualEnd: "2026-09-01T12:20",
+      actualNotes: "", executionStatus: "completed", skipReason: ""
+    }];
+    return api.executionStatus(plano, api.buildTimeline(plano));
+  };
+  // Terminou 20 min depois do fim da janela.
+  assert.equal(monta(0).operational.value, 20);
+  // Com 30 min concedidos, os mesmos 20 minutos viram 10 de folga.
+  assert.equal(monta(30).operational.value, -10);
+});
+
+test("o ajuste de início desloca janela e etapas pelo mesmo tanto", () => {
+  const api = loadAppApi();
+  const plano = api.blankPlan("Renovação km 141", {
+    date: "2026-09-01", windowStart: "2026-09-01T08:00", windowEnd: "2026-09-01T12:00"
+  });
+  plano.steps = [
+    { id: "s1", name: "A", plannedStart: "2026-09-01T08:00", plannedEnd: "2026-09-01T09:00", actualStart: "", actualEnd: "", actualNotes: "", executionStatus: "pending", skipReason: "" },
+    { id: "s2", name: "B", plannedStart: "2026-09-01T09:00", plannedEnd: "2026-09-01T10:00", actualStart: "", actualEnd: "", actualNotes: "", executionStatus: "pending", skipReason: "" }
+  ];
+  assert.equal(api.shiftPlanSchedule(plano, 30), true);
+  assert.equal(plano.windowStart, "2026-09-01T08:30");
+  assert.equal(plano.steps[0].plannedStart, "2026-09-01T08:30");
+  assert.equal(plano.steps[1].plannedEnd, "2026-09-01T10:30");
+  // O fim da janela não se move: esticar o prazo é papel da concessão do CCO,
+  // e misturar as duas apagaria de quem partiu cada decisão.
+  assert.equal(plano.windowEnd, "2026-09-01T12:00");
+  // Deslocamento negativo antecipa.
+  api.shiftPlanSchedule(plano, -30);
+  assert.equal(plano.windowStart, "2026-09-01T08:00");
+  assert.equal(plano.steps[0].plannedStart, "2026-09-01T08:00");
+  assert.equal(api.shiftPlanSchedule(plano, 0), false);
+});
+
+test("o ajuste em bloco deixa de valer assim que a execução registra horário", () => {
+  const api = loadAppApi();
+  const plano = api.blankPlan("Renovação km 141");
+  plano.steps = [{ id: "s1", name: "A", plannedStart: "2026-09-01T08:00", plannedEnd: "2026-09-01T09:00", actualStart: "", actualEnd: "", actualNotes: "", executionStatus: "pending", skipReason: "" }];
+  assert.equal(api.hasStartedExecution(plano), false);
+  plano.steps[0].actualStart = "2026-09-01T08:35";
+  assert.equal(api.hasStartedExecution(plano), true);
+
+  const app = stripJsComments(read("app.js"));
+  assert.ok(app.includes("frontsOf(plan).some(hasStartedExecution)"),
+    "o impedimento precisa olhar o grupo: o bloqueio abriu tarde para todas as frentes");
+  assert.ok(app.includes("A execução já registrou horário real; o ajuste em bloco não vale mais."),
+    "o clique precisa recusar mesmo se o estado virar entre o desenho e o toque");
+});
+
+test("acrescentar etapa acontece ao lado da etapa, não só no topo da página", () => {
+  const app = stripJsComments(read("app.js"));
+  assert.ok(app.includes('data-action="insert"'), "faltou o atalho na linha da etapa");
+  assert.ok(app.includes("plan.steps.splice(index + 1, 0, step);"), "a etapa nova entra logo depois da atual");
+  // O listener recebe o evento; sem o wrapper ele viraria a posição de inserção.
+  assert.ok(app.includes('$("#add-step-button").addEventListener("click", () => addStep());'),
+    "o botão do topo precisa continuar acrescentando no fim");
+  assert.ok(read("styles.css").includes(".row-action.add-below"), "o atalho precisa de estilo próprio");
+});
+
+test("a concessão do CCO chega ao planejamento, ao relatório e ao banco", () => {
+  const planning = read("index.html");
+  for (const marca of ['name="ccoGrantAmount"', 'name="ccoGrantUnit"', 'id="grant-deadline"', 'id="shift-apply"', 'id="shift-unit"']) {
+    assert.ok(planning.includes(marca), `planejamento: ausente ${marca}`);
+  }
+  // Os painéis do planejamento numeram de 01 a 04 sem buraco.
+  assert.deepEqual([...planning.matchAll(/step-number(?: light)?">(\d\d)</g)].map((m) => m[1]), ["01", "02", "03", "04"]);
+
+  const app = stripJsComments(read("app.js"));
+  assert.ok(app.includes("cco_grant_minutes: ccoGrantMinutes(plan)"), "o payload precisa levar a concessão");
+  assert.ok(app.includes("ccoGrantMinutes: Number(row.cco_grant_minutes"), "a leitura precisa trazer a concessão");
+  assert.ok(app.includes('["Concessão do CCO"'), "o acompanhamento precisa mostrar a concessão");
+  assert.ok(app.includes("prazo final ${stampShort(planDeadlineStamp(plan))}"), "o Excel do intervalo precisa registrar o prazo final");
+  assert.ok(app.includes('"ccoGrantMinutes", "ccoGrantUnit"'), "a concessão descreve o bloqueio e acompanha as frentes");
+
+  const portal = stripJsComments(read("assets/portal.js"));
+  assert.ok(portal.includes("plannedEnd + ccoGrantMinutes(plan)"),
+    "sem somar aqui o card gerencial marcaria em vermelho um intervalo que a execução mostra no prazo");
+  assert.ok(portal.includes('"Concessão do CCO"'), "a exportação gerencial precisa da coluna");
+
+  const sql = stripSqlComments(read("supabase/migrations/20260825090000_cco_grant.sql"));
+  assert.ok(sql.includes("add column if not exists cco_grant_minutes integer not null default 0"), "faltou a coluna");
+  assert.ok(sql.includes("check (cco_grant_minutes between 0 and 1440)"), "faltou o limite no banco");
+  assert.ok(sql.includes("INTERVAL_CCO_GRANT_OUT_OF_RANGE"), "valor fora da faixa precisa ser recusado, não truncado");
+  assert.ok(sql.includes("cco_grant_minutes = new.cco_grant_minutes"), "a concessão acompanha o bloqueio nas frentes irmãs");
+  assert.ok(sql.includes("new.cco_grant_minutes := group_lead.cco_grant_minutes"), "a frente nova adota a concessão do grupo");
+  assert.ok(read("supabase/functions/interval-share/index.ts").includes("cco_grant_minutes"),
+    "o link compartilhado também precisa trazer a concessão");
+});
+
 console.log("fronts-and-closure: frentes, silêncio, encerramento, PWA e remoção da SUB aprovados");
