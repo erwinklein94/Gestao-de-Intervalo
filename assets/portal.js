@@ -273,7 +273,8 @@
     window.__GESTAO_PORTAL_TEST_API__ = {
       stampMinutes, stampLabel, intervalMetrics, filterPlans, roleScopeDescription,
       roleCapabilities, managementSummary, exportManagementToXlsx,
-      groupPlans, groupMetrics, frontLabel, lastActivityEpoch, SILENCE_MINUTES
+      groupPlans, groupMetrics, frontLabel, lastActivityEpoch, SILENCE_MINUTES,
+      cardMarkup, ccoGrantLabel, closureCredit, STATUS_LABELS
     };
     return;
   }
@@ -343,8 +344,9 @@
     } else if (["coordinator", "specialist"].includes(role)) {
       links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (role === "editor") {
-      // O Editor administra o sistema; nao planeja nem executa intervalos.
-      links = [["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
+      // O Editor administra o sistema; nao planeja nem executa intervalos, mas
+      // enxerga todos eles -- e a unica funcao que enxerga.
+      links = [["intervalos.html", "Intervalos", "intervals"], ["admin.html", "Administração", "admin"], ["conta.html", "Minha conta", "account"]];
     } else if (roleCapabilities(role).canUseManagement) {
       links = [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
     } else {
@@ -583,10 +585,11 @@
     return blob;
   }
 
-  function exportManagementToPdf(button) {
+  // rotulo vem preenchido na visao do Editor, que nao tem abas para consultar.
+  function exportManagementToPdf(button, rotulo = null) {
     const activeButton = $('[data-view-button].active');
-    const viewLabel = activeButton?.textContent?.trim() || "Visão gerencial";
-    $("#portal-print-title").textContent = `Visão gerencial - ${viewLabel}`;
+    const viewLabel = rotulo || activeButton?.textContent?.trim() || "Visão gerencial";
+    $("#portal-print-title").textContent = rotulo ? rotulo : `Visão gerencial - ${viewLabel}`;
     $("#portal-print-filters").textContent = `${profileRoleLabel(effectiveProfile)} · ${selectedFilterSummary()} · ${new Date().toLocaleString("pt-BR")}`;
     const previousTitle = document.title;
     document.title = `visao-gerencial-${viewLabel.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
@@ -822,6 +825,111 @@
     $("#interval-detail").addEventListener("click", (event) => { if (event.target === event.currentTarget) event.currentTarget.close(); });
 
     setInterval(async () => { if (document.hidden) return; try { await loadScopedData(); renderManagement(); } catch (error) { console.warn(error); setState("Erro ao atualizar", "error"); } }, 15000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Visao do sistema inteiro, do Editor. A gestao recorta por hierarquia e
+  // separa por classificacao; aqui o recorte e o status, porque a pergunta e
+  // outra: quantos intervalos existem, e em que pe esta cada um.
+  // ---------------------------------------------------------------------------
+  let intervalsFetchedAt = null;
+
+  function renderIntervalsFreshness() {
+    const carimbo = $("#intervals-updated");
+    const nota = $("#intervals-updated-note");
+    if (!carimbo || !intervalsFetchedAt) return;
+    carimbo.textContent = intervalsFetchedAt.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" });
+    const segundos = Math.max(0, Math.round((Date.now() - intervalsFetchedAt.getTime()) / 1000));
+    nota.textContent = segundos < 10
+      ? "Agora mesmo · atualiza sozinho a cada 30 s"
+      : `Há ${segundos < 60 ? `${segundos} s` : formatMinutes(Math.floor(segundos / 60))} · atualiza sozinho a cada 30 s`;
+  }
+
+  function renderIntervals() {
+    const filtered = filterPlans(plans, currentFilters());
+    const groups = groupPlans(filtered).map((group) => ({ ...group, metrics: groupMetrics(group) }));
+    // Um bloqueio cancelado nao esta em planejamento nem concluido; ele entra
+    // no historico para nao sumir da tela sem explicacao.
+    const porStatus = (status) => groups.filter((group) => group.metrics.status === status);
+    const planejamento = porStatus("planning")
+      .sort((a, b) => String(a.lead.interval_date).localeCompare(String(b.lead.interval_date)));
+    const execucao = porStatus("executing")
+      .sort((a, b) => (b.metrics.variance ?? -Infinity) - (a.metrics.variance ?? -Infinity));
+    const concluidos = [...porStatus("completed"), ...porStatus("cancelled")]
+      .sort((a, b) => String(b.lead.interval_date).localeCompare(String(a.lead.interval_date)));
+
+    $("#planning-cards").innerHTML = planejamento.length
+      ? planejamento.map(cardMarkup).join("")
+      : emptyMarkup("Nenhum intervalo em planejamento corresponde aos filtros.");
+    $("#executing-cards").innerHTML = execucao.length
+      ? execucao.map(cardMarkup).join("")
+      : emptyMarkup("Nenhum intervalo em execução corresponde aos filtros.");
+    $("#completed-cards").innerHTML = concluidos.length
+      ? concluidos.map(cardMarkup).join("")
+      : emptyMarkup("Nenhum intervalo concluído corresponde aos filtros.");
+
+    setCount("planning", planejamento.length, "intervalo");
+    setCount("executing", execucao.length, "intervalo");
+    setCount("completed", concluidos.length, "intervalo");
+    renderIntervalsFreshness();
+  }
+
+  async function refreshIntervals() {
+    await loadScopedData();
+    intervalsFetchedAt = new Date();
+    renderIntervals();
+  }
+
+  async function initializeIntervals() {
+    await refreshIntervals();
+    populateFilters();
+
+    $$("[data-filter]").forEach((field) => field.addEventListener(field.type === "search" ? "input" : "change", renderIntervals));
+    $("#intervals-clear-filters").addEventListener("click", () => {
+      $$("[data-filter]").forEach((field) => { field.value = ""; });
+      renderIntervals();
+    });
+
+    const botaoAtualizar = $("#intervals-refresh");
+    botaoAtualizar.addEventListener("click", async () => {
+      botaoAtualizar.disabled = true;
+      botaoAtualizar.textContent = "Atualizando…";
+      try { await refreshIntervals(); } catch (error) { console.warn(error); setState("Erro ao atualizar", "error"); }
+      botaoAtualizar.disabled = false;
+      botaoAtualizar.textContent = "Atualizar agora";
+    });
+
+    $("#export-intervals-xlsx").addEventListener("click", async () => {
+      const button = $("#export-intervals-xlsx");
+      button.disabled = true;
+      button.textContent = "Gerando planilha…";
+      try {
+        await exportManagementToXlsx(filterPlans(plans, currentFilters()));
+        showToast("Planilha dos intervalos filtrados exportada.");
+      } catch (error) {
+        console.error(error);
+        showToast("Não foi possível gerar a planilha.");
+      } finally {
+        button.disabled = false;
+        button.textContent = "Exportar Excel";
+      }
+    });
+    $("#export-intervals-pdf").addEventListener("click", () => exportManagementToPdf($("#export-intervals-pdf"), "Todos os intervalos"));
+
+    $(".intervals-board").addEventListener("click", (event) => {
+      const card = event.target.closest("[data-plan-detail]");
+      if (card) openPlanDetail(card.dataset.planDetail);
+    });
+    $("#interval-detail").addEventListener("click", (event) => { if (event.target === event.currentTarget) event.currentTarget.close(); });
+
+    // O carimbo do topo so significa alguma coisa se envelhecer a vista: sem
+    // este segundo relogio ele ficaria congelado entre uma busca e outra,
+    // dizendo "atualizado" sobre um dado de dez minutos atras.
+    setInterval(renderIntervalsFreshness, 5000);
+    setInterval(async () => {
+      if (document.hidden) return;
+      try { await refreshIntervals(); } catch (error) { console.warn(error); setState("Erro ao atualizar", "error"); }
+    }, 30000);
   }
 
   async function loadAdminData() {
@@ -1204,7 +1312,12 @@
     configureContext();
     if (!roleCapabilities(effectiveProfile.role).canUseManagement) { location.replace("conta.html"); return; }
     renderNavigation(effectiveProfile.role);
-    if (document.body.dataset.page === "admin") {
+    if (document.body.dataset.page === "intervals") {
+      // A visao do sistema inteiro e do Editor: a RLS ja devolve todos os
+      // intervalos para ele, e para mais ninguem.
+      if (actualProfile.role !== "editor") { location.replace("gestao.html"); return; }
+      await initializeIntervals();
+    } else if (document.body.dataset.page === "admin") {
       if (actualProfile.role !== "editor") { location.replace("gestao.html"); return; }
       await initializeAdmin();
     } else {

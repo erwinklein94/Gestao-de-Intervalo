@@ -145,6 +145,14 @@ O vínculo é protegido no banco: frentes do mesmo `group_id` precisam pertencer
 
 Terminar as etapas e encerrar o bloqueio são atos diferentes: entre um e outro ainda cabem devolução da via, pendência e restrição. Por isso o encerramento é explícito.
 
+## Visão do sistema (Editor)
+
+`intervalos.html` mostra **todos** os intervalos do sistema, separados em **Em planejamento**, **Em execução** e **Concluídos**. É a única tela com esse alcance, e ela é do Editor: a RLS já devolve todas as linhas só para ele (`private.can_read_plan` responde `true` para `editor`), então a página é frontend puro — não houve migração.
+
+Cada card é um bloqueio com todas as suas frentes, e herda a pior leitura delas: verde no prazo, vermelho em atraso, com a mesma dinâmica dos cards da visão gerencial. Os filtros usam os mesmos `data-filter` da gestão — gerente, coordenador, classificação, status, situação de prazo, tipo, período e busca livre — o que faz `filterPlans`, `currentFilters` e `populateFilters` valerem para as duas telas sem cópia. Card, métricas de grupo, modal de prévia e exportações também são os mesmos.
+
+No topo fica a data e a hora dos dados. O carimbo nasce da busca, não do desenho, e envelhece à vista: um segundo relógio reescreve o "há N minutos" a cada 5 s, senão ele ficaria dizendo "atualizado" sobre um dado de dez minutos atrás. A página se atualiza sozinha a cada 30 s e tem um botão para forçar.
+
 ## Concessão do CCO e ajuste de início
 
 Dois controles do planejamento mexem em horário sem mexer no mesmo horário, e ficam deliberadamente separados.

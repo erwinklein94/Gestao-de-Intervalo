@@ -1931,3 +1931,38 @@ html[data-theme="dark"] .grant-readout,
 html[data-theme="dark"] .shift-bar { background: var(--surface); }
 html[data-theme="dark"] .grant-readout strong,
 html[data-theme="dark"] .shift-copy strong { color: var(--sky); }
+
+/* ==========================================================================
+   Visao do sistema inteiro (Editor)
+   --------------------------------------------------------------------------
+   Reaproveita o card, as metricas de grupo, os filtros e o modal da gestao. O
+   que muda e o recorte: la e hierarquia e classificacao, aqui e status.
+   -------------------------------------------------------------------------- */
+.intervals-freshness {
+  min-width: 260px;
+  padding: 20px 22px;
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 16px;
+  background: rgba(255,255,255,.08);
+}
+.intervals-freshness > span { color: var(--lime); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.intervals-freshness strong { font-size: 26px; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.intervals-freshness small { color: rgba(255,255,255,.68); font-size: 11px; }
+.intervals-freshness .button { margin-top: 12px; justify-self: start; }
+
+/* A coluna de status ganha uma marca de cor no titulo para o olho separar as
+   tres listas sem precisar ler o cabecalho. */
+.intervals-column > .portal-section-heading { border-left: 4px solid var(--line); padding-left: 14px; }
+.intervals-column[data-status-column="planning"] > .portal-section-heading { border-left-color: var(--sky); }
+.intervals-column[data-status-column="executing"] > .portal-section-heading { border-left-color: var(--green); }
+.intervals-column[data-status-column="completed"] > .portal-section-heading { border-left-color: var(--muted); }
+
+@media (max-width: 720px) {
+  .intervals-freshness { min-width: 0; padding: 16px 18px; }
+  .intervals-freshness strong { font-size: 21px; }
+  .intervals-freshness .button { width: 100%; justify-self: stretch; }
+  .intervals-column > .portal-section-heading { padding-left: 10px; }
+}

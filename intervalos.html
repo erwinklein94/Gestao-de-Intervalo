@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-BR" class="auth-checking">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="theme-color" content="#003865">
+  <script src="assets/auth-guard.js"></script>
+  <meta name="description" content="Todos os intervalos do sistema, separados por status.">
+  <title>Gestão de Intervalo | Todos os intervalos</title>
+  <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<script src="assets/pwa.js" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20260825-4">
+  <script src="assets/jszip.min.js" defer></script>
+  <script src="assets/supabase.min.js" defer></script>
+  <script src="assets/portal.js?v=20260825-4" defer></script>
+</head>
+<body data-page="intervals">
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+  <header class="site-header">
+    <a class="brand" href="intervalos.html" aria-label="Gestão de Intervalo - início"><img src="assets/rumo-logo-white.png" alt="Rumo"><span>Gestão de Intervalo</span></a>
+    <nav class="primary-nav" aria-label="Navegação principal" data-role-nav></nav>
+    <div class="header-tools"><span class="save-state" id="portal-state">Carregando…</span><button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false"><span>☾</span><b>Tema escuro</b></button></div>
+  </header>
+
+  <main id="conteudo">
+    <section class="management-hero intervals-hero">
+      <div>
+        <p class="eyebrow">Visão do sistema</p>
+        <h1>Todos os intervalos.<br>Do planejamento ao histórico.</h1>
+        <p>Cada card é um bloqueio, com todas as suas frentes. Verde está no prazo; vermelho está em atraso.</p>
+      </div>
+      <div class="intervals-freshness">
+        <span>Dados atualizados em</span>
+        <strong id="intervals-updated">—</strong>
+        <small id="intervals-updated-note">Buscando…</small>
+        <button class="button button-light" id="intervals-refresh" type="button">Atualizar agora</button>
+      </div>
+    </section>
+
+    <section class="management-workspace intervals-workspace">
+      <div class="portal-print-header"><img src="assets/rumo-logo-blue.png" alt="Rumo"><div><strong id="portal-print-title">Todos os intervalos</strong><span id="portal-print-filters">Visão do sistema</span></div></div>
+
+      <section class="portal-filters" aria-label="Filtros">
+      <header class="portal-filters-heading">
+        <div><p class="section-kicker">Recorte</p><h2>Filtrar intervalos</h2></div>
+        <button class="button button-ghost" id="intervals-clear-filters" type="button">Limpar filtros</button>
+      </header>
+      <div class="portal-filter-grid">
+        <label class="field"><span>Gerente</span><select data-filter="manager"><option value="">Todos</option></select></label>
+        <label class="field"><span>Coordenador / Especialista</span><select data-filter="coordinator"><option value="">Todos</option></select></label>
+        <label class="field"><span>Classificação</span><select data-filter="classification"><option value="">Todas</option><option value="superstructure">Superestrutura</option><option value="infrastructure">Infraestrutura</option><option value="modernization">Modernização</option></select></label>
+        <label class="field"><span>Status</span><select data-filter="status"><option value="">Todos</option><option value="planning">Em planejamento</option><option value="executing">Em execução</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>
+        <label class="field"><span>Situação de prazo</span><select data-filter="deadline"><option value="">Todas</option><option value="late">Em atraso</option><option value="ontime">No prazo</option><option value="ahead">Adiantado</option></select></label>
+        <label class="field"><span>Tipo de intervalo</span><select data-filter="service"><option value="">Todos</option></select></label>
+        <label class="field"><span>Data inicial</span><input data-filter="dateFrom" type="date"></label>
+        <label class="field"><span>Data final</span><input data-filter="dateTo" type="date"></label>
+        <label class="field portal-search"><span>Local ou título</span><input data-filter="query" type="search" placeholder="Buscar trecho, local ou serviço"></label>
+      </div>
+    </section>
+
+    <section class="page-export-bar portal-export-bar" aria-label="Exportar todos os intervalos">
+      <div><strong>Exportar o que está filtrado</strong><span>Sai o mesmo recorte que está na tela, com indicadores e gráficos.</span></div>
+      <div class="page-export-actions"><button class="button button-ghost" id="export-intervals-xlsx" type="button">Exportar Excel</button><button class="button button-secondary" id="export-intervals-pdf" type="button">Exportar PDF</button></div>
+    </section>
+
+    <section class="intervals-board" aria-label="Intervalos por status">
+      <section class="intervals-column" data-status-column="planning">
+        <header class="portal-section-heading">
+          <div><p class="section-kicker">Ainda não foram a campo</p><h2>Em planejamento</h2></div>
+          <span class="result-count" data-result-count="planning">0 resultados</span>
+        </header>
+        <div class="interval-card-grid" id="planning-cards"></div>
+      </section>
+
+      <section class="intervals-column" data-status-column="executing">
+        <header class="portal-section-heading">
+          <div><p class="section-kicker">Acontecendo agora</p><h2>Em execução</h2></div>
+          <span class="result-count" data-result-count="executing">0 resultados</span>
+        </header>
+        <div class="interval-card-grid" id="executing-cards"></div>
+      </section>
+
+      <section class="intervals-column" data-status-column="completed">
+        <header class="portal-section-heading">
+          <div><p class="section-kicker">Histórico</p><h2>Concluídos</h2></div>
+          <span class="result-count" data-result-count="completed">0 resultados</span>
+        </header>
+        <div class="interval-card-grid" id="completed-cards"></div>
+      </section>
+      </section>
+    </section>
+  </main>
+
+  <dialog class="interval-detail-dialog" id="interval-detail"><div id="interval-detail-content"></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <footer class="site-footer"><img src="assets/rumo-logo-blue.png" alt="Rumo"><span>Gestão de Intervalo · Operação com clareza e segurança</span></footer>
+</body>
+</html>
