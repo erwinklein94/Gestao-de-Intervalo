@@ -4118,6 +4118,45 @@
     });
   }
 
+  function bindProfileChangeRequest() {
+    const card = $("#account-change-request-card");
+    const form = $("#account-change-request-form");
+    if (!card || !form) return;
+    if (currentProfile.role === "editor") {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = $("button[type='submit']", form);
+      const feedback = $("#account-change-request-feedback");
+      const message = form.message.value.trim();
+      if (message.length < 10) {
+        feedback.textContent = "Descreva a alteração com pelo menos 10 caracteres.";
+        return;
+      }
+      button.disabled = true;
+      button.textContent = "Enviando…";
+      feedback.textContent = "";
+      const { error } = await cloudClient.from("profile_change_requests").insert({
+        requester_id: currentUser.id,
+        requester_email: currentProfile.email,
+        message
+      });
+      if (error) {
+        console.error("Falha ao enviar solicitação de alteração.", error);
+        feedback.textContent = "Não foi possível enviar agora. Tente novamente.";
+      } else {
+        form.reset();
+        feedback.textContent = "Solicitação enviada ao Editor.";
+        showToast("Solicitação enviada com sucesso.");
+      }
+      button.disabled = false;
+      button.textContent = "Enviar ao Editor";
+    });
+  }
+
   async function accountPage() {
     const gate = $("#account-gate");
     const content = $("#account-content");
@@ -4167,6 +4206,7 @@
     if (currentProfile.role === "editor") $("#account-history-card").hidden = true;
 
     bindPasswordChange();
+    bindProfileChangeRequest();
     $("#account-sign-out").addEventListener("click", signOutAndReturn);
   }
 

@@ -947,6 +947,13 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .audit-table tbody tr:last-child td { border-bottom: 0; }
 .audit-table td strong { color: var(--blue); }
 .audit-table time { white-space: nowrap; }
+.audit-requests-heading { margin-top: 42px; }
+.audit-request-list { display: grid; gap: 12px; }
+.audit-request-item { padding: 20px; }
+.audit-request-item header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.audit-request-item header strong { color: var(--blue); overflow-wrap: anywhere; }
+.audit-request-item time { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.audit-request-item p { margin: 14px 0 0; color: var(--text); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .admin-row { padding: 14px; display: grid; grid-template-columns: 1.15fr repeat(5, minmax(115px, 1fr)) auto; align-items: end; gap: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--white); }
 .admin-row label { min-width: 0; display: grid; gap: 4px; }
 .admin-row label > span { color: var(--muted); font-size: 8px; font-weight: 700; text-transform: uppercase; }
@@ -976,6 +983,10 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .account-password-card { margin-bottom: 20px; }
 .account-password-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .account-password-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
+.account-request-card { margin-bottom: 20px; }
+.account-request-form { display: grid; gap: 14px; }
+.account-request-form textarea { width: 100%; resize: vertical; }
+.account-request-actions { display: flex; align-items: center; gap: 12px; }
 /* Alternancia entre entrar e solicitar acesso na tela de login. */
 .login-switch { margin: 6px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
 .link-button { padding: 0; border: 0; background: none; color: var(--blue); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
@@ -1423,6 +1434,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .portal-filters { padding: 16px; }
   .portal-filters-heading, .portal-section-heading { align-items: stretch; flex-direction: column; }
   .audit-heading { align-items: stretch; flex-direction: column; }
+  .audit-request-item header, .account-request-actions { align-items: stretch; flex-direction: column; }
   .portal-filters-heading .button { width: 100%; }
   .portal-filter-grid { grid-template-columns: 1fr 1fr; }
   .portal-search { grid-column: 1 / -1; }

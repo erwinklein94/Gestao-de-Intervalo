@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.join(__dirname, "..");
-const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8").replace(/\r\n/g, "\n");
 
 function includesAll(source, values, message) {
   values.forEach((value) => assert.ok(source.includes(value), `${message}: ausente ${value}`));
@@ -96,12 +96,12 @@ assert.ok(!admin.includes("SUB"), "administração não deve expor cadastro de S
 const audit = read("auditoria.html");
 assert.match(audit, /<body[^>]*data-page="audit"/);
 assert.ok(audit.indexOf("assets/auth-guard.js") < audit.indexOf("assets/portal.js"), "proteção de autenticação deve carregar antes da auditoria");
-includesAll(audit, ['id="audit-last-updated"', 'id="audit-refresh"', 'id="audit-accesses"', 'id="audit-empty"'], "estrutura da auditoria de acessos");
-includesAll(read("assets/portal.js"), ['["auditoria.html", "Auditoria", "audit"]', 'async function registerSiteAccess()', 'async function loadAuditAccesses()', '.from("site_access_audit")'], "navegação e atualização da auditoria");
+includesAll(audit, ['id="audit-last-updated"', 'id="audit-refresh"', 'id="audit-accesses"', 'id="audit-empty"', 'id="audit-change-requests"', 'id="audit-requests-empty"', "100 acessos mais recentes"], "estrutura da auditoria de acessos e solicitações");
+includesAll(read("assets/portal.js"), ['["auditoria.html", "Auditoria", "audit"]', 'async function registerSiteAccess()', 'async function loadAuditAccesses()', '.from("site_access_audit")', '.limit(100)', '.from("profile_change_requests")'], "navegação e atualização da auditoria");
 
 // Integrações estruturais das páginas existentes que receberam as novas funções.
 const account = read("conta.html");
-includesAll(account, ['id="account-history"', 'id="account-password-form"', 'name="currentPassword"', 'name="newPassword"'], "histórico e troca de senha da Minha Conta");
+includesAll(account, ['id="account-history"', 'id="account-password-form"', 'name="currentPassword"', 'name="newPassword"', 'id="account-change-request-card"', 'id="account-change-request-form"', 'name="message"', 'id="account-change-request-feedback"'], "histórico, troca de senha e solicitação ao Editor da Minha Conta");
 assert.ok(!account.includes("SUB"), "Minha Conta não deve exibir SUB");
 assert.ok(!account.includes("account-shortcut"), "Minha Conta não deve exibir atalhos");
 assert.ok(!read("app.js").includes("const roleLabel = roleLabel("), "Minha Conta não deve ocultar a função roleLabel com uma variável local");

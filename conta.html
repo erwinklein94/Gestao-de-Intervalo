@@ -6,8 +6,8 @@
   <title>Gestão de Intervalo | Minha Conta</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<script src="assets/pwa.js" defer></script><link rel="stylesheet" href="styles.css?v=20260825-5">
-  <script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260825-5" defer></script>
+<script src="assets/pwa.js" defer></script><link rel="stylesheet" href="styles.css?v=20260825-6">
+  <script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260825-6" defer></script>
 </head>
 <body data-page="account">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -31,6 +31,13 @@
             <label class="field"><span>Nova senha *</span><input name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small class="field-help">Mínimo de 8 caracteres.</small></label>
             <label class="field"><span>Repita a nova senha *</span><input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></label>
             <div class="account-password-actions"><button class="button button-secondary" type="submit">Alterar senha</button><span class="auth-feedback" id="account-password-feedback"></span></div>
+          </form>
+        </section>
+        <section class="account-request-card chart-card" id="account-change-request-card" hidden>
+          <div class="chart-heading"><div><p class="section-kicker">Solicitar alteração</p><h2>Envie uma solicitação ao Editor</h2><p>Use este campo para pedir correções ou mudanças no seu cadastro, como nome, função, classificação ou vínculo com o gestor. Descreva claramente o que precisa ser alterado.</p></div></div>
+          <form class="account-request-form" id="account-change-request-form">
+            <label class="field"><span>O que você precisa alterar? *</span><textarea name="message" rows="5" minlength="10" maxlength="2000" placeholder="Exemplo: preciso corrigir minha classificação para Infraestrutura." required></textarea><small class="field-help">Entre 10 e 2.000 caracteres.</small></label>
+            <div class="account-request-actions"><button class="button button-secondary" type="submit">Enviar ao Editor</button><span class="auth-feedback" id="account-change-request-feedback" role="status" aria-live="polite"></span></div>
           </form>
         </section>
         <section class="chart-card" id="account-history-card"><div class="chart-heading"><div><p class="section-kicker">Histórico pessoal</p><h2>Seus intervalos planejados e executados</h2></div></div><div class="history-list" id="account-history"></div></section>

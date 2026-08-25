@@ -10,7 +10,7 @@
 // informação velha exibida como se fosse atual, que é exatamente o erro que
 // esta operação não pode cometer.
 
-const VERSION = "20260825-4";
+const VERSION = "20260825-6";
 const CACHE = `gestao-intervalo-${VERSION}`;
 
 const SHELL = [
@@ -20,6 +20,7 @@ const SHELL = [
   "dashboard.html",
   "gestao.html",
   "admin.html",
+  "auditoria.html",
   "conta.html",
   "login.html",
   "recuperar-senha.html",

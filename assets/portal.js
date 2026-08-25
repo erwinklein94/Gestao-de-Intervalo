@@ -1319,19 +1319,33 @@
     return `<tr><td><strong>${escapeHtml(access.email)}</strong></td><td>${escapeHtml(AUDIT_PAGE_LABELS[access.page] || access.page)}</td><td><time datetime="${escapeHtml(access.accessed_at)}">${escapeHtml(timestamp.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" }))}</time></td></tr>`;
   }
 
+  function auditRequestMarkup(request) {
+    const timestamp = new Date(request.created_at);
+    return `<article class="chart-card audit-request-item"><header><strong>${escapeHtml(request.requester_email)}</strong><time datetime="${escapeHtml(request.created_at)}">${escapeHtml(timestamp.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" }))}</time></header><p>${escapeHtml(request.message)}</p></article>`;
+  }
+
   async function loadAuditAccesses() {
     const button = $("#audit-refresh");
     if (button) { button.disabled = true; button.textContent = "Atualizando…"; }
     setState("Atualizando auditoria…", "syncing");
     try {
-      const { data, error } = await baseClient.from("site_access_audit")
-        .select("id,email,page,accessed_at")
-        .order("accessed_at", { ascending: false })
-        .limit(500);
-      if (error) throw error;
-      const accesses = data || [];
+      const [accessResult, requestResult] = await Promise.all([
+        baseClient.from("site_access_audit")
+          .select("id,email,page,accessed_at")
+          .order("accessed_at", { ascending: false })
+          .limit(100),
+        baseClient.from("profile_change_requests")
+          .select("id,requester_email,message,created_at")
+          .order("created_at", { ascending: false })
+      ]);
+      if (accessResult.error) throw accessResult.error;
+      if (requestResult.error) throw requestResult.error;
+      const accesses = accessResult.data || [];
+      const requests = requestResult.data || [];
       $("#audit-accesses").innerHTML = accesses.map(auditRowMarkup).join("");
       $("#audit-empty").hidden = accesses.length > 0;
+      $("#audit-change-requests").innerHTML = requests.map(auditRequestMarkup).join("");
+      $("#audit-requests-empty").hidden = requests.length > 0;
       const refreshedAt = new Date();
       $("#audit-last-updated").dateTime = refreshedAt.toISOString();
       $("#audit-last-updated").textContent = refreshedAt.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" });

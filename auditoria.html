@@ -5,7 +5,7 @@
   <script src="assets/auth-guard.js"></script><meta name="description" content="Auditoria dos acessos à Gestão de Intervalo.">
   <title>Gestão de Intervalo | Auditoria</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
   <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="assets/icon.svg"><script src="assets/pwa.js" defer></script>
-  <link rel="stylesheet" href="styles.css?v=20260825-5"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260825-5" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20260825-6"><script src="assets/supabase.min.js" defer></script><script src="assets/portal.js?v=20260825-6" defer></script>
 </head>
 <body data-page="audit">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -14,7 +14,7 @@
     <section class="admin-hero"><p class="eyebrow">Acesso de Editor</p><h1>Auditoria</h1><p>Acompanhe os acessos autenticados ao sistema, com identificação da conta, página e horário.</p></section>
     <section class="admin-workspace audit-workspace">
       <header class="audit-heading">
-        <div><p class="section-kicker">Histórico de acessos</p><h2>Acessos mais recentes</h2><p>Última atualização: <time id="audit-last-updated">Aguardando dados…</time></p></div>
+        <div><p class="section-kicker">Histórico de acessos</p><h2>100 acessos mais recentes</h2><p>Última atualização: <time id="audit-last-updated">Aguardando dados…</time>. Os acessos anteriores permanecem disponíveis somente no Supabase.</p></div>
         <button class="button button-secondary" id="audit-refresh" type="button">Atualizar agora</button>
       </header>
       <article class="chart-card audit-card">
@@ -23,6 +23,9 @@
         </div>
         <div class="portal-empty" id="audit-empty" hidden><strong>Nenhum acesso registrado</strong><span>Os próximos acessos autenticados aparecerão aqui automaticamente.</span></div>
       </article>
+      <header class="audit-heading audit-requests-heading"><div><p class="section-kicker">Solicitações dos usuários</p><h2>Pedidos de alteração de perfil</h2><p>Mensagens enviadas pela página Minha conta para análise do Editor.</p></div></header>
+      <section class="audit-request-list" id="audit-change-requests"></section>
+      <div class="portal-empty" id="audit-requests-empty" hidden><strong>Nenhuma solicitação recebida</strong><span>Novas mensagens dos usuários aparecerão aqui automaticamente.</span></div>
     </section>
   </main>
   <div class="toast" id="toast" role="status" aria-live="polite"></div><footer class="site-footer"><img src="assets/rumo-logo-blue.png" alt="Rumo"><span>Gestão de Intervalo · Auditoria protegida por perfil</span></footer>
