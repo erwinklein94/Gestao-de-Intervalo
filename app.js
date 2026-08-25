@@ -2389,12 +2389,14 @@
               <span class="block-label">Realizado</span>
               <div class="realized-times">
                 <div class="time-entry">
-                  <label>Início<input data-field="actualStart" type="datetime-local" value="${escapeHtml(stampInput(step.actualStart))}" aria-label="Data e hora de início realizado da etapa ${index + 1}" ${disabled}></label>
+                  <label for="realizado-inicio-${step.id}">Início</label>
                   <button class="now-button" type="button" data-now="actualStart" ${disabled}>Agora</button>
+                  <input id="realizado-inicio-${step.id}" data-field="actualStart" type="datetime-local" value="${escapeHtml(stampInput(step.actualStart))}" aria-label="Data e hora de início realizado da etapa ${index + 1}" ${disabled}>
                 </div>
                 <div class="time-entry">
-                  <label>Fim<input data-field="actualEnd" type="datetime-local" value="${escapeHtml(stampInput(step.actualEnd))}" aria-label="Data e hora de fim realizado da etapa ${index + 1}" ${step.actualStart && !skipped && !executionClosed ? "" : "disabled"}></label>
+                  <label for="realizado-fim-${step.id}">Fim</label>
                   <button class="now-button" type="button" data-now="actualEnd" ${step.actualStart && !skipped && !executionClosed ? "" : "disabled"}>Agora</button>
+                  <input id="realizado-fim-${step.id}" data-field="actualEnd" type="datetime-local" value="${escapeHtml(stampInput(step.actualEnd))}" aria-label="Data e hora de fim realizado da etapa ${index + 1}" ${step.actualStart && !skipped && !executionClosed ? "" : "disabled"}>
                 </div>
               </div>
               <small class="realized-duration${durationOverClass(step, status.nowAbs)}" data-step-duration>${escapeHtml(realizedDurationText)}</small>

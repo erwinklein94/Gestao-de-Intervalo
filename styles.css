@@ -497,10 +497,34 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .realized-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .realized-duration { display: block; margin-top: 9px; color: var(--muted); font-size: 9px; }
 .realized-duration.is-over { color: #a43b32; font-weight: 700; }
-.time-entry { display: grid; grid-template-columns: minmax(112px, 1fr) auto; gap: 6px; align-items: end; min-width: 0; }
-.time-entry label { min-width: 0; display: grid; gap: 5px; color: var(--blue); font-size: 10px; font-weight: 700; }
-.time-entry input { min-width: 0; padding: 0 10px; background: var(--white); color: var(--ink); }
-.now-button { position: static; min-width: 48px; height: 44px; padding: 0 8px; border: 0; border-radius: 7px; background: var(--green); color: var(--white); cursor: pointer; font-size: 9px; font-weight: 700; }
+/* O horario realizado e o dado que a pessoa acabou de digitar e precisa
+   conferir na hora. Ele ficava herdando os 10px do rotulo e ainda dividia a
+   linha com o "Agora", entao "20/08/2026 08:35" nao cabia e aparecia cortado
+   em "20/08/2026 08". O "Agora" sobe para a linha do rotulo, que estava vazia,
+   e o campo passa a ocupar a largura inteira, ao custo de 10px de altura por
+   campo -- barato pelo dado ficar legivel. */
+.time-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "rotulo agora" "campo campo";
+  gap: 4px 8px;
+  align-items: center;
+  min-width: 0;
+}
+.time-entry label { grid-area: rotulo; min-width: 0; color: var(--blue); font-size: 10px; font-weight: 700; }
+.time-entry input {
+  grid-area: campo;
+  width: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+.now-button { grid-area: agora; position: static; min-width: 48px; height: 26px; padding: 0 9px; border: 0; border-radius: 7px; background: var(--green); color: var(--white); cursor: pointer; font-size: 9px; font-weight: 700; }
 .now-button:disabled { opacity: .42; cursor: not-allowed; }
 .step-status-button { margin-top: 9px; padding: 6px 0; border: 0; border-bottom: 1px solid currentColor; color: var(--muted); background: transparent; cursor: pointer; font-size: 9px; font-weight: 700; }
 .step-status-button:disabled { opacity: .4; cursor: not-allowed; }
@@ -1238,6 +1262,13 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .page-export-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .page-export-actions .button { width: 100%; min-width: 0; padding-inline: 8px; }
   /* Faixa de atraso, frentes e cartoes de resumo: ver "Execucao no celular". */
+  /* Uma entrada por linha: com duas colunas num celular a data completa nao
+     cabe. O "Agora" volta para o lado do campo aqui, onde ha largura de sobra,
+     e recupera o alvo de toque de 44px que a linha do rotulo nao comporta. */
+  .realized-times { grid-template-columns: 1fr; }
+  .time-entry { grid-template-areas: "rotulo rotulo" "campo agora"; align-items: end; }
+  .time-entry input { font-size: 16px; }
+  .now-button { height: 48px; min-width: 60px; font-size: 10px; }
   .execution-list { padding-inline: 18px; }
   .execution-step-header { grid-template-columns: 40px 1fr; }
   .step-variance { grid-column: 2; justify-self: start; }
@@ -1318,7 +1349,6 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .hero-actions, .hero-actions .button, .data-actions, .data-actions .button { width: 100%; }
   .shared-status-clocks { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .dialog-actions { flex-direction: column; }
-  .realized-times { grid-template-columns: 1fr; }
   .dashboard-kpis { grid-template-columns: 1fr; }
   .chart-card { padding: 16px; border-radius: 13px; }
   .chart-heading { flex-direction: column; }
@@ -1542,6 +1572,11 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
 @media (max-width: 360px) {
   .site-header .primary-nav { gap: 4px; }
   .primary-nav a { padding-inline: 2px; }
+  /* Numa tela de 320px o "Agora" de 60px deixava so 3px de folga para
+     "20/08/2026 08:35". Ele encolhe na largura, nao na altura: o alvo de
+     toque continua com 48px. */
+  .time-entry { column-gap: 6px; }
+  .now-button { min-width: 48px; padding-inline: 6px; }
 }
 
 @media (max-width: 460px) {
@@ -1656,9 +1691,11 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .block-label { margin-bottom: 5px; font-size: 8px; }
   .time-pair strong { font-size: 14px; }
   .realized-times { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-  .time-entry { grid-template-columns: minmax(0, 1fr); }
-  .time-entry label { gap: 2px; font-size: 8px; }
-  .time-entry input { width: 100%; min-width: 0; height: 30px; }
+  /* Na impressao o "Agora" some, entao a grade volta a uma coluna so -- com
+     as areas de duas colunas sobrando, o campo herdaria uma faixa vazia. */
+  .time-entry { grid-template-columns: minmax(0, 1fr); grid-template-areas: "rotulo" "campo"; gap: 2px; }
+  .time-entry label { font-size: 8px; }
+  .time-entry input { width: 100%; min-width: 0; height: 30px; font-size: 11px; letter-spacing: 0; }
   .realized-duration { margin-top: 4px; }
   .notes-block { min-width: 0; grid-column: auto; }
   .notes-block textarea { min-height: 40px; height: 40px; padding-top: 3px; font-size: 8px; line-height: 1.2; }
