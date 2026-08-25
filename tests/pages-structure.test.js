@@ -125,17 +125,20 @@ includesAll(read("app.js"), [
 ], "Minha Conta deve preencher a função flexionada sem interromper os demais dados");
 includesAll(read("assets/pwa.js"), [
   'EDITOR_TRANSITION_KEY = "gestaoIntervaloRumo.editorPageTransitions"',
-  'role === "editor" && editorTransitionPreference()',
-  'classList.add("page-transition-exit")',
+  'role === "editor" && editorTransitionPreference(userId)',
+  "function saveTransitionOrigin(link, destination)",
+  'window.addEventListener("pagereveal"',
+  'pseudoElement: "::view-transition-new(root)"',
+  'classList.add("page-transition-circle-enter")',
   "window.EditorPageTransitions"
 ], "transição opcional e exclusiva do Editor");
 includesAll(read("app.js"), [
   "function bindEditorPageTransitionPreference()",
   'currentProfile.role !== "editor"',
-  "transitions.setEnabled(enabled)",
+  "transitions.setEnabled(enabled, currentUser.id)",
   "bindEditorPageTransitionPreference()"
 ], "controle da transição na Minha Conta do Editor");
-assert.ok(read("assets/portal.js").includes("window.EditorPageTransitions?.apply(actualProfile.role)"), "portal deve ativar a preferência somente após validar o perfil");
+assert.ok(read("assets/portal.js").includes("window.EditorPageTransitions?.apply(actualProfile.role, currentUser.id)"), "portal deve ativar a preferência somente após validar o perfil");
 
 const planning = read("index.html");
 includesAll(planning, [
@@ -187,7 +190,7 @@ includesAll(read("app.js"), [
 ], "destaque seguro do nome do responsável no acompanhamento");
 
 const styles = read("styles.css");
-includesAll(styles, ["html.editor-page-transitions body.page-transition-enter", "html.editor-page-transitions body.page-transition-exit", "@keyframes editor-page-enter", "@keyframes editor-page-exit", "@media (prefers-reduced-motion: reduce)"], "animações acessíveis da navegação do Editor");
+includesAll(styles, ["@view-transition { navigation: auto; }", "::view-transition-old(root)", "::view-transition-new(root)", "html.editor-page-transitions body.page-transition-circle-enter", "@keyframes editor-page-circle-enter", "@media (prefers-reduced-motion: reduce)"], "expansão circular acessível da navegação do Editor");
 assert.ok(styles.includes(".shared-responsible-name { color: var(--yellow); font-size: 1.1em;"), "nome do responsável deve usar o amarelo Rumo com aumento discreto");
 includesAll(styles, [
   ".management-tabs",

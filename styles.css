@@ -992,24 +992,31 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .account-request-form textarea { width: 100%; resize: vertical; }
 .account-request-actions { display: flex; align-items: center; gap: 12px; }
 
-html.editor-page-transitions body.page-transition-enter {
-  animation: editor-page-enter 320ms cubic-bezier(.22, .75, .3, 1) both;
+@view-transition { navigation: auto; }
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }
-html.editor-page-transitions body.page-transition-exit {
-  animation: editor-page-exit 190ms ease-in both;
-  pointer-events: none;
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 2; }
+
+html.editor-page-transitions body.page-transition-circle-enter {
+  animation: editor-page-circle-enter 680ms cubic-bezier(.2, .78, .22, 1) both;
 }
-@keyframes editor-page-enter {
-  from { opacity: 0; transform: translateY(10px) scale(.997); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+html.editor-page-transitions .is-transition-origin {
+  animation: editor-transition-origin 130ms ease-out both;
 }
-@keyframes editor-page-exit {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-7px); }
+@keyframes editor-page-circle-enter {
+  from { clip-path: circle(0 at var(--transition-origin-x) var(--transition-origin-y)); }
+  to { clip-path: circle(150vmax at var(--transition-origin-x) var(--transition-origin-y)); }
+}
+@keyframes editor-transition-origin {
+  to { transform: scale(.96); filter: brightness(1.22); }
 }
 @media (prefers-reduced-motion: reduce) {
-  html.editor-page-transitions body.page-transition-enter,
-  html.editor-page-transitions body.page-transition-exit { animation: none; }
+  html.editor-page-transitions body.page-transition-circle-enter,
+  html.editor-page-transitions .is-transition-origin { animation: none; }
 }
 /* Alternancia entre entrar e solicitar acesso na tela de login. */
 .login-switch { margin: 6px 0 0; color: var(--muted); font-size: 12px; text-align: center; }

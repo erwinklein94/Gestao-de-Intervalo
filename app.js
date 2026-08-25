@@ -3406,7 +3406,7 @@
     } finally {
       document.documentElement.classList.remove("auth-checking");
       initializeCurrentPage();
-      window.EditorPageTransitions?.apply(currentProfile?.role);
+      window.EditorPageTransitions?.apply(currentProfile?.role, currentUser?.id);
       startCloudRefresh();
     }
   }
@@ -4186,7 +4186,7 @@
 
     card.hidden = false;
     const renderPreference = () => {
-      const enabled = transitions.isEnabled();
+      const enabled = transitions.isEnabled(currentUser.id);
       button.textContent = enabled ? "Desativar transição" : "Ativar transição";
       button.setAttribute("aria-pressed", String(enabled));
       status.textContent = enabled
@@ -4194,8 +4194,8 @@
         : "Efeito desativado neste navegador.";
     };
     button.addEventListener("click", () => {
-      const enabled = !transitions.isEnabled();
-      transitions.setEnabled(enabled);
+      const enabled = !transitions.isEnabled(currentUser.id);
+      transitions.setEnabled(enabled, currentUser.id);
       renderPreference();
       showToast(enabled ? "Transição entre páginas ativada." : "Transição entre páginas desativada.");
     });

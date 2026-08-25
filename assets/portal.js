@@ -1407,7 +1407,7 @@
       await initializeManagement();
     }
     document.documentElement.classList.remove("auth-checking");
-    window.EditorPageTransitions?.apply(actualProfile.role);
+    window.EditorPageTransitions?.apply(actualProfile.role, currentUser.id);
   }
 
   initialize().catch((error) => {

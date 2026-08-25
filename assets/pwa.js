@@ -2,38 +2,110 @@
   "use strict";
 
   const EDITOR_TRANSITION_KEY = "gestaoIntervaloRumo.editorPageTransitions";
+  const EDITOR_TRANSITION_ORIGIN_KEY = "gestaoIntervaloRumo.editorTransitionOrigin";
   let editorTransitionActive = false;
   let transitionNavigationStarted = false;
   let transitionCleanupTimer = null;
 
-  function editorTransitionPreference() {
-    return localStorage.getItem(EDITOR_TRANSITION_KEY) === "enabled";
+  function transitionSetting() {
+    const raw = localStorage.getItem(EDITOR_TRANSITION_KEY);
+    if (raw === "enabled") return { enabled: true, userId: "" };
+    try {
+      const setting = JSON.parse(raw || "null");
+      return setting && typeof setting === "object" ? setting : { enabled: false, userId: "" };
+    } catch (_) {
+      return { enabled: false, userId: "" };
+    }
+  }
+
+  function editorTransitionPreference(userId = window.__GESTAO_USER_ID__ || "") {
+    const setting = transitionSetting();
+    return setting.enabled === true && (!setting.userId || !userId || setting.userId === userId);
   }
 
   function supportsMotion() {
     return !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   }
 
-  function applyEditorPageTransitions(role) {
-    editorTransitionActive = role === "editor" && editorTransitionPreference() && supportsMotion();
-    document.documentElement.classList.toggle("editor-page-transitions", editorTransitionActive);
-    document.body.classList.remove("page-transition-enter", "page-transition-exit");
-    if (!editorTransitionActive) return;
+  function supportsCrossDocumentTransitions() {
+    return "onpagereveal" in window && Boolean(window.CSS?.supports?.("view-transition-name: root"));
+  }
 
-    // Aplicar depois que o perfil foi validado evita animar páginas de outros
-    // perfis. Duas animações curtas formam a troca sem mascarar carregamentos.
-    document.body.classList.add("page-transition-enter");
+  function readTransitionOrigin() {
+    try {
+      const origin = JSON.parse(sessionStorage.getItem(EDITOR_TRANSITION_ORIGIN_KEY) || "null");
+      if (!origin || Date.now() - origin.createdAt > 8000) return null;
+      const currentPath = `${location.pathname}${location.search}`;
+      return origin.destination === currentPath ? origin : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveTransitionOrigin(link, destination) {
+    const bounds = link.getBoundingClientRect();
+    sessionStorage.setItem(EDITOR_TRANSITION_ORIGIN_KEY, JSON.stringify({
+      x: Math.round(bounds.left + bounds.width / 2),
+      y: Math.round(bounds.top + bounds.height / 2),
+      destination: `${destination.pathname}${destination.search}`,
+      createdAt: Date.now()
+    }));
+  }
+
+  function applyEditorPageTransitions(role, userId = window.__GESTAO_USER_ID__ || "") {
+    const setting = transitionSetting();
+    if (role === "editor" && setting.enabled && !setting.userId && userId) {
+      localStorage.setItem(EDITOR_TRANSITION_KEY, JSON.stringify({ enabled: true, userId }));
+    }
+    editorTransitionActive = role === "editor" && editorTransitionPreference(userId) && supportsMotion();
+    document.documentElement.classList.toggle("editor-page-transitions", editorTransitionActive);
+    document.body.classList.remove("page-transition-circle-enter");
+    if (!editorTransitionActive || supportsCrossDocumentTransitions()) return;
+
+    const origin = readTransitionOrigin();
+    if (!origin) return;
+    sessionStorage.removeItem(EDITOR_TRANSITION_ORIGIN_KEY);
+    document.body.style.setProperty("--transition-origin-x", `${origin.x}px`);
+    document.body.style.setProperty("--transition-origin-y", `${origin.y}px`);
+    document.body.classList.add("page-transition-circle-enter");
     clearTimeout(transitionCleanupTimer);
     transitionCleanupTimer = setTimeout(() => {
-      document.body.classList.remove("page-transition-enter");
-    }, 360);
+      document.body.classList.remove("page-transition-circle-enter");
+    }, 760);
   }
 
-  function setEditorPageTransitions(enabled) {
-    if (enabled) localStorage.setItem(EDITOR_TRANSITION_KEY, "enabled");
+  function setEditorPageTransitions(enabled, userId = window.__GESTAO_USER_ID__ || "") {
+    if (enabled) localStorage.setItem(EDITOR_TRANSITION_KEY, JSON.stringify({ enabled: true, userId }));
     else localStorage.removeItem(EDITOR_TRANSITION_KEY);
-    applyEditorPageTransitions("editor");
+    applyEditorPageTransitions("editor", userId);
   }
+
+  // Na API nativa, a captura da página anterior permanece atrás da nova. A
+  // página de destino então cresce em círculo a partir do link que foi usado.
+  window.addEventListener("pagereveal", (event) => {
+    const setting = transitionSetting();
+    const sameEditor = setting.enabled && setting.userId && setting.userId === window.__GESTAO_USER_ID__;
+    const origin = sameEditor && supportsMotion() ? readTransitionOrigin() : null;
+    if (!event.viewTransition || !origin) return;
+    sessionStorage.removeItem(EDITOR_TRANSITION_ORIGIN_KEY);
+    const endRadius = Math.hypot(
+      Math.max(origin.x, innerWidth - origin.x),
+      Math.max(origin.y, innerHeight - origin.y)
+    );
+    event.viewTransition.ready.then(() => {
+      document.documentElement.animate({
+        clipPath: [
+          `circle(0px at ${origin.x}px ${origin.y}px)`,
+          `circle(${endRadius}px at ${origin.x}px ${origin.y}px)`
+        ]
+      }, {
+        duration: 680,
+        easing: "cubic-bezier(.2, .78, .22, 1)",
+        fill: "both",
+        pseudoElement: "::view-transition-new(root)"
+      });
+    }).catch(() => {});
+  });
 
   document.addEventListener("click", (event) => {
     if (!editorTransitionActive || transitionNavigationStarted || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -45,11 +117,13 @@
     const sameDocument = destination.pathname === location.pathname && destination.search === location.search;
     if (sameDocument) return;
 
+    saveTransitionOrigin(link, destination);
+    if (supportsCrossDocumentTransitions()) return;
+
     event.preventDefault();
     transitionNavigationStarted = true;
-    document.body.classList.remove("page-transition-enter");
-    document.body.classList.add("page-transition-exit");
-    setTimeout(() => location.assign(destination.href), 190);
+    link.classList.add("is-transition-origin");
+    setTimeout(() => location.assign(destination.href), 130);
   });
 
   window.EditorPageTransitions = {
