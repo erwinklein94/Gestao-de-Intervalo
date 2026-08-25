@@ -3629,6 +3629,25 @@
       return { label: "Aguardando", className: "waiting", variance: null };
     }
 
+    function renderSharedSubtitle(plan, sharedFront) {
+      const subtitle = $("#shared-subtitle");
+      const details = [
+        sharedFront,
+        plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"),
+        plan.serviceType,
+        plan.location
+      ].filter(Boolean);
+
+      subtitle.replaceChildren(document.createTextNode(details.join(" · ") || "Acompanhamento operacional"));
+      if (!plan.coordinator) return;
+
+      subtitle.append(document.createTextNode(`${details.length ? " · " : ""}Responsável: `));
+      const responsibleName = document.createElement("strong");
+      responsibleName.className = "shared-responsible-name";
+      responsibleName.textContent = plan.coordinator;
+      subtitle.append(responsibleName);
+    }
+
     function renderSharedPlan(plan, metadata) {
       sharedPlan = plan;
       const timeline = buildTimeline(plan);
@@ -3654,7 +3673,7 @@
       const sharedFront = plan.frontName?.trim() || (plan.frontPosition > 1 ? `Frente ${plan.frontPosition}` : "");
 
       $("#shared-title").textContent = plan.title || "Intervalo sem nome";
-      $("#shared-subtitle").textContent = [sharedFront, plan.date && new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR"), plan.serviceType, plan.location, plan.coordinator && `Responsável: ${plan.coordinator}`].filter(Boolean).join(" · ") || "Acompanhamento operacional";
+      renderSharedSubtitle(plan, sharedFront);
       $("#shared-updated").textContent = `Atualizado às ${new Date(metadata.fetched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
       if (metadata.access_mode === "profile") {
         $("#shared-access-title").textContent = "Acesso conforme o seu perfil";

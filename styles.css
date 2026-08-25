@@ -758,6 +758,7 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .shared-error > span { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--orange); font-size: 24px; font-weight: 700; }.shared-error .button { margin-top: 12px; }
 .shared-hero { padding: 42px max(24px, calc((100vw - 1280px) / 2)); display: flex; align-items: center; justify-content: space-between; gap: 30px; color: white; background: linear-gradient(135deg,var(--blue) 0 70%,var(--blue-2) 70%); }
 .shared-hero h1 { margin: 3px 0 8px; font-size: clamp(30px,4vw,48px); letter-spacing: -.035em; }.shared-hero > div > p:last-child { margin: 0; color: rgba(255,255,255,.72); }
+.shared-responsible-name { color: var(--yellow); font-size: 1.1em; font-weight: 800; }
 .shared-live-state { min-width: 210px; padding: 14px 17px; display: flex; align-items: center; gap: 11px; border: 1px solid rgba(255,255,255,.25); border-radius: 12px; background: rgba(0,30,55,.18); }
 .shared-live-state[hidden] { display: none; }
 .shared-live-state i { width: 10px; height: 10px; flex: 0 0 auto; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 5px rgba(127,224,108,.13); }.shared-live-state strong,.shared-live-state span { display: block; }.shared-live-state strong { font-size: 10px; }.shared-live-state span { margin-top: 3px; color: rgba(255,255,255,.7); font-size: 9px; }

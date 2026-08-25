@@ -164,8 +164,14 @@ includesAll(read("app.js"), [
   "async function exportPlanFromButton",
   'type="dataBar"'
 ], "carregamento autenticado do acompanhamento completo");
+includesAll(read("app.js"), [
+  "function renderSharedSubtitle(plan, sharedFront)",
+  'responsibleName.className = "shared-responsible-name"',
+  "responsibleName.textContent = plan.coordinator"
+], "destaque seguro do nome do responsável no acompanhamento");
 
 const styles = read("styles.css");
+assert.ok(styles.includes(".shared-responsible-name { color: var(--yellow); font-size: 1.1em;"), "nome do responsável deve usar o amarelo Rumo com aumento discreto");
 includesAll(styles, [
   ".management-tabs",
   ".portal-filter-grid",
