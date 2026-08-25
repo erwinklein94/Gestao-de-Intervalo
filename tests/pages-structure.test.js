@@ -6,6 +6,7 @@ const path = require("node:path");
 
 const root = path.join(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8").replace(/\r\n/g, "\n");
+const pages = fs.readdirSync(root).filter((file) => file.endsWith(".html"));
 
 function includesAll(source, values, message) {
   values.forEach((value) => assert.ok(source.includes(value), `${message}: ausente ${value}`));
@@ -14,6 +15,15 @@ function includesAll(source, values, message) {
 function attributeValues(source, attribute) {
   return [...source.matchAll(new RegExp(`${attribute}="([^"]+)"`, "g"))].map((match) => match[1]);
 }
+
+pages.forEach((page) => {
+  assert.ok(read(page).includes("assets/pwa.js"), `${page} deve carregar os recursos compartilhados`);
+});
+includesAll(read("assets/pwa.js"), [
+  'className = "back-to-top"',
+  'button.textContent = "Subir"',
+  'window.scrollTo({ top: 0, behavior: "smooth" })'
+], "atalho compartilhado para subir a página");
 
 const management = read("gestao.html");
 assert.match(management, /<html[^>]*class="auth-checking"/);

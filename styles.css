@@ -1991,3 +1991,42 @@ html[data-theme="dark"] .shift-copy strong { color: var(--sky); }
   .intervals-freshness .button { width: 100%; justify-self: stretch; }
   .intervals-column > .portal-section-heading { padding-left: 10px; }
 }
+/* Atalho compartilhado para retornar ao inicio de qualquer pagina. */
+.back-to-top {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 900;
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid rgba(0, 56, 101, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #003865;
+  box-shadow: 0 5px 18px rgba(0, 35, 65, 0.14);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.back-to-top:hover {
+  background: #ffffff;
+  box-shadow: 0 7px 22px rgba(0, 35, 65, 0.2);
+  transform: translateY(-2px);
+}
+
+.back-to-top:focus-visible {
+  outline: 3px solid rgba(23, 168, 155, 0.38);
+  outline-offset: 2px;
+}
+
+.back-to-top[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .back-to-top { transition: none; }
+}
