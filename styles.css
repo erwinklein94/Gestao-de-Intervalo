@@ -982,12 +982,35 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .access-request-row .admin-row-actions { gap: 6px; }
 /* Troca de senha em Minha conta. */
 .account-password-card { margin-bottom: 20px; }
+.account-transition-card { margin-bottom: 20px; }
+.account-transition-control { padding: 0 24px 24px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.account-transition-control span { color: var(--muted); font-size: 13px; }
 .account-password-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .account-password-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
 .account-request-card { margin-bottom: 20px; }
 .account-request-form { display: grid; gap: 14px; }
 .account-request-form textarea { width: 100%; resize: vertical; }
 .account-request-actions { display: flex; align-items: center; gap: 12px; }
+
+html.editor-page-transitions body.page-transition-enter {
+  animation: editor-page-enter 320ms cubic-bezier(.22, .75, .3, 1) both;
+}
+html.editor-page-transitions body.page-transition-exit {
+  animation: editor-page-exit 190ms ease-in both;
+  pointer-events: none;
+}
+@keyframes editor-page-enter {
+  from { opacity: 0; transform: translateY(10px) scale(.997); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes editor-page-exit {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-7px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.editor-page-transitions body.page-transition-enter,
+  html.editor-page-transitions body.page-transition-exit { animation: none; }
+}
 /* Alternancia entre entrar e solicitar acesso na tela de login. */
 .login-switch { margin: 6px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
 .link-button { padding: 0; border: 0; background: none; color: var(--blue); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
@@ -1359,6 +1382,8 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .account-workspace { width: min(100% - 24px, 1280px); padding-top: 28px; }
   .account-gate { padding: 26px 18px; }
   .account-summary { padding: 20px; align-items: flex-start; flex-direction: column; gap: 14px; }
+  .account-transition-control { padding-inline: 18px; align-items: stretch; flex-direction: column; }
+  .account-transition-control .button { width: 100%; }
   .account-email { max-width: 100%; overflow-wrap: anywhere; }
   .account-summary input, .history-item input, .user-row input { max-width: 100%; min-width: 0; }
   .history-item, .user-row, .user-create-form { grid-template-columns: 1fr; align-items: stretch; gap: 12px; }

@@ -6,8 +6,8 @@
   <title>Gestão de Intervalo | Minha Conta</title><link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<script src="assets/pwa.js" defer></script><link rel="stylesheet" href="styles.css?v=20260825-10">
-  <script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260825-12" defer></script>
+<script src="assets/pwa.js" defer></script><link rel="stylesheet" href="styles.css?v=20260825-13">
+  <script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260825-13" defer></script>
 </head>
 <body data-page="account">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -32,6 +32,10 @@
             <label class="field"><span>Repita a nova senha *</span><input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></label>
             <div class="account-password-actions"><button class="button button-secondary" type="submit">Alterar senha</button><span class="auth-feedback" id="account-password-feedback"></span></div>
           </form>
+        </section>
+        <section class="account-transition-card chart-card" id="account-transition-card" hidden>
+          <div class="chart-heading"><div><p class="section-kicker">Experiência experimental</p><h2>Transição entre páginas</h2><p>Ative para testar uma animação curta e suave ao navegar pelas páginas do perfil Editor. A escolha vale somente neste navegador.</p></div></div>
+          <div class="account-transition-control"><span id="account-transition-status">Efeito desativado neste navegador.</span><button class="button button-secondary" id="account-transition-toggle" type="button" aria-pressed="false">Ativar transição</button></div>
         </section>
         <section class="account-request-card chart-card" id="account-change-request-card" hidden>
           <div class="chart-heading"><div><p class="section-kicker">Solicitar alteração</p><h2>Envie uma solicitação ao Editor</h2><p>Use este campo para pedir correções ou mudanças no seu cadastro, como nome, função, classificação ou vínculo com o gestor. Descreva claramente o que precisa ser alterado.</p></div></div>

@@ -111,7 +111,7 @@ includesAll(read("assets/portal.js"), ['["auditoria.html", "Auditoria", "audit"]
 
 // Integrações estruturais das páginas existentes que receberam as novas funções.
 const account = read("conta.html");
-includesAll(account, ['id="account-history"', 'id="account-password-form"', 'name="currentPassword"', 'name="newPassword"', 'id="account-change-request-card"', 'id="account-change-request-form"', 'name="message"', 'id="account-change-request-feedback"'], "histórico, troca de senha e solicitação ao Editor da Minha Conta");
+includesAll(account, ['id="account-history"', 'id="account-password-form"', 'name="currentPassword"', 'name="newPassword"', 'id="account-change-request-card"', 'id="account-change-request-form"', 'name="message"', 'id="account-change-request-feedback"', 'id="account-transition-card"', 'id="account-transition-toggle"', 'id="account-transition-status"'], "histórico, troca de senha, transição experimental e solicitação ao Editor da Minha Conta");
 assert.ok(!account.includes("SUB"), "Minha Conta não deve exibir SUB");
 assert.ok(!account.includes("account-shortcut"), "Minha Conta não deve exibir atalhos");
 assert.ok(!read("app.js").includes("const roleLabel = roleLabel("), "Minha Conta não deve ocultar a função roleLabel com uma variável local");
@@ -123,6 +123,19 @@ includesAll(read("app.js"), [
   '$("#account-history-card").hidden = !showsPersonalHistory',
   "if (showsPersonalHistory) await renderAccountHistory()"
 ], "Minha Conta deve preencher a função flexionada sem interromper os demais dados");
+includesAll(read("assets/pwa.js"), [
+  'EDITOR_TRANSITION_KEY = "gestaoIntervaloRumo.editorPageTransitions"',
+  'role === "editor" && editorTransitionPreference()',
+  'classList.add("page-transition-exit")',
+  "window.EditorPageTransitions"
+], "transição opcional e exclusiva do Editor");
+includesAll(read("app.js"), [
+  "function bindEditorPageTransitionPreference()",
+  'currentProfile.role !== "editor"',
+  "transitions.setEnabled(enabled)",
+  "bindEditorPageTransitionPreference()"
+], "controle da transição na Minha Conta do Editor");
+assert.ok(read("assets/portal.js").includes("window.EditorPageTransitions?.apply(actualProfile.role)"), "portal deve ativar a preferência somente após validar o perfil");
 
 const planning = read("index.html");
 includesAll(planning, [
@@ -174,6 +187,7 @@ includesAll(read("app.js"), [
 ], "destaque seguro do nome do responsável no acompanhamento");
 
 const styles = read("styles.css");
+includesAll(styles, ["html.editor-page-transitions body.page-transition-enter", "html.editor-page-transitions body.page-transition-exit", "@keyframes editor-page-enter", "@keyframes editor-page-exit", "@media (prefers-reduced-motion: reduce)"], "animações acessíveis da navegação do Editor");
 assert.ok(styles.includes(".shared-responsible-name { color: var(--yellow); font-size: 1.1em;"), "nome do responsável deve usar o amarelo Rumo com aumento discreto");
 includesAll(styles, [
   ".management-tabs",

@@ -3406,6 +3406,7 @@
     } finally {
       document.documentElement.classList.remove("auth-checking");
       initializeCurrentPage();
+      window.EditorPageTransitions?.apply(currentProfile?.role);
       startCloudRefresh();
     }
   }
@@ -4176,6 +4177,31 @@
     });
   }
 
+  function bindEditorPageTransitionPreference() {
+    const card = $("#account-transition-card");
+    const button = $("#account-transition-toggle");
+    const status = $("#account-transition-status");
+    const transitions = window.EditorPageTransitions;
+    if (!card || !button || !status || currentProfile.role !== "editor" || !transitions) return;
+
+    card.hidden = false;
+    const renderPreference = () => {
+      const enabled = transitions.isEnabled();
+      button.textContent = enabled ? "Desativar transição" : "Ativar transição";
+      button.setAttribute("aria-pressed", String(enabled));
+      status.textContent = enabled
+        ? "Efeito ativado neste navegador."
+        : "Efeito desativado neste navegador.";
+    };
+    button.addEventListener("click", () => {
+      const enabled = !transitions.isEnabled();
+      transitions.setEnabled(enabled);
+      renderPreference();
+      showToast(enabled ? "Transição entre páginas ativada." : "Transição entre páginas desativada.");
+    });
+    renderPreference();
+  }
+
   async function accountPage() {
     const gate = $("#account-gate");
     const content = $("#account-content");
@@ -4227,6 +4253,7 @@
 
     bindPasswordChange();
     bindProfileChangeRequest();
+    bindEditorPageTransitionPreference();
     $("#account-sign-out").addEventListener("click", signOutAndReturn);
   }
 
