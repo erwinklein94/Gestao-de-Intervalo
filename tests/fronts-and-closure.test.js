@@ -709,6 +709,7 @@ test("a concessão do CCO chega ao planejamento, ao relatório e ao banco", () =
     "o link compartilhado também precisa trazer a concessão");
 });
 
+
 test("o horário realizado é legível: campo com fonte própria e largura inteira", () => {
   const app = stripJsComments(read("app.js"));
   // O input morava dentro do label e herdava os 10px dele; agora é irmão, com
@@ -724,9 +725,18 @@ test("o horário realizado é legível: campo com fonte própria e largura intei
     "o Agora sobe para a linha do rótulo e o campo fica com a largura inteira");
 
   const campo = styles.split(".time-entry input {")[1].split("}")[0];
-  assert.ok(/font-size: 15px/.test(campo), "sem fonte própria o valor volta a sair em 10px, herdados do rótulo");
   assert.ok(/font-weight: 700/.test(campo), "o valor digitado precisa ter o peso de um dado, não de uma legenda");
   assert.ok(/font-variant-numeric: tabular-nums/.test(campo), "dígitos de largura fixa param de dançar enquanto se digita");
+  // Um datetime-local nativo pede cerca de 16px de largura por pixel de fonte:
+  // a 15px são 243px, e nenhuma coluna desta tela tem isso. Aumentar a fonte
+  // foi o que cortou o valor da primeira vez.
+  const corpo = Number(/font-size: (\d+)px/.exec(campo)[1]);
+  assert.ok(corpo >= 12 && corpo <= 13, `o corpo precisa caber na coluna: ${corpo}px`);
+
+  // Duas colunas fixas cortavam entre 1000 e 1170px, onde a grade ainda tem
+  // três colunas mas já estreitou. auto-fit só abre a segunda quando ela cabe.
+  assert.ok(styles.includes("grid-template-columns: repeat(auto-fit, minmax(215px, 1fr))"),
+    "as entradas precisam decidir sozinhas quantas colunas cabem");
 
   // No celular a entrada ocupa a linha toda e o Agora volta para o lado do
   // campo, onde recupera o alvo de toque.
@@ -734,6 +744,12 @@ test("o horário realizado é legível: campo com fonte própria e largura intei
   assert.ok(movel.includes('.time-entry { grid-template-areas: "rotulo rotulo" "campo agora"'),
     "no celular o Agora não cabe na linha do rótulo sem encolher o alvo de toque");
   assert.ok(/\.now-button \{ height: 48px/.test(movel), "o alvo de toque do Agora não pode cair abaixo de 44px");
+
+  // Até 380px nem isso basta: o botão desce para baixo do campo.
+  const estreito = styles.split("@media (max-width: 380px) {")[1].split("\n}")[0];
+  assert.ok(estreito.includes('grid-template-areas: "rotulo" "campo" "agora"'),
+    "nos aparelhos mais estreitos o Agora precisa sair da linha do campo");
+  assert.ok(estreito.includes(".now-button { width: 100%"), "e ocupar a linha inteira, mantendo a altura de toque");
 
   // Na impressão o Agora some; com as áreas de duas colunas sobrando, o campo
   // herdaria uma faixa vazia ao lado.
