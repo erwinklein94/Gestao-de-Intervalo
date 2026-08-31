@@ -227,6 +227,16 @@ supabase db push
 
 Revise sempre o `--dry-run`, a lista de migrações pendentes e os advisors de segurança/desempenho antes de aplicar em produção. Não edite uma migração já aplicada; crie uma nova migração incremental. As tabelas do schema exposto usam RLS e concessões explícitas, pois exposição à Data API e autorização por linha são controles diferentes.
 
+### Correção da indisponibilidade após login (31/08/2026)
+
+`20260831133839_prevent_sync_conflict_retry_loop.sql` troca o SQLSTATE dos conflitos de sincronização de `40001` para `PT409` (HTTP 409). O PostgREST 14.5 repetia automaticamente o erro de serialização `40001`; como a revisão enviada continuava antiga, as tentativas ocupavam as conexões e bloqueavam inclusive a consulta de perfil após o login. A alteração foi aplicada em produção pelo SQL Editor e é idempotente, podendo ser reaplicada pela CLI para registrar o histórico. Ela preserva o corpo instalado da função, as regras de acesso e os dados.
+
+O cliente conserva a fila local em conflito, sem tentar novamente automaticamente. Falhas transitórias continuam usando espera progressiva. Não limpe o armazenamento do navegador para resolver esse erro: ele pode conter registros ainda não sincronizados.
+
+`tests/sync-conflicts.test.js` cobre conflitos, preservação da fila, espera progressiva e sincronização bem-sucedida. `supabase/tests/sync_conflicts.sql` valida os dois conflitos na função real sob o papel `authenticated`, com rollback; requer um intervalo real, Editor habilitado e recibo de sincronização de um operador habilitado. Nenhum dado desses testes é confirmado no banco.
+
+Referências: [repetição automática de 40001 no PostgREST](https://github.com/PostgREST/postgrest/issues/3673) e [códigos HTTP personalizados](https://docs.postgrest.org/en/v14/references/errors.html#raise-errors-with-http-status-codes).
+
 ## Edge Functions
 
 - `create-site-user`: endpoint autenticado usado pela Administração. Revalida o JWT, exige Editor habilitado, valida papel e hierarquia, permite provisionamento idempotente explícito de uma conta existente e mantém a chave administrativa somente no ambiente da função.

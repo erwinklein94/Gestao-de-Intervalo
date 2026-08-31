@@ -616,6 +616,7 @@
     cloudSyncPending = false;
     clearTimeout(syncRetryTimer);
     setSyncState("Sincronizando", "syncing");
+    let syncSucceeded = false;
     try {
       if (store.deletedPlanIds?.length) {
         for (const deleted of [...store.deletedPlanIds]) {
@@ -656,7 +657,7 @@
           p_device_id: item.deviceId
         });
         if (error) {
-          if (/SYNC_CONFLICT|40001/.test(`${error.message} ${error.code}`)) {
+          if (/SYNC_CONFLICT|SYNC_OPERATION_PAYLOAD_MISMATCH|PT409|40001/.test(`${error.message} ${error.code}`)) {
             item.state = "conflict";
             saveOutbox();
             throw new Error("SYNC_CONFLICT_LOCAL");
@@ -692,6 +693,7 @@
       store.pendingSync = dirtyPlanIds.size > 0 || outbox.length > 0 || store.deletedPlanIds.length > 0;
       writeStoreLocally();
       setSyncState(store.pendingSync ? "Pendente de sincronização" : "Sincronizado", store.pendingSync ? "pending" : "saved");
+      syncSucceeded = true;
     } catch (error) {
       console.error("Falha ao salvar no Supabase.", error);
       store.pendingSync = true;
@@ -706,7 +708,9 @@
       }
     } finally {
       cloudSyncing = false;
-      if (cloudSyncPending || dirtyPlanIds.size) {
+      // Conflitos aguardam revisao; falhas transitorias usam o backoff acima.
+      // Edicoes feitas durante o envio nao devem criar um ciclo imediato de erros.
+      if (syncSucceeded && (cloudSyncPending || dirtyPlanIds.size)) {
         clearTimeout(cloudTimer);
         cloudTimer = setTimeout(syncStoreToCloud, 0);
       }
