@@ -214,7 +214,11 @@ O ciclo de sincronização é:
 5. registrar um recibo por usuário, dispositivo e operação para tornar reenvios idempotentes;
 6. remover o item local somente depois da confirmação do Supabase.
 
-Falhas transitórias usam novas tentativas com espera progressiva. Ao recuperar a conexão, voltar à aba ou reabrir a página, itens pendentes são retomados. Em conflito de revisão, a cópia local permanece preservada para revisão em vez de substituir silenciosamente a versão do servidor.
+Falhas transitórias usam novas tentativas com espera progressiva. Ao recuperar a conexão, voltar à aba ou reabrir a página, itens pendentes são retomados.
+
+**Conflito de revisão é resolvido por mesclagem.** Quando o servidor recusa a gravação porque a revisão avançou, o retrato que estava na fila é descartado — ele é mais antigo que o servidor **e** que a tela, já que as edições feitas depois dele nem chegam a ser enfileiradas. O cliente lê a versão do servidor, junta com a do aparelho e reenfileira o resultado já com a revisão atual. A regra da junção é **vazio nunca vence preenchido**: horário registrado de um lado e ausente do outro sobrevive nos dois, então nenhum registro de campo é apagado. Só quando os dois lados têm valores diferentes no mesmo campo é que um cede, e aí vale o do servidor — ele já está visível para todo mundo —, com aviso de quantos campos divergiram. Etapa marcada como não executada continua não executada, e etapa criada no aparelho entra inteira.
+
+O merge é tentado **uma vez por plano em cada rodada de sincronização**. Conflitando de novo, o item espera a próxima — é o que impede a rajada de retentativas que já derrubou a API uma vez. E um item em conflito **não segura a fila**: os outros intervalos continuam subindo normalmente. Antes, um único conflito parava o envio de tudo por tempo indeterminado, e o aparelho seguia registrando sem que nada chegasse ao servidor.
 
 **Ler não depende de enviar.** A leitura da nuvem acontece na abertura e na atualização periódica mesmo com a fila pendente, e o que chega do servidor é mesclado: o plano com alteração local ainda não confirmada mantém a cópia do aparelho, e todo o resto vem do Supabase. Antes, um único item preso na fila — um conflito, por exemplo — deixava o aparelho parado na cópia local para sempre, e o mesmo login abria com todos os intervalos em outro navegador e com nenhum naquele aparelho. O selo continua indicando a pendência real; ele só deixou de esconder os dados.
 
@@ -237,9 +241,11 @@ Revise sempre o `--dry-run`, a lista de migrações pendentes e os advisors de s
 
 `20260831133839_prevent_sync_conflict_retry_loop.sql` troca o SQLSTATE dos conflitos de sincronização de `40001` para `PT409` (HTTP 409). O PostgREST 14.5 repetia automaticamente o erro de serialização `40001`; como a revisão enviada continuava antiga, as tentativas ocupavam as conexões e bloqueavam inclusive a consulta de perfil após o login. A alteração foi aplicada em produção pelo SQL Editor e é idempotente, podendo ser reaplicada pela CLI para registrar o histórico. Ela preserva o corpo instalado da função, as regras de acesso e os dados.
 
-O cliente conserva a fila local em conflito, sem tentar novamente automaticamente. Falhas transitórias continuam usando espera progressiva. Não limpe o armazenamento do navegador para resolver esse erro: ele pode conter registros ainda não sincronizados.
+Falhas transitórias continuam usando espera progressiva. Não limpe o armazenamento do navegador para resolver esse erro: ele pode conter registros ainda não sincronizados.
 
-`tests/sync-conflicts.test.js` cobre conflitos, preservação da fila, espera progressiva e sincronização bem-sucedida. `supabase/tests/sync_conflicts.sql` valida os dois conflitos na função real sob o papel `authenticated`, com rollback; requer um intervalo real, Editor habilitado e recibo de sincronização de um operador habilitado. Nenhum dado desses testes é confirmado no banco.
+A pausa automática que essa correção introduziu resolveu a rajada, mas deixou o item preso na cabeça da fila indefinidamente — e, como ele bloqueava tudo o que vinha atrás, um aparelho seguia registrando o dia inteiro sem que nada chegasse ao servidor. A resolução por mesclagem, descrita em [Funcionamento offline e outbox](#funcionamento-offline-e-outbox), fecha esse buraco mantendo a pausa: uma tentativa por rodada, e nunca em cima da mesma revisão recusada.
+
+`tests/sync-conflicts.test.js` cobre a mesclagem do conflito (registro de cada lado sobrevive, divergência fica com o servidor, reenvio parte da revisão atual), o destravamento da fila, a espera progressiva e a sincronização bem-sucedida. `supabase/tests/sync_conflicts.sql` valida os dois conflitos na função real sob o papel `authenticated`, com rollback; requer um intervalo real, Editor habilitado e recibo de sincronização de um operador habilitado. Nenhum dado desses testes é confirmado no banco.
 
 Referências: [repetição automática de 40001 no PostgREST](https://github.com/PostgREST/postgrest/issues/3673) e [códigos HTTP personalizados](https://docs.postgrest.org/en/v14/references/errors.html#raise-errors-with-http-status-codes).
 

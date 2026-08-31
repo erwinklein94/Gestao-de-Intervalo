@@ -604,6 +604,87 @@
     if (saveRecoveryCopy) saveOutbox();
   }
 
+  // Campos onde vale a regra do merge. Status, travamento e encerramento ficam
+  // de fora: sao monotonicos e tem regra propria logo abaixo.
+  const MERGEABLE_PLAN_FIELDS = ["title", "serviceType", "contractorName", "foremanName", "coordinator",
+    "date", "location", "windowStart", "windowEnd", "notes", "executionNotes", "frontName", "coordinatorType"];
+  const MERGEABLE_STEP_FIELDS = ["name", "plannedStart", "plannedEnd", "actualStart", "actualEnd", "actualNotes", "skipReason"];
+  const PLAN_STATUS_ORDER = ["planning", "executing", "completed"];
+
+  // Vazio nunca vence preenchido: horario registrado de um lado e ausente do
+  // outro sobrevive nos dois. So quando os dois lados tem valores diferentes no
+  // mesmo campo e que um precisa ceder, e ai vale o do servidor -- ele ja esta
+  // visivel para todo mundo.
+  function mergeField(local, remote, label, divergences) {
+    const empty = (value) => value == null || value === "";
+    if (empty(remote)) return local;
+    if (empty(local)) return remote;
+    if (local !== remote) divergences.push(label);
+    return remote;
+  }
+
+  function mergeStep(localStep, remoteStep, divergences) {
+    const merged = { ...remoteStep };
+    const label = remoteStep.name || localStep.name || "Etapa";
+    MERGEABLE_STEP_FIELDS.forEach((field) => {
+      merged[field] = mergeField(localStep[field], remoteStep[field], `${label} · ${field}`, divergences);
+    });
+    // Marcar etapa como nao executada e um ato deliberado; nao se desfaz sozinho
+    // num merge. Fora isso, o estado vem dos horarios que sobreviveram.
+    merged.executionStatus = localStep.executionStatus === "skipped" || remoteStep.executionStatus === "skipped"
+      ? "skipped"
+      : merged.actualEnd ? "completed" : merged.actualStart ? "running" : "pending";
+    return merged;
+  }
+
+  function mergePlanWithRemote(localPlan, remotePlan) {
+    const divergences = [];
+    const merged = { ...remotePlan };
+    MERGEABLE_PLAN_FIELDS.forEach((field) => {
+      merged[field] = mergeField(localPlan[field], remotePlan[field], field, divergences);
+    });
+    merged.locked = Boolean(localPlan.locked || remotePlan.locked);
+    merged.completedAt = remotePlan.completedAt || localPlan.completedAt || null;
+    merged.status = PLAN_STATUS_ORDER.indexOf(localPlan.status) > PLAN_STATUS_ORDER.indexOf(remotePlan.status)
+      ? localPlan.status
+      : remotePlan.status;
+    const remoteSteps = Array.isArray(remotePlan.steps) ? remotePlan.steps : [];
+    const localSteps = Array.isArray(localPlan.steps) ? localPlan.steps : [];
+    merged.steps = remoteSteps.map((remoteStep) => {
+      const localStep = localSteps.find((step) => step.id === remoteStep.id);
+      return localStep ? mergeStep(localStep, remoteStep, divergences) : remoteStep;
+    });
+    // Etapa criada no aparelho que o servidor ainda nao conhece entra inteira.
+    localSteps.forEach((localStep) => {
+      if (!remoteSteps.some((step) => step.id === localStep.id)) merged.steps.push(localStep);
+    });
+    merged.deletedStepIds = [];
+    return { plan: merged, divergences };
+  }
+
+  // Conflito de revisao: o retrato que estava na fila e mais velho que o
+  // servidor E mais velho que a tela -- enquanto ele trava a fila, as edicoes
+  // seguintes nem chegam a ser enfileiradas. Reenviar esse retrato perderia o
+  // que foi digitado depois; descarta-lo, idem. Le a versao do servidor, junta
+  // com a do aparelho e reenfileira o resultado ja com a revisao atual.
+  async function resolveSyncConflict(item) {
+    const localPlan = store.plans.find((candidate) => candidate.id === item.planId);
+    if (!localPlan) return false;
+    let request = cloudClient.from("interval_plans").select("*,interval_steps(*)");
+    request = localPlan.databaseId ? request.eq("id", localPlan.databaseId) : request.eq("client_id", item.planId);
+    const { data, error } = await request.maybeSingle();
+    if (error || !data) return false;
+    const { plan: merged, divergences } = mergePlanWithRemote(localPlan, databaseToPlan(data));
+    Object.assign(localPlan, merged);
+    dirtyPlanIds.add(localPlan.id);
+    writeStoreLocally();
+    pageRefreshHandler?.();
+    showToast(divergences.length
+      ? `Conflito resolvido. ${pluralize(divergences.length, "campo divergente ficou", "campos divergentes ficaram")} com a versão do servidor.`
+      : "Conflito resolvido: as duas versões foram unidas sem perder registro.");
+    return true;
+  }
+
   async function syncStoreToCloud() {
     if (!cloudClient || !currentUser || cloudSyncing) return;
     if (!navigator.onLine) {
@@ -630,9 +711,17 @@
       }
 
       enqueueDirtyPlans(false);
-      while (outbox.length) {
-        const item = outbox[0];
-        if (item.state === "conflict") throw new Error("SYNC_CONFLICT_LOCAL");
+      // Percorre a fila por posicao, e nao sempre pela cabeca: um item em
+      // conflito espera resolucao sem segurar o que vem depois. Antes, um unico
+      // conflito parava o envio de todos os outros intervalos, indefinidamente.
+      let cursor = 0;
+      const rebased = new Set();
+      while (cursor < outbox.length) {
+        const item = outbox[cursor];
+        // Conflito que sobrou de outra sessao ganha uma tentativa nova a cada
+        // rodada -- e assim que o merge alcanca uma fila que ja estava travada.
+        // Dentro da mesma rodada, o que ja conflitou espera a proxima.
+        if (item.state === "conflict" && rebased.has(item.planId)) { cursor += 1; continue; }
         item.state = "syncing";
         item.attempts = Number(item.attempts || 0) + 1;
         if (item.type === "comment_create") {
@@ -642,12 +731,12 @@
           if (!item.payload.plan_id) { item.state = "pending"; saveOutbox(); throw new Error("PLAN_AWAITING_SYNC"); }
           const { error } = await cloudClient.from("interval_comments").insert(item.payload);
           if (error && error.code !== "23505") { item.state = "pending"; saveOutbox(); throw error; }
-          outbox.shift(); saveOutbox(); continue;
+          outbox.splice(cursor, 1); saveOutbox(); continue;
         }
         if (item.type === "comment_delete") {
           const { error } = await cloudClient.from("interval_comments").update({ deleted_at: item.deletedAt }).eq("id", item.commentId);
           if (error) { item.state = "pending"; saveOutbox(); throw error; }
-          outbox.shift(); saveOutbox(); continue;
+          outbox.splice(cursor, 1); saveOutbox(); continue;
         }
         const { data, error } = await cloudClient.rpc("sync_interval_plan", {
           p_plan: item.planPayload,
@@ -658,12 +747,24 @@
         });
         if (error) {
           if (/SYNC_CONFLICT|SYNC_OPERATION_PAYLOAD_MISMATCH|PT409|40001/.test(`${error.message} ${error.code}`)) {
+            // Uma tentativa de merge por plano em cada rodada. Conflitando de
+            // novo, o item fica para a proxima -- e o que impede a rajada de
+            // retentativas que ja derrubou a API uma vez.
+            const podeMesclar = !rebased.has(item.planId);
+            rebased.add(item.planId);
+            if (podeMesclar && await resolveSyncConflict(item)) {
+              outbox.splice(cursor, 1);
+              saveOutbox();
+              enqueueDirtyPlans(false);
+              continue;
+            }
             item.state = "conflict";
             saveOutbox();
-            throw new Error("SYNC_CONFLICT_LOCAL");
+            cursor += 1;
+            continue;
           }
           if (/Intervalos concluidos fazem parte do historico/i.test(error.message || "")) {
-            outbox.shift();
+            outbox.splice(cursor, 1);
             dirtyPlanIds.delete(item.planId);
             saveOutbox();
             store.pendingSync = dirtyPlanIds.size > 0 || outbox.length > 0;
@@ -686,23 +787,26 @@
           const latestSteps = stepsToDatabase(plan);
           if (snapshotSignature(latestPayload, latestSteps) !== item.signature) dirtyPlanIds.add(plan.id);
         }
-        outbox.shift();
+        outbox.splice(cursor, 1);
         saveOutbox();
         enqueueDirtyPlans(false);
       }
+      const emConflito = outbox.some((entry) => entry.state === "conflict");
       store.pendingSync = dirtyPlanIds.size > 0 || outbox.length > 0 || store.deletedPlanIds.length > 0;
       writeStoreLocally();
-      setSyncState(store.pendingSync ? "Pendente de sincronização" : "Sincronizado", store.pendingSync ? "pending" : "saved");
+      setSyncState(emConflito ? "Erro de sincronização" : store.pendingSync ? "Pendente de sincronização" : "Sincronizado",
+        emConflito ? "error" : store.pendingSync ? "pending" : "saved");
       syncSucceeded = true;
     } catch (error) {
       console.error("Falha ao salvar no Supabase.", error);
       store.pendingSync = true;
       saveOutbox();
       writeStoreLocally();
-      const conflict = error.message === "SYNC_CONFLICT_LOCAL";
-      setSyncState(conflict ? "Erro de sincronização" : navigator.onLine ? "Pendente de sincronização" : "Sem conexão", conflict ? "error" : navigator.onLine ? "pending" : "offline");
-      showToast(conflict ? "Conflito detectado. A cópia local foi preservada para revisão." : "Sem confirmação do servidor. Os dados continuam salvos neste dispositivo.");
-      if (!conflict && navigator.onLine) {
+      // Conflito nao chega mais aqui: ele e resolvido por merge dentro do laco,
+      // e o que sobra aqui e falha de rede ou do servidor, que espera o backoff.
+      setSyncState(navigator.onLine ? "Pendente de sincronização" : "Sem conexão", navigator.onLine ? "pending" : "offline");
+      showToast("Sem confirmação do servidor. Os dados continuam salvos neste dispositivo.");
+      if (navigator.onLine) {
         const attempts = Math.max(1, Number(outbox[0]?.attempts || 1));
         syncRetryTimer = setTimeout(() => scheduleCloudSync(true), Math.min(30000, 1000 * 2 ** Math.min(attempts, 5)));
       }
