@@ -3258,24 +3258,41 @@
     return request.order("updated_at", { ascending: false });
   }
 
+  // O que ainda nao subiu so existe neste aparelho. A copia do servidor entra
+  // no lugar de tudo, menos dos planos com alteracao local pendente -- e por
+  // isso a leitura deixa de depender do envio ter dado certo.
+  function planHasPendingWork(planId) {
+    return dirtyPlanIds.has(planId) || outbox.some((item) => item.planId === planId && item.state !== "done");
+  }
+
+  function hasPendingWork() {
+    return dirtyPlanIds.size > 0 || outbox.length > 0 || (store.deletedPlanIds?.length || 0) > 0;
+  }
+
+  function mergeCloudPlans(incoming) {
+    const pendentes = store.plans.filter((plan) => planHasPendingWork(plan.id));
+    if (!pendentes.length) return incoming;
+    const merged = incoming.map((plan) => pendentes.find((local) => local.id === plan.id) || plan);
+    pendentes.forEach((plan) => { if (!merged.some((item) => item.id === plan.id)) merged.push(plan); });
+    return merged;
+  }
+
   async function loadCloudStore() {
     const { data, error } = await operationalPlansQuery();
     if (error) throw error;
-    if (!data.length) {
-      const first = store.plans[0] || blankPlan();
-      store = { version: 4, activePlanId: first.id, plans: [first], deletedPlanIds: [], pendingSync: false };
-      writeStoreLocally();
-      return;
-    }
-    const plans = data.map(databaseToPlan);
+    const plans = mergeCloudPlans(data.map(databaseToPlan));
+    if (!plans.length) plans.push(store.plans[0] || blankPlan());
     const activeId = plans.some((plan) => plan.id === store.activePlanId) ? store.activePlanId : plans[0].id;
-    store = { version: 4, activePlanId: activeId, plans, deletedPlanIds: [] };
-    store.pendingSync = false;
+    const deletedPlanIds = store.deletedPlanIds || [];
+    const pendingSync = hasPendingWork();
+    store = { version: 4, activePlanId: activeId, plans, deletedPlanIds, pendingSync };
     writeStoreLocally();
   }
 
   async function refreshCloudStore() {
-    if (!cloudClient || !currentUser || cloudRefreshRunning || cloudSyncing || store.pendingSync || document.hidden) return;
+    // Uma pendencia local nao suspende mais a atualizacao: o merge preserva os
+    // planos que ainda esperam confirmacao e o resto continua chegando.
+    if (!cloudClient || !currentUser || cloudRefreshRunning || cloudSyncing || document.hidden) return;
     // Trocar a store redesenha a pagina inteira. Com alguem preenchendo um
     // horario, isso apagaria o que ja foi digitado -- e como o updated_at local
     // nunca coincide com o do servidor depois de salvar, essa troca cai logo
@@ -3286,15 +3303,17 @@
       const { data, error } = await operationalPlansQuery();
       if (error) throw error;
       if (!data.length) return;
-      const plans = data.map(databaseToPlan);
+      const plans = mergeCloudPlans(data.map(databaseToPlan));
       const activeId = plans.some((item) => item.id === store.activePlanId) ? store.activePlanId : plans[0].id;
       const incomingSignature = JSON.stringify(plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes])]));
       const currentSignature = JSON.stringify(store.plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes])]));
       if (incomingSignature === currentSignature) return;
-      store = { version: 4, activePlanId: activeId, plans, deletedPlanIds: [], pendingSync: false };
+      const deletedPlanIds = store.deletedPlanIds || [];
+      const pendingSync = hasPendingWork();
+      store = { version: 4, activePlanId: activeId, plans, deletedPlanIds, pendingSync };
       writeStoreLocally();
       pageRefreshHandler?.();
-      setSyncState("Sincronizado", "saved");
+      setSyncState(pendingSync ? "Pendente de sincronização" : "Sincronizado", pendingSync ? "pending" : "saved");
     } catch (error) {
       console.warn("Não foi possível atualizar os dados da nuvem.", error);
     } finally {
@@ -3397,13 +3416,29 @@
       store.plans.filter((plan) => !plan.ownerId || plan.ownerId === currentUser.id).forEach((plan) => dirtyPlanIds.add(plan.id));
     }
     setSyncState("Sincronizando", "syncing");
+    let leituraFalhou = false;
     try {
       if (store.pendingSync || outbox.length || dirtyPlanIds.size) {
         cloudSyncPending = true;
         await syncStoreToCloud();
       }
-      if (!store.pendingSync) await loadCloudStore();
-      setSyncState(store.pendingSync ? "Pendente de sincronização" : "Sincronizado", store.pendingSync ? "pending" : "saved");
+      // A leitura nao depende mais do envio ter dado certo. Um item preso na
+      // fila -- um conflito, por exemplo -- deixava o aparelho parado na copia
+      // local para sempre, sem nunca mais mostrar o que o servidor ja tem.
+      // Sem rede nao ha o que buscar, e o aviso honesto continua sendo o de
+      // conexao, nao o de erro.
+      if (navigator.onLine) {
+        try {
+          await loadCloudStore();
+        } catch (error) {
+          console.error("Falha ao carregar dados do Supabase.", error);
+          leituraFalhou = true;
+        }
+      }
+      const pendente = store.pendingSync;
+      if (!navigator.onLine) setSyncState("Sem conexão", "offline");
+      else setSyncState(leituraFalhou ? "Erro de sincronização" : pendente ? "Pendente de sincronização" : "Sincronizado",
+        leituraFalhou ? "error" : pendente ? "pending" : "saved");
     } catch (error) {
       console.error("Falha ao carregar dados do Supabase.", error);
       setSyncState("Erro de sincronização", "error");

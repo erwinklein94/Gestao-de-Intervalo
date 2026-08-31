@@ -212,6 +212,8 @@ O ciclo de sincronização é:
 
 Falhas transitórias usam novas tentativas com espera progressiva. Ao recuperar a conexão, voltar à aba ou reabrir a página, itens pendentes são retomados. Em conflito de revisão, a cópia local permanece preservada para revisão em vez de substituir silenciosamente a versão do servidor.
 
+**Ler não depende de enviar.** A leitura da nuvem acontece na abertura e na atualização periódica mesmo com a fila pendente, e o que chega do servidor é mesclado: o plano com alteração local ainda não confirmada mantém a cópia do aparelho, e todo o resto vem do Supabase. Antes, um único item preso na fila — um conflito, por exemplo — deixava o aparelho parado na cópia local para sempre, e o mesmo login abria com todos os intervalos em outro navegador e com nenhum naquele aparelho. O selo continua indicando a pendência real; ele só deixou de esconder os dados.
+
 A interface informa estados como **Salvo**, **Sem conexão**, **Sincronizando**, **Pendente de sincronização**, **Sincronizado** e **Erro de sincronização**.
 
 ## Migrações Supabase
