@@ -57,9 +57,13 @@ O site possui temas claro e escuro. O tema claro é o padrão inicial, e a prefe
 
 ## Como o atraso é calculado
 
-O indicador principal da execução, do dashboard e do acompanhamento compartilhado usa o **marco mais avançado da sequência operacional**. A sequência define a ordem lógica de início, mas não impede que etapas sejam concomitantes ou sobrepostas.
+O indicador principal da execução, do dashboard e do acompanhamento compartilhado é o **saldo do intervalo**: **término previsto menos prazo final** (`window_end` + concessão do CCO). Negativo é adiantado, positivo é atrasado. É a mesma conta durante e depois da execução, para o número não pular no encerramento — só a origem do término muda: durante, é a projeção; encerrado, é o último término real.
 
-Regra por etapa:
+O término previsto parte do estágio atual do marco mais avançado e soma o que falta do planejamento (ver [Projeção de término](#projeção-de-término)). A sequência continua definindo qual é esse marco, e não impede que etapas sejam concomitantes ou sobrepostas. Por isso o saldo **anda com o relógio**: enquanto houver etapa aberta além da própria duração, cada minuto que passa é um minuto no fim.
+
+> Até 31/08/2026 o saldo era o desvio de **início** do marco mais avançado. Ele congelava no instante em que a etapa começava, e nunca mais se mexia sozinho. Um intervalo com uma etapa aberta havia três horas contra uma hora planejada era exibido como *adiantado 114 min* enquanto a projeção do próprio site, no mesmo cartão, já apontava término depois do prazo. O que mudou é que o relógio entrou na conta.
+
+Regra por etapa — vale para o selo de cada etapa, não para o saldo do intervalo:
 
 | Situação da etapa | Comparação | Resultado |
 |---|---|---|
@@ -67,9 +71,9 @@ Regra por etapa:
 | Em andamento | início real vs. início programado | negativo = iniciou adiantada, positivo = iniciou atrasada |
 | Não iniciada | não entra no indicador geral | aparece como aviso quando o início programado vence |
 
-Enquanto uma etapa está em andamento, somente o início é um marco realizado. O sistema não inventa um término nem transforma automaticamente a etapa em atraso porque o relógio avançou. O consumo da duração e a projeção de término continuam visíveis separadamente.
+Enquanto uma etapa está em andamento, somente o início é um marco realizado: o **selo da etapa** não inventa um término nem vira atraso sozinho porque o relógio avançou. O consumo da duração continua visível ao lado. O **saldo do intervalo**, esse sim, acompanha o relógio — a etapa aberta não pode terminar antes de agora, e isso empurra a projeção.
 
-Etapa que ainda não começou e já passou do horário planejado de **início** não entra no saldo (a régua é o prazo final), mas aparece como aviso próprio no painel e no cartão da etapa.
+Etapa que ainda não começou e já passou do horário planejado de **início** não ganha selo de desvio próprio (não há marco realizado para comparar), mas aparece como aviso no painel e no cartão — e entra no saldo pela projeção, já que também não pode mais começar antes de agora.
 
 ### Totalização sem contar o mesmo minuto duas vezes
 
@@ -80,11 +84,11 @@ Os totais não são uma soma aritmética dos desvios: cada etapa ocupa uma **jan
 
 Etapas **sequenciais** têm janelas disjuntas e portanto se somam normalmente. Etapas **simultâneas** se sobrepõem, e o trecho comum é contado uma vez só. Duas frentes 30 min além do próprio prazo dão **30 min** de atraso no total, não 60 — porque só 30 minutos de relógio se passaram. Quando há sobreposição, o painel avisa: *“já descontados os períodos simultâneos”*.
 
-Esses totais permanecem como informação analítica. O status geral — **adiantado, dentro do prazo ou atrasado** — vem do marco mais avançado da sequência para evitar falsos atrasos em cronogramas concomitantes.
+Esses totais permanecem como informação analítica. O status geral — **adiantado, dentro do prazo ou atrasado** — vem do saldo do intervalo, não da soma dos desvios: cronogramas concomitantes não viram atraso somado porque a projeção mantém em paralelo o que foi planejado em paralelo.
 
 ## Projeção de término
 
-Ao lado do saldo, o site mostra **quando o intervalo deve terminar** pelo ritmo atual. Essa é a leitura de relógio, e ela não soma etapas simultâneas: o término vem do caminho mais longo. A projeção é montada etapa a etapa:
+O site mostra **quando o intervalo deve terminar** pelo ritmo atual — e é dessa projeção que sai o saldo. Essa é a leitura de relógio, e ela não soma etapas simultâneas: o término vem do caminho mais longo. A projeção é montada etapa a etapa:
 
 - Etapa concluída: usa o horário real de término.
 - Etapa em andamento: assume, no mínimo, a duração planejada contada a partir do início real, e nunca termina antes de agora.

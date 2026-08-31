@@ -1055,18 +1055,25 @@
     return step.index;
   }
 
-  // Situação geral pelo marco mais avançado da sequência operacional. A ordem
-  // não impede sobreposição nem exige que uma etapa termine para outra começar;
-  // ela apenas define qual marco representa o avanço atual do cronograma.
-  function operationalDeviation(timeline, nowAbs) {
+  // Saldo do intervalo: onde a execucao vai terminar, contra o prazo final.
+  // Uma conta so, durante e depois, para o numero nao pular no encerramento --
+  // e sempre medida contra o prazo concedido, nao contra a janela programada:
+  // foi para isso que a concessao do CCO entrou.
+  //
+  // Durante a execucao, a projecao parte do estagio atual do marco mais
+  // avancado e soma o que falta do planejamento. O desvio de INICIO do marco,
+  // que era o saldo ate aqui, congelava o indicador no instante em que a etapa
+  // comecou: uma etapa aberta ha tres horas contra uma hora planejada seguia
+  // sendo exibida como adiantada, porque o relogio nao entrava na conta.
+  // Agora entra, e o saldo anda minuto a minuto enquanto houver etapa aberta.
+  function operationalDeviation(timeline, nowAbs, projectedEnd = null) {
+    const plannedEnd = timeline.deadline ?? plannedWorkEnd(timeline);
+    const saldo = (value) => (value == null || plannedEnd == null ? null : value - plannedEnd);
     const completed = timeline.steps.filter(isStepComplete);
     if (timeline.steps.length && timeline.steps.every(isStepResolved)) {
       const finalEnds = completed.map((step) => step.actualEndMinutes).filter(Number.isFinite);
       const finalActualEnd = finalEnds.length ? Math.max(...finalEnds) : null;
-      // O saldo final e medido contra o prazo concedido, nao contra a janela
-      // programada: foi para isso que a concessao do CCO entrou.
-      const plannedEnd = timeline.deadline ?? plannedWorkEnd(timeline);
-      return { value: finalActualEnd == null || plannedEnd == null ? null : finalActualEnd - plannedEnd, type: "interval-complete", step: null };
+      return { value: saldo(finalActualEnd), type: "interval-complete", step: null };
     }
 
     const reached = timeline.steps
@@ -1075,15 +1082,17 @@
     const frontier = reached.at(-1) || null;
     if (frontier) {
       return {
-        value: stepScheduleDeviation(frontier, nowAbs),
+        value: saldo(projectedEnd),
         type: isStepComplete(frontier) ? "completed-milestone" : "active-start",
         step: frontier
       };
     }
 
+    // Nada comecou e o primeiro inicio ja venceu: a projecao ja empurra o plano
+    // inteiro para frente, entao o saldo sai da mesma conta.
     const firstPending = timeline.steps.find((step) => !isStepResolved(step));
     if (firstPending && nowAbs != null && firstPending.start != null && nowAbs > firstPending.start) {
-      return { value: nowAbs - firstPending.start, type: "waiting-overdue", step: firstPending };
+      return { value: saldo(projectedEnd), type: "waiting-overdue", step: firstPending };
     }
     return { value: null, type: "not-started", step: firstPending || null };
   }
@@ -1174,11 +1183,12 @@
       .sort((a, b) => b.deviation - a.deviation);
 
     const critical = lateNow[0] || openMeasured[0] || null;
-    const operational = operationalDeviation(timeline, nowAbs);
+    const operational = operationalDeviation(timeline, nowAbs, projection.projectedEnd);
     const delay = nowAbs == null ? null : operational.value;
 
-    // Projeção de relógio, usada nas previsões de término (não no saldo).
+    // Projeção de relógio: agora ela é também a origem do saldo.
     const baseline = plannedWorkEnd(timeline);
+    const deadline = timeline.deadline ?? baseline;
     const projectedEnd = projection.projectedEnd;
 
     const started = completed.length > 0 || active.length > 0 || skipped.length > 0;
@@ -1186,7 +1196,7 @@
       projection, nowAbs, live: nowAbs != null, timeline,
       steps, active, pending, completed, skipped, resolved,
       measured, lateNow, lateFinished, critical,
-      operational, baseline, projectedEnd, delay,
+      operational, baseline, deadline, projectedEnd, delay,
       started, finished: projection.finished
     };
   }
@@ -2474,7 +2484,7 @@
       $("#status-readable").hidden = !showNumber;
       $("#status-readable").textContent = !showNumber
         ? ""
-        : `${Math.abs(delayRounded)} min${Math.abs(delayRounded) >= 60 ? ` · ${formatHoursMinutes(delayRounded)}` : ""} · marco mais avançado da sequência`;
+        : `${Math.abs(delayRounded)} min${Math.abs(delayRounded) >= 60 ? ` · ${formatHoursMinutes(delayRounded)}` : ""} · término previsto ${forecastText} contra o prazo ${status.deadline == null ? "—" : absoluteToTime(status.deadline)}`;
 
       if (!live) {
         $("#status-label").textContent = "Acompanhamento ao vivo indisponível";
@@ -3005,7 +3015,7 @@
         ? "Acompanhamento ao vivo indisponível para esta data"
         : scheduleDeviation == null
           ? "Aguardando o primeiro prazo ou marco a comparar"
-          : `Marco mais avançado da sequência · previsão de término ${absoluteToTime(Math.floor(status.projectedEnd))}${
+          : `Término previsto ${absoluteToTime(Math.floor(status.projectedEnd))} contra o prazo ${status.deadline == null ? "—" : absoluteToTime(status.deadline)}${
               status.lateNow.length ? ` · ${pluralize(status.lateNow.length, "etapa em atraso agora", "etapas em atraso agora")}` : ""
             }${concurrentExecution ? " · períodos simultâneos contados uma vez só" : ""}`;
       $("#dashboard-variance-card").className = `dashboard-kpi featured ${scheduleDeviation == null ? "variance-neutral" : scheduleDeviation > 0 ? "variance-positive" : scheduleDeviation < 0 ? "variance-negative" : "variance-zero"}`;
@@ -3774,7 +3784,7 @@
           : hasLate ? "Dentro do prazo, com desvios individuais" : "Execução dentro do prazo";
       $("#shared-status-readable").hidden = !showDeviation;
       $("#shared-status-readable").textContent = showDeviation
-        ? `${Math.abs(deviation)} min${Math.abs(deviation) >= 60 ? ` · ${formatHoursMinutes(deviation)}` : ""} · marco mais avançado da sequência`
+        ? `${Math.abs(deviation)} min${Math.abs(deviation) >= 60 ? ` · ${formatHoursMinutes(deviation)}` : ""} · término previsto ${absoluteToClock(forecast)} contra o prazo ${execution.deadline == null ? "—" : absoluteToTime(execution.deadline)}`
         : "";
       renderSharedClock();
       $("#shared-forecast").textContent = absoluteToClock(forecast);
@@ -3829,7 +3839,7 @@
       $("#shared-dashboard-variance-label").textContent = "Situação do cronograma em execução";
       $("#shared-dashboard-variance-note").textContent = deviation == null
         ? "Aguardando o primeiro marco a comparar"
-        : `Marco mais avançado da sequência · previsão ${forecastText}`;
+        : `Término previsto ${forecastText} contra o prazo ${execution.deadline == null ? "—" : absoluteToTime(execution.deadline)}`;
       $("#shared-dashboard-variance-card").className = `dashboard-kpi featured ${deviation == null ? "variance-neutral" : deviation > 0 ? "variance-positive" : deviation < 0 ? "variance-negative" : "variance-zero"}`;
 
       const activeTimelineEnd = (step) => step.actualEndMinutes ?? (step.actualStartMinutes != null ? nowAbs ?? step.actualStartMinutes : null);
