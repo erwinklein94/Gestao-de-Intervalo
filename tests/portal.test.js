@@ -136,7 +136,7 @@ assert.equal(stampLabel(null, "2026-08-21"), "—");
   assert.equal(intervalMetrics(plan).variance, 15);
 }
 
-// Em execução, o marco operacional mais avançado prevalece sobre uma etapa anterior.
+// Em execução, o saldo é o término previsto contra o prazo do intervalo.
 {
   const plan = makePlan({
     status: "executing",
@@ -146,20 +146,23 @@ assert.equal(stampLabel(null, "2026-08-21"), "—");
       makeStep({ position: 1, planned_start: "2026-08-21T08:30:00", planned_end: "2026-08-21T09:00:00", status: "running", actual_start: "2026-08-21T08:25:00" })
     ]
   });
-  // Antes do prazo da etapa aberta: quem manda é o marco mais avançado.
+  // 08:45. A etapa aberta desde 08:25 ainda cabe na duração planejada (30 min),
+  // logo termina 08:55 — 65 min antes do prazo 10:00 da janela.
   const metrics = intervalMetrics(plan, new Date(2026, 7, 21, 8, 45));
   assert.equal(metrics.progress, 50);
-  assert.equal(metrics.variance, -5);
+  assert.equal(metrics.variance, -65);
   assert.equal(metrics.deadline, "ahead");
 }
 
-// Etapa aberta continua usando o inicio como marco, mesmo depois do fim
-// planejado. Sem termino real, transformar o relogio atual em atraso diverge
-// da pagina de acompanhamento e cria falso atraso em frentes concomitantes.
+// Etapa aberta muito além da própria duração é atraso, medido pelo relógio.
+// Usar o desvio de início como saldo congelava o card em "+10" e divergia da
+// página de execução, que já apontava o término depois do prazo.
 {
   const plan = makePlan({
     status: "executing",
     interval_date: "2026-08-20",
+    window_start: "2026-08-20T22:00:00",
+    window_end: "2026-08-21T02:00:00",
     interval_steps: [
       makeStep({
         planned_start: "2026-08-20T22:00:00",
@@ -169,12 +172,13 @@ assert.equal(stampLabel(null, "2026-08-21"), "—");
       })
     ]
   });
+  // 03:30 e a etapa ainda aberta: só pode terminar agora, 90 min além de 02:00.
   const metrics = intervalMetrics(plan, new Date(2026, 7, 21, 3, 30));
-  assert.equal(metrics.variance, 10);
+  assert.equal(metrics.variance, 90);
   assert.equal(metrics.deadline, "late");
 }
 
-// Uma etapa aberta no horario planejado permanece no prazo ate registrar fim.
+// Etapa aberta que passou do fim planejado deixa de aparecer como "no prazo".
 {
   const now = new Date(2026, 7, 21, 10, 30);
   const plan = makePlan({
@@ -183,8 +187,8 @@ assert.equal(stampLabel(null, "2026-08-21"), "—");
     interval_steps: [makeStep({ status: "running", actual_start: "2026-08-21T08:00:00", planned_end: "2026-08-21T09:00:00" })]
   });
   const metrics = intervalMetrics(plan, now);
-  assert.equal(metrics.variance, 0);
-  assert.equal(metrics.deadline, "ontime");
+  assert.equal(metrics.variance, 30, "aberta desde 08:00 às 10:30: 30 min além do prazo 10:00");
+  assert.equal(metrics.deadline, "late");
 }
 
 const plans = [

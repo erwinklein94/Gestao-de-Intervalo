@@ -93,6 +93,42 @@
     return step.status === "skipped" || String(step.actual_notes || "").startsWith("[[ETAPA_NAO_EXECUTADA]]");
   }
 
+  // Projecao de termino, a mesma de app.js: etapa concluida usa o realizado;
+  // aberta assume no minimo a duracao planejada a partir do inicio real e nunca
+  // termina antes de agora; pendente nao pode comecar antes de agora nem antes
+  // do fim projetado do que o plano colocou a sua frente. Etapas planejadas em
+  // paralelo continuam em paralelo, entao frente concomitante nao vira cascata.
+  function projectedFinish(steps, current) {
+    let chainEnd = null;
+    let chainPlannedEnd = null;
+    let projected = null;
+    steps.filter((step) => !isSkipped(step)).forEach((step) => {
+      const start = stampMinutes(step.planned_start);
+      const end = stampMinutes(step.planned_end);
+      const actualStart = stampMinutes(step.actual_start);
+      const actualEnd = stampMinutes(step.actual_end);
+      const duration = start != null && end != null ? end - start : 0;
+      let stepEnd = null;
+      if (actualStart != null && actualEnd != null) stepEnd = actualEnd;
+      else if (actualStart != null) stepEnd = Math.max(actualStart + duration, current);
+      else if (start != null) {
+        let projectedStart = Math.max(start, current);
+        if (chainEnd != null && chainPlannedEnd != null && start >= chainPlannedEnd) projectedStart = Math.max(projectedStart, chainEnd);
+        stepEnd = projectedStart + duration;
+      }
+      if (Number.isFinite(stepEnd)) {
+        chainEnd = chainEnd == null ? stepEnd : Math.max(chainEnd, stepEnd);
+        projected = projected == null ? stepEnd : Math.max(projected, stepEnd);
+      }
+      if (Number.isFinite(end)) chainPlannedEnd = chainPlannedEnd == null ? end : Math.max(chainPlannedEnd, end);
+    });
+    // Com tudo encerrado nao ha o que projetar: o relogio nao pode empurrar um
+    // termino que ja aconteceu, senao a frente pronta viraria atraso crescente
+    // enquanto o intervalo espera as outras.
+    const finished = steps.length > 0 && steps.every(isResolved);
+    return projected == null || finished ? projected : Math.max(projected, current);
+  }
+
   function intervalMetrics(plan, now = new Date()) {
     const steps = [...(plan.interval_steps || [])].sort((a, b) => a.position - b.position);
     // O prazo do intervalo e o fim da janela mais o que o CCO concedeu. Sem
@@ -108,27 +144,18 @@
       const actualEnds = steps.map((step) => stampMinutes(step.actual_end)).filter(Number.isFinite);
       if (actualEnds.length && windowEnd != null) variance = Math.max(...actualEnds) - windowEnd;
     } else if (plan.status === "executing") {
-      // Mesma regra da pagina de acompanhamento: o saldo vem do marco mais
-      // avancado da sequencia. Enquanto a etapa esta aberta, so existe inicio
-      // real para comparar; o termino nao pode virar atraso antes de ser
-      // registrado. Isso tambem permite frentes concomitantes sem falso atraso.
-      const reached = steps
-        .filter((step) => !isSkipped(step) && stampMinutes(step.actual_start) != null)
-        .sort((a, b) => a.position - b.position);
-      const frontier = reached.at(-1) || null;
-      if (frontier) {
-        const actualEnd = stampMinutes(frontier.actual_end);
-        const plannedEnd = stampMinutes(frontier.planned_end);
-        const actualStart = stampMinutes(frontier.actual_start);
-        const plannedStart = stampMinutes(frontier.planned_start);
-        variance = actualEnd != null && plannedEnd != null
-          ? actualEnd - plannedEnd
-          : actualStart != null && plannedStart != null ? actualStart - plannedStart : null;
-      } else {
-        const firstPending = steps.find((step) => !isSkipped(step) && !isResolved(step));
-        const plannedStart = stampMinutes(firstPending?.planned_start);
-        const current = now.getTime() / 60000;
-        if (plannedStart != null && current > plannedStart) variance = current - plannedStart;
+      // Mesma regra da pagina de acompanhamento: o saldo e o termino previsto
+      // contra o prazo. Medir o desvio de INICIO do marco mais avancado
+      // congelava o card no instante em que a etapa comecava, e uma frente
+      // aberta muito alem da propria duracao seguia exibida como adiantada
+      // enquanto a execucao ja apontava atraso.
+      const current = now.getTime() / 60000;
+      const started = steps.some((step) => !isSkipped(step) && stampMinutes(step.actual_start) != null);
+      const firstPending = steps.find((step) => !isSkipped(step) && !isResolved(step));
+      const firstPendingStart = stampMinutes(firstPending?.planned_start);
+      if (started || (firstPendingStart != null && current > firstPendingStart)) {
+        const projected = projectedFinish(steps, current);
+        if (projected != null && windowEnd != null) variance = projected - windowEnd;
       }
     }
 
@@ -420,9 +447,12 @@
     return '<span class="deadline ontime">No prazo</span>';
   }
 
-  function cardMarkup(group) {
+  // O saldo do card depende do relogio desde que passou a ser termino previsto
+  // contra prazo, entao a hora precisa poder ser injetada -- e por isso as
+  // chamadas em .map() sao explicitas: o indice viraria a hora.
+  function cardMarkup(group, now = new Date()) {
     const plan = group.lead;
-    const metrics = groupMetrics(group);
+    const metrics = groupMetrics(group, now);
     const date = plan.interval_date ? new Date(`${plan.interval_date}T12:00:00`).toLocaleDateString("pt-BR") : "Sem data";
     const services = [...new Set(group.fronts.map((front) => front.service_type).filter(Boolean))];
     const fronts = group.fronts.length > 1 ? `<i class="tag-fronts">${group.fronts.length} frentes</i>` : "";
@@ -652,10 +682,10 @@
     const infra = byType("infrastructure");
     const superstructure = byType("superstructure");
     const modernization = byType("modernization");
-    $("#infra-cards").innerHTML = infra.length ? infra.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Infraestrutura em execução.");
-    $("#super-cards").innerHTML = superstructure.length ? superstructure.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Superestrutura em execução.");
-    $("#modernization-cards").innerHTML = modernization.length ? modernization.map(cardMarkup).join("") : emptyMarkup("Nenhuma frente de Modernização em execução.");
-    $("#history-cards").innerHTML = history.length ? history.map(cardMarkup).join("") : emptyMarkup("Nenhum intervalo concluído corresponde aos filtros.");
+    $("#infra-cards").innerHTML = infra.length ? infra.map((grupo) => cardMarkup(grupo)).join("") : emptyMarkup("Nenhuma frente de Infraestrutura em execução.");
+    $("#super-cards").innerHTML = superstructure.length ? superstructure.map((grupo) => cardMarkup(grupo)).join("") : emptyMarkup("Nenhuma frente de Superestrutura em execução.");
+    $("#modernization-cards").innerHTML = modernization.length ? modernization.map((grupo) => cardMarkup(grupo)).join("") : emptyMarkup("Nenhuma frente de Modernização em execução.");
+    $("#history-cards").innerHTML = history.length ? history.map((grupo) => cardMarkup(grupo)).join("") : emptyMarkup("Nenhum intervalo concluído corresponde aos filtros.");
     setCount("running", running.length);
     setCount("history", history.length);
     renderDelayBadge(running.filter((group) => group.metrics.variance > 0).length);
@@ -865,13 +895,13 @@
       .sort((a, b) => String(b.lead.interval_date).localeCompare(String(a.lead.interval_date)));
 
     $("#planning-cards").innerHTML = planejamento.length
-      ? planejamento.map(cardMarkup).join("")
+      ? planejamento.map((grupo) => cardMarkup(grupo)).join("")
       : emptyMarkup("Nenhum intervalo em planejamento corresponde aos filtros.");
     $("#executing-cards").innerHTML = execucao.length
-      ? execucao.map(cardMarkup).join("")
+      ? execucao.map((grupo) => cardMarkup(grupo)).join("")
       : emptyMarkup("Nenhum intervalo em execução corresponde aos filtros.");
     $("#completed-cards").innerHTML = concluidos.length
-      ? concluidos.map(cardMarkup).join("")
+      ? concluidos.map((grupo) => cardMarkup(grupo)).join("")
       : emptyMarkup("Nenhum intervalo concluído corresponde aos filtros.");
 
     setCount("planning", planejamento.length, "intervalo");

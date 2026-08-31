@@ -249,7 +249,9 @@ test("portal agrupa frentes em um intervalo e herda a pior leitura", () => {
   assert.equal(metrics.resolved, 1);
   assert.equal(metrics.progress, 50);
   assert.equal(metrics.status, "executing");
-  assert.equal(metrics.variance, 30, "o intervalo herda o pior desvio entre as frentes");
+  // p1 fechou às 03:00, 60 min antes do prazo 04:00; p2 segue aberta e às 05:00
+  // só pode terminar agora, 60 min depois dele. O bloqueio herda a pior.
+  assert.equal(metrics.variance, 60, "o intervalo herda o pior desvio entre as frentes");
   assert.equal(metrics.deadline, "late");
 });
 
@@ -268,10 +270,14 @@ test("card agrupado usa o mesmo marco da pagina de acompanhamento", () => {
     { ...base, id: "141200", front_position: 1, interval_steps: [step(0, "2026-08-25T10:00:00", "2026-08-25T10:40:00", "2026-08-25T08:58:00")] },
     { ...base, id: "141800", front_position: 2, interval_steps: [step(0, "2026-08-25T10:30:00", "2026-08-25T10:50:00", "2026-08-25T08:55:00")] }
   ])[0];
+  // As duas frentes abertas só podem terminar agora (11:15), bem antes do prazo
+  // 18:00 da janela: o card acompanha a execução e continua adiantado.
   const metrics = api.groupMetrics(group, new Date("2026-08-25T11:15:00"));
-  assert.equal(metrics.variance, -62, "o grupo herda a frente menos adiantada, sem atraso correndo pelo fim aberto");
+  assert.equal(metrics.variance, -405, "o grupo herda a frente menos adiantada, medida contra o prazo do intervalo");
   assert.equal(metrics.deadline, "ahead");
-  assert.match(api.cardMarkup(group), /Adiantado/);
+  // O saldo anda com o relógio: o card precisa ser desenhado na mesma hora da
+  // métrica, senão o teste passaria a depender de quando ele roda.
+  assert.match(api.cardMarkup(group, new Date("2026-08-25T11:15:00")), /Adiantado/);
 });
 
 test("intervalo só é concluído quando todas as frentes são", () => {
