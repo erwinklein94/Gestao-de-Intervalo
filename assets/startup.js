@@ -4,6 +4,22 @@
   const TIMEOUT = 20000;
   let panel;
 
+  function createLoginAuth(sdk, url, key) {
+    // Login explícito não deve esperar nem renovar uma sessão antiga.
+    // Usa o SDK para gravar a nova sessão no mesmo armazenamento do app.
+    return new sdk.AuthClient({
+      url: `${url}/auth/v1`,
+      headers: { apikey: key },
+      storageKey: `sb-${new URL(url).hostname.split(".")[0]}-auth-token`,
+      storage: localStorage,
+      persistSession: true,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      skipAutoInitialize: true,
+      fetch: fetchWithTimeout
+    });
+  }
+
   async function wait(operation, milliseconds = TIMEOUT) {
     let timer;
     try {
@@ -68,5 +84,5 @@
   const watchdog = setTimeout(() => {
     if (document.documentElement.classList.contains("auth-checking")) fail(new Error("Tempo de abertura excedido."));
   }, 30000);
-  window.AppStartup = { wait, fetch: fetchWithTimeout, fail, ready };
+  window.AppStartup = { wait, fetch: fetchWithTimeout, fail, ready, createLoginAuth };
 })();

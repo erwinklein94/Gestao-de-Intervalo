@@ -1,14 +1,24 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<script src="assets/startup.js?v=20260831-1"></script>
+<meta name="referrer" content="no-referrer">
+<script>
+  // Remove parâmetros enviados pelo formulário de versões antigas antes de carregar recursos.
+  const cleanLoginUrl = new URL(location.href);
+  if (cleanLoginUrl.searchParams.has("password") || cleanLoginUrl.searchParams.has("email")) {
+    cleanLoginUrl.searchParams.delete("password");
+    cleanLoginUrl.searchParams.delete("email");
+    history.replaceState(null, "", cleanLoginUrl.pathname + cleanLoginUrl.search + cleanLoginUrl.hash);
+  }
+</script>
+<script src="assets/startup.js?v=20260831-2"></script>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="theme-color" content="#003865">
   <meta name="description" content="Acesso seguro à Gestão de Intervalo"><title>Gestão de Intervalo | Login</title>
 <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<script src="assets/pwa.js" defer></script><link rel="stylesheet" href="styles.css?v=20260831-1">
-<script src="assets/supabase.min.js" defer></script><script src="app.js?v=20260831-1" defer></script>
+<script src="assets/pwa.js" defer></script><link rel="stylesheet" href="styles.css?v=20260831-2">
+<script src="assets/supabase.min.js?v=20260831-2" defer></script><script src="app.js?v=20260831-2" defer></script>
 </head>
 <body data-page="login" class="login-page">
   <main class="login-layout">
@@ -23,7 +33,7 @@
         <small>Via Permanente · Acesso exclusivo para usuários habilitados</small>
       </section>
       <section class="login-form-panel">
-        <form class="login-card" id="login-form">
+        <form class="login-card" id="login-form" method="post" onsubmit="return false">
           <header class="login-card-head">
             <div class="login-mark" aria-hidden="true">→</div>
             <div><p class="section-kicker">Acesso seguro</p><h2>Entre na sua conta</h2></div>

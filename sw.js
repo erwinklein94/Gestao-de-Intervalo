@@ -10,7 +10,7 @@
 // informação velha exibida como se fosse atual, que é exatamente o erro que
 // esta operação não pode cometer.
 
-const VERSION = "20260831-1";
+const VERSION = "20260831-2";
 const CACHE = `gestao-intervalo-${VERSION}`;
 
 const SHELL = [
@@ -32,7 +32,7 @@ const SHELL = [
   `assets/auth-guard.js?v=${VERSION}`,
   `assets/startup.js?v=${VERSION}`,
   "assets/pwa.js",
-  "assets/supabase.min.js",
+  `assets/supabase.min.js?v=${VERSION}`,
   "assets/jszip.min.js",
   "assets/rumo-logo-blue.png",
   "assets/rumo-logo-white.png",
@@ -63,6 +63,12 @@ self.addEventListener("activate", (event) => {
 // Navegação: rede primeiro, para que um deploy novo apareça de imediato; o
 // cache só entra quando a rede falha.
 async function networkFirst(request) {
+  const url = new URL(request.url);
+  if (url.searchParams.has("password") || url.searchParams.has("email")) {
+    url.searchParams.delete("password");
+    url.searchParams.delete("email");
+    return Response.redirect(url.href, 303);
+  }
   const cache = await caches.open(CACHE);
   try {
     const response = await fetch(request);

@@ -3318,6 +3318,12 @@
     if (!window.supabase?.createClient) {
       throw new Error("Biblioteca do Supabase indisponível.");
     }
+    if (page === "login") {
+      cloudClient = { auth: window.AppStartup.createLoginAuth(window.supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) };
+      loginPage();
+      window.AppStartup.ready();
+      return;
+    }
     cloudClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
       global: { fetch: window.AppStartup.fetch }
@@ -3327,15 +3333,6 @@
     currentUser = session?.user || null;
     if (page === "password-recovery") {
       passwordRecoveryPage();
-      return;
-    }
-    if (page === "login") {
-      if (currentUser) {
-        const { data: profile, error } = await window.AppStartup.wait(cloudClient.from("user_profiles").select("role,enabled").eq("id", currentUser.id).single());
-        if (error) throw error;
-        if (profile?.enabled) location.replace(landingPageForRole(profile.role));
-        else loginPage();
-      } else loginPage();
       return;
     }
     renderAuthControls();
@@ -3427,13 +3424,18 @@
       feedback.textContent = "";
       try {
         const { data, error } = await window.AppStartup.wait(cloudClient.auth.signInWithPassword({ email: form.email.value.trim(), password: form.password.value }));
-        if (error || !data.user) {
+        if (error || !data?.user || !data?.session?.access_token) {
           feedback.textContent = error?.code === "invalid_credentials" ? "E-mail ou senha inválidos." : "Não foi possível entrar. Verifique sua conexão e tente novamente.";
           button.disabled = false;
           button.textContent = "Entrar no sistema";
           return;
         }
-        const { data: profile, error: profileError } = await window.AppStartup.wait(cloudClient.from("user_profiles").select("enabled,role").eq("id", data.user.id).single());
+        // Consulta autorizada com a sessão recém-emitida, sem recuperar a antiga.
+        const profileClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+          accessToken: async () => data.session.access_token,
+          global: { fetch: window.AppStartup.fetch }
+        });
+        const { data: profile, error: profileError } = await window.AppStartup.wait(profileClient.from("user_profiles").select("enabled,role").eq("id", data.user.id).single());
         if (profileError) throw profileError;
         if (!profile?.enabled) {
           await window.AppStartup.wait(cloudClient.auth.signOut({ scope: "local" }));

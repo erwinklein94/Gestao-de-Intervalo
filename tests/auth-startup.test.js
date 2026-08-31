@@ -44,7 +44,7 @@ function startup() {
   const children = [];
   const classes = new Set(["auth-checking"]);
   const context = {
-    window: {}, console: quiet, setTimeout, clearTimeout, AbortController, Response,
+    window: {}, console: quiet, setTimeout, clearTimeout, AbortController, Response, URL,
     fetch: async () => new Response("ok"), location: { reload() {} },
     document: {
       documentElement: { classList: { contains: (name) => classes.has(name) } },
@@ -108,6 +108,73 @@ test("fetch preserva HTTP de erro e respeita cancelamento do chamador", async ()
   await assert.rejects(api.fetch("https://example.test", { signal: controller.signal }), /aborted/);
 });
 
+test("SDK real: login com sessão antiga não renova token antigo e a próxima página restaura a sessão nova", async () => {
+  const sdkContext = { console: quiet, fetch, Headers, Request, Response, URL, WebSocket, AbortController, setTimeout, clearTimeout, setInterval, clearInterval, crypto: require("node:crypto").webcrypto };
+  vm.runInNewContext(read("assets/supabase.min.js"), sdkContext);
+  const sdk = sdkContext.supabase;
+  const { api, context } = startup();
+  const storageKey = "sb-test-auth-token";
+  const values = new Map([[storageKey, JSON.stringify({ access_token: "expired", refresh_token: "old-refresh", expires_at: 1 })], ["offline-plan", "keep"]]);
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  context.localStorage = storage;
+  const requests = [];
+  context.fetch = async (url) => {
+    requests.push(String(url));
+    assert.ok(String(url).endsWith("/token?grant_type=password"), "não deve renovar a sessão antiga");
+    return new Response(JSON.stringify({ access_token: "new-access", refresh_token: "new-refresh", expires_in: 3600, token_type: "bearer", user: { id: "synthetic-user" } }), { headers: { "Content-Type": "application/json" } });
+  };
+  const auth = api.createLoginAuth(sdk, "https://test.supabase.co", "test-key");
+  assert.equal(requests.length, 0, "abrir login não dispara recuperação de sessão");
+  const result = await api.wait(auth.signInWithPassword({ email: "test@example.test", password: "synthetic-only" }), 1000);
+  assert.equal(result.error, null);
+  assert.equal(requests.length, 1);
+  assert.equal(JSON.parse(values.get(storageKey)).access_token, "new-access");
+  assert.equal(values.get("offline-plan"), "keep");
+  context.fetch = async (url, options) => {
+    assert.ok(String(url).includes("/rest/v1/user_profiles"));
+    assert.equal(new Headers(options.headers).get("Authorization"), "Bearer new-access");
+    return new Response(JSON.stringify({ role: "coordinator", enabled: true }), { headers: { "Content-Type": "application/json" } });
+  };
+  const profileClient = sdk.createClient("https://test.supabase.co", "test-key", {
+    accessToken: async () => result.data.session.access_token,
+    global: { fetch: api.fetch }
+  });
+  const profile = await api.wait(profileClient.from("user_profiles").select("role,enabled").eq("id", "synthetic-user").single(), 1000);
+  assert.equal(profile.error, null);
+  assert.equal(profile.data.enabled, true);
+  const nextPage = sdk.createClient("https://test.supabase.co", "test-key", {
+    auth: { storage, persistSession: true, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { fetch: async () => { assert.fail("sessão recém-emitida não deve renovar"); } }
+  });
+  const restored = await api.wait(nextPage.auth.getSession(), 1000);
+  assert.equal(restored.error, null);
+  assert.equal(restored.data.session.access_token, "new-access");
+});
+
+test("login se prepara sem chamar getSession, mesmo quando recuperação ficaria pendente", async () => {
+  const source = read("app.js");
+  let prepared = false;
+  const context = {
+    page: "login", SUPABASE_URL: "https://test.supabase.co", SUPABASE_PUBLISHABLE_KEY: "test-key",
+    window: { supabase: { createClient() { assert.fail("login não deve criar cliente com recuperação automática"); } },
+      AppStartup: { createLoginAuth: () => ({ getSession() { assert.fail("login não deve esperar sessão"); } }), ready() {} } },
+    loginPage: () => { prepared = true; }
+  };
+  vm.runInNewContext(source.slice(source.indexOf("  async function initializeCloud() {"), source.indexOf("  function loginPage() {")), context);
+  await context.initializeCloud();
+  assert.equal(prepared, true);
+});
+
+test("formulário bloqueia GET nativo e remove credenciais antigas do endereço antes dos recursos", () => {
+  const html = read("login.html");
+  assert.match(html, /id="login-form"[^>]*method="post"[^>]*onsubmit="return false"/);
+  assert.ok(html.indexOf('name="referrer" content="no-referrer"') < html.indexOf('src="'));
+  const inline = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  let replaced;
+  vm.runInNewContext(inline, { URL, location: { href: "https://example.test/login.html?email=test%40example.test&password=synthetic&status=disabled" }, history: { replaceState: (_, __, url) => { replaced = url; } } });
+  assert.equal(replaced, "/login.html?status=disabled");
+});
+
 function portal({ profileError = null, enabled = true, session = { user: { id: "test-user" } } } = {}) {
   const { api } = startup();
   const state = { ready: false, signedOut: false, pageLoaded: false, redirect: null };
@@ -142,12 +209,13 @@ test("formulário redireciona após login e libera o botão se o perfil falhar",
     const query = { select() { return this; }, eq() { return this; }, single: async () => ({ data: failProfile ? null : { enabled: true, role: "editor" }, error: failProfile ? new Error("offline") : null }) };
     const context = {
       URLSearchParams, console: quiet,
-      window: { AppStartup: api },
+      window: { AppStartup: api, supabase: { createClient: () => ({ from: () => query }) } },
+      SUPABASE_URL: "https://test.supabase.co", SUPABASE_PUBLISHABLE_KEY: "test-key",
       location: { search: "", replace: (url) => { destination = url; } },
       $: (selector) => selector === "#login-form" ? form : selector === "#login-feedback" ? feedback : button,
       cloudClient: {
         auth: {
-          signInWithPassword: async () => ({ data: { user: { id: "test-user" } }, error: null }),
+          signInWithPassword: async () => ({ data: { user: { id: "test-user" }, session: { access_token: "synthetic-token" } }, error: null }),
           signOut() { assert.fail("erro de rede não deve encerrar sessão"); }
         },
         from: () => query
