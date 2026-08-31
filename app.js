@@ -13,7 +13,7 @@
   let currentUser = null;
   let currentProfile = null;
   let activeStorageKey = window.__GESTAO_USER_ID__ ? `${STORAGE_KEY}.${window.__GESTAO_USER_ID__}` : STORAGE_KEY;
-  let store = loadStore();
+  let store;
   let saveTimer;
   let toastTimer;
   let cloudClient = null;
@@ -3316,13 +3316,14 @@
 
   async function initializeCloud() {
     if (!window.supabase?.createClient) {
-      console.warn("Biblioteca do Supabase indisponível.");
-      return;
+      throw new Error("Biblioteca do Supabase indisponível.");
     }
     cloudClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      global: { fetch: window.AppStartup.fetch }
     });
-    const { data: { session } } = await cloudClient.auth.getSession();
+    const { data: { session }, error: sessionError } = await window.AppStartup.wait(cloudClient.auth.getSession());
+    if (sessionError) throw sessionError;
     currentUser = session?.user || null;
     if (page === "password-recovery") {
       passwordRecoveryPage();
@@ -3330,7 +3331,8 @@
     }
     if (page === "login") {
       if (currentUser) {
-        const { data: profile } = await cloudClient.from("user_profiles").select("role,enabled").eq("id", currentUser.id).single();
+        const { data: profile, error } = await window.AppStartup.wait(cloudClient.from("user_profiles").select("role,enabled").eq("id", currentUser.id).single());
+        if (error) throw error;
         if (profile?.enabled) location.replace(landingPageForRole(profile.role));
         else loginPage();
       } else loginPage();
@@ -3342,11 +3344,11 @@
       location.replace("login.html");
       return;
     }
-    const { data: profile } = await cloudClient.from("user_profiles").select("*").eq("id", currentUser.id).single();
+    const { data: profile, error: profileError } = await window.AppStartup.wait(cloudClient.from("user_profiles").select("*").eq("id", currentUser.id).single());
+    if (profileError) throw profileError;
     currentProfile = profile || null;
     if (!currentProfile?.enabled) {
-      await cloudClient.auth.signOut();
-      localStorage.removeItem(activeStorageKey);
+      await window.AppStartup.wait(cloudClient.auth.signOut({ scope: "local" }));
       location.replace("login.html?status=disabled");
       return;
     }
@@ -3355,12 +3357,13 @@
     sessionStorage.removeItem("gestaoIntervaloRumo.dataset");
     sessionStorage.removeItem("gestaoIntervaloRumo.demoPersona");
     renderRoleNavigation();
-    const { error: accessAuditError } = await cloudClient.from("site_access_audit").insert({
+    Promise.resolve(cloudClient.from("site_access_audit").insert({
       user_id: currentUser.id,
       email: currentProfile.email,
       page
-    });
-    if (accessAuditError) console.warn("Não foi possível registrar o acesso.", accessAuditError);
+    })).then(({ error }) => {
+      if (error) console.warn("Não foi possível registrar o acesso.", error);
+    }).catch((error) => console.warn("Não foi possível registrar o acesso.", error));
     if (!routeAllowedForRole()) {
       location.replace(landingPageForRole(currentProfile?.role));
       return;
@@ -3406,6 +3409,7 @@
     } finally {
       document.documentElement.classList.remove("auth-checking");
       initializeCurrentPage();
+      window.AppStartup.ready();
       window.EditorPageTransitions?.apply(currentProfile?.role, currentUser?.id);
       startCloudRefresh();
     }
@@ -3421,22 +3425,31 @@
       button.disabled = true;
       button.textContent = "Verificando acesso…";
       feedback.textContent = "";
-      const { data, error } = await cloudClient.auth.signInWithPassword({ email: form.email.value.trim(), password: form.password.value });
-      if (error || !data.user) {
-        feedback.textContent = "E-mail ou senha inválidos.";
+      try {
+        const { data, error } = await window.AppStartup.wait(cloudClient.auth.signInWithPassword({ email: form.email.value.trim(), password: form.password.value }));
+        if (error || !data.user) {
+          feedback.textContent = error?.code === "invalid_credentials" ? "E-mail ou senha inválidos." : "Não foi possível entrar. Verifique sua conexão e tente novamente.";
+          button.disabled = false;
+          button.textContent = "Entrar no sistema";
+          return;
+        }
+        const { data: profile, error: profileError } = await window.AppStartup.wait(cloudClient.from("user_profiles").select("enabled,role").eq("id", data.user.id).single());
+        if (profileError) throw profileError;
+        if (!profile?.enabled) {
+          await window.AppStartup.wait(cloudClient.auth.signOut({ scope: "local" }));
+          feedback.textContent = "Esta conta está desabilitada. Procure um editor.";
+          button.disabled = false;
+          button.textContent = "Entrar no sistema";
+          return;
+        }
+        location.replace(landingPageForRole(profile.role));
+      } catch (error) {
+        console.warn("Falha ao entrar no sistema.", error);
+        feedback.textContent = "Não foi possível concluir o acesso. Verifique sua conexão e tente novamente.";
+      } finally {
         button.disabled = false;
         button.textContent = "Entrar no sistema";
-        return;
       }
-      const { data: profile } = await cloudClient.from("user_profiles").select("enabled,role").eq("id", data.user.id).single();
-      if (!profile?.enabled) {
-        await cloudClient.auth.signOut();
-        feedback.textContent = "Esta conta está desabilitada. Procure um editor.";
-        button.disabled = false;
-        button.textContent = "Entrar no sistema";
-        return;
-      }
-      location.replace(landingPageForRole(profile.role));
     });
 
     $("#forgot-password")?.addEventListener("click", async () => {
@@ -4257,6 +4270,10 @@
     $("#account-sign-out").addEventListener("click", signOutAndReturn);
   }
 
+  // A normalização lê MAX_FRONTS, MAX_CCO_GRANT_MINUTES e STAMP_PATTERN.
+  // Só restaura o armazenamento depois de inicializar todas as constantes.
+  store = loadStore();
+
   if (window.__GESTAO_TEST_MODE__) {
     window.__GESTAO_TEST_API__ = {
       buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation,
@@ -4298,5 +4315,5 @@
     if (store.pendingSync) scheduleCloudSync(true);
   });
   if (page === "shared") initializeCurrentPage();
-  else initializeCloud();
+  else initializeCloud().catch(window.AppStartup.fail);
 })();

@@ -10,7 +10,7 @@
 // informação velha exibida como se fosse atual, que é exatamente o erro que
 // esta operação não pode cometer.
 
-const VERSION = "20260825-14";
+const VERSION = "20260831-1";
 const CACHE = `gestao-intervalo-${VERSION}`;
 
 const SHELL = [
@@ -29,7 +29,8 @@ const SHELL = [
   `styles.css?v=${VERSION}`,
   `app.js?v=${VERSION}`,
   `assets/portal.js?v=${VERSION}`,
-  "assets/auth-guard.js",
+  `assets/auth-guard.js?v=${VERSION}`,
+  `assets/startup.js?v=${VERSION}`,
   "assets/pwa.js",
   "assets/supabase.min.js",
   "assets/jszip.min.js",
@@ -77,7 +78,7 @@ async function networkFirst(request) {
 // plano para a próxima visita já pegar a versão nova.
 async function cacheFirst(request) {
   const cache = await caches.open(CACHE);
-  const cached = await cache.match(request, { ignoreSearch: true });
+  const cached = await cache.match(request);
   const network = fetch(request).then((response) => {
     if (response && response.ok) cache.put(request, response.clone());
     return response;

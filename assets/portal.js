@@ -336,7 +336,7 @@
   function createClient(headers = {}) {
     return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-      global: { headers }
+      global: { headers, fetch: window.AppStartup.fetch }
     });
   }
 
@@ -1382,16 +1382,18 @@
     initializeTheme();
     if (!window.supabase?.createClient) throw new Error("Biblioteca de dados indisponível.");
     baseClient = createClient();
-    const { data: { session } } = await baseClient.auth.getSession();
+    const { data: { session }, error: sessionError } = await window.AppStartup.wait(baseClient.auth.getSession());
+    if (sessionError) throw sessionError;
     currentUser = session?.user;
     if (!currentUser) { location.replace("login.html"); return; }
     const { data: profile, error } = await baseClient.from("user_profiles").select("id,email,full_name,role,role_gender,enabled,manager_id,coordinator_type,organization_member_id").eq("id", currentUser.id).single();
-    if (error || !profile?.enabled) { await baseClient.auth.signOut(); location.replace("login.html?status=disabled"); return; }
+    if (error) throw error;
+    if (!profile?.enabled) { await window.AppStartup.wait(baseClient.auth.signOut({ scope: "local" })); location.replace("login.html?status=disabled"); return; }
     actualProfile = profile;
     configureContext();
     if (!roleCapabilities(effectiveProfile.role).canUseManagement) { location.replace("conta.html"); return; }
     renderNavigation(effectiveProfile.role);
-    await registerSiteAccess();
+    registerSiteAccess().catch((error) => console.warn("Não foi possível registrar o acesso.", error));
     if (document.body.dataset.page === "intervals") {
       // A visao do sistema inteiro e do Editor: a RLS ja devolve todos os
       // intervalos para ele, e para mais ninguem.
@@ -1407,13 +1409,13 @@
       await initializeManagement();
     }
     document.documentElement.classList.remove("auth-checking");
+    window.AppStartup.ready();
     window.EditorPageTransitions?.apply(actualProfile.role, currentUser.id);
   }
 
   initialize().catch((error) => {
     console.error("Falha ao inicializar portal.", error);
     setState("Erro ao carregar", "error");
-    document.documentElement.classList.remove("auth-checking");
-    showToast("Não foi possível carregar esta página. Tente novamente.");
+    window.AppStartup.fail(error);
   });
 })();

@@ -14,7 +14,8 @@
       // servidor passa de qualquer forma, e o RLS continua sendo quem autoriza.
       // Expulsar aqui só tiraria do coordenador o acesso ao que ele mesmo
       // registrou offline. A sessão é revalidada assim que houver conexão.
-      if (claims.exp && claims.exp * 1000 <= Date.now() && navigator.onLine) throw new Error("Sessão expirada");
+      // Um access token expirado ainda pode ter refresh token válido. O SDK
+      // renova a sessão antes de consultar o perfil; o guard não a descarta.
       window.__GESTAO_USER_ID__ = claims.sub;
       document.documentElement.classList.add("auth-checking");
     }

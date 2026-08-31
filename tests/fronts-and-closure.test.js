@@ -410,8 +410,8 @@ test("PWA registra service worker, manifesto e ícone próprios", () => {
     assert.ok(source.includes("assets/pwa.js"), `${page}: registro do service worker ausente`);
   }
 
-  const guard = read("assets/auth-guard.js");
-  assert.ok(guard.includes("navigator.onLine"), "sem rede, a sessão expirada não pode expulsar para o login");
+  // Renovação e preservação da sessão são verificadas executando o guard
+  // nos cenários online/offline de auth-startup.test.js.
 });
 
 test("a SUB não existe mais em código, telas nem sincronização", () => {
