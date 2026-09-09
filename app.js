@@ -1625,7 +1625,7 @@
       const description = photo.caption || photo.original_name || "Foto da execução";
       return `<figure class="execution-photo">
         <a href="${escapeHtml(photo.signed_url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}" loading="lazy"></a>
-        <figcaption>${photo.caption ? `<strong>${escapeHtml(photo.caption)}</strong>` : ""}<span>${escapeHtml(photo.author_name || "Usuário")}${dateLabel ? ` · ${escapeHtml(dateLabel)}` : ""}</span></figcaption>
+        <figcaption>${photo.caption ? `<strong>${escapeHtml(photo.caption)}</strong>` : ""}<span>${escapeHtml(photo.author_name || "Usuário")}${dateLabel ? ` · ${escapeHtml(dateLabel)}` : ""}</span>${photo.can_delete ? `<button type="button" data-photo-delete="${escapeHtml(photo.id)}">Excluir foto</button>` : ""}</figcaption>
       </figure>`;
     }).join("");
   }
@@ -2484,8 +2484,11 @@
     function renderPhotos() {
       const gallery = $("#execution-photos");
       if (!gallery) return;
-      gallery.innerHTML = photoGalleryHtml(photos, "Nenhuma foto foi anexada a este intervalo.");
       const allowed = plan.status === "executing";
+      gallery.innerHTML = photoGalleryHtml(photos.map((photo) => ({
+        ...photo,
+        can_delete: allowed && photo.author_user_id === currentUser.id
+      })), "Nenhuma foto foi anexada a este intervalo.");
       $("#execution-photo-form").hidden = !allowed;
       $("#execution-photos-locked").hidden = allowed;
     }
@@ -3026,6 +3029,30 @@
       scheduleCloudSync(true);
     });
     $("#execution-photo-form")?.addEventListener("submit", (event) => event.preventDefault());
+    $("#execution-photos")?.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-photo-delete]");
+      if (!button || plan.status !== "executing") return;
+      const photo = photos.find((item) => item.id === button.dataset.photoDelete);
+      if (!photo || photo.author_user_id !== currentUser.id) return;
+      if (!confirm("Excluir esta foto do intervalo? Esta ação não pode ser desfeita.")) return;
+      button.disabled = true;
+      const feedback = $("#execution-photo-feedback");
+      feedback.textContent = "Excluindo foto…";
+      try {
+        const { error: metadataError } = await cloudClient.from("interval_photos")
+          .delete().eq("id", photo.id).eq("author_user_id", currentUser.id);
+        if (metadataError) throw metadataError;
+        const { error: storageError } = await cloudClient.storage.from(INTERVAL_PHOTO_BUCKET).remove([photo.storage_path]);
+        if (storageError) throw storageError;
+        photos = photos.filter((item) => item.id !== photo.id);
+        feedback.textContent = "Foto excluída.";
+        renderPhotos();
+      } catch (error) {
+        console.error("Falha ao excluir foto.", error);
+        feedback.textContent = error.message || "Não foi possível excluir a foto.";
+        await loadExecutionPhotos(true);
+      }
+    });
     $("#execution-photo-input")?.addEventListener("change", async (event) => {
       const input = event.currentTarget;
       const files = [...(input.files || [])];

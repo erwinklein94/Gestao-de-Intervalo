@@ -964,6 +964,8 @@ html[data-theme="dark"] .toast-icon { background: #26455b; color: #b9ddf5; }
 .execution-photo figcaption { padding: 11px 12px; display: grid; gap: 4px; }
 .execution-photo figcaption strong { color: var(--blue); overflow-wrap: anywhere; }
 .execution-photo figcaption span { color: var(--muted); font-size: 9px; }
+.execution-photo figcaption button { justify-self: start; padding: 0; border: 0; color: var(--danger); background: transparent; font-size: 9px; font-weight: 700; cursor: pointer; }
+.execution-photo figcaption button:disabled { opacity: .55; cursor: wait; }
 .shared-photos { margin-top: 28px; }
 .shared-photos .photo-gallery { margin-top: 15px; }
 .detail-share { margin-top: 20px; display: flex; align-items: center; gap: 12px; }

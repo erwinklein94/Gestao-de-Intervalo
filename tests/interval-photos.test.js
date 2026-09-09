@@ -25,6 +25,8 @@ assert.match(app, /\.from\("interval_photos"\)\.insert\(/);
 assert.match(app, /plan\.status !== "executing"/);
 assert.match(app, /createSignedUrls\(paths, expiresIn\)/);
 assert.match(app, /photoGalleryHtml\(sharedPhotos/);
+assert.match(app, /data-photo-delete/);
+assert.match(app, /\.delete\(\)\.eq\("id", photo\.id\)\.eq\("author_user_id", currentUser\.id\)/);
 
 assert.match(edge, /\.from\("interval_photos"\)/);
 assert.match(edge, /createSignedUrls\(photos\.map/);
@@ -38,5 +40,10 @@ assert.match(migration, /create policy "Authorized members upload interval photo
 assert.match(migration, /not exists \(\s*select 1 from public\.interval_photos photo/);
 assert.match(migration, /grant select, insert on public\.interval_photos to authenticated/);
 assert.doesNotMatch(migration, /grant[^;]*(update|delete)[^;]*public\.interval_photos/i, "fotos registradas não podem ser alteradas ou removidas pelo cliente");
+
+const deleteMigration = read("supabase/migrations/20260909163000_allow_photo_authors_to_delete_during_execution.sql");
+assert.match(deleteMigration, /author_user_id = \(select auth\.uid\(\)\)/);
+assert.match(deleteMigration, /private\.interval_accepts_comments\(plan_id\)/);
+assert.match(deleteMigration, /grant select, insert, delete on public\.interval_photos to authenticated/);
 
 console.log("interval-photos: upload imutável e acompanhamento protegidos");
