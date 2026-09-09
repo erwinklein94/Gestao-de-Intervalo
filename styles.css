@@ -968,6 +968,9 @@ html[data-theme="dark"] .toast-icon { background: #26455b; color: #b9ddf5; }
 .execution-photo figcaption button:disabled { opacity: .55; cursor: wait; }
 .shared-photos { margin-top: 28px; }
 .shared-photos .photo-gallery { margin-top: 15px; }
+/* O anexo fotografico existe so para o PDF: na tela as fotos ja estao logo
+   acima, na galeria da execucao. */
+.photo-appendix { display: none; }
 .photo-viewer { position: fixed; z-index: 70; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; padding: 14px; background: rgba(0, 25, 45, .93); opacity: 0; visibility: hidden; transition: opacity .18s ease, visibility 0s linear .18s; }
 .photo-viewer.show { opacity: 1; visibility: visible; transition: opacity .18s ease, visibility 0s; }
 .photo-viewer-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; color: #fff; }
@@ -1815,7 +1818,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .execution-panel, .execution-notes { box-shadow: none; }
   .execution-panel .panel-heading { padding: 14px 18px 11px; }
   .execution-list { padding: 0 18px 14px; }
-  .execution-step { break-inside: auto; page-break-inside: auto; padding: 6px 0; }
+  .execution-step { break-inside: avoid; page-break-inside: avoid; padding: 6px 0; }
   .execution-step-header { break-inside:avoid; page-break-inside:avoid; break-after:avoid; page-break-after:avoid; }
   .programmed-block, .realized-block { break-inside:avoid; page-break-inside:avoid; }
   .execution-step-header { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 8px; margin-bottom: 4px; }
@@ -1889,7 +1892,35 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   body.shared-printing .shared-status { min-height:0; padding:18px; }
   body.shared-printing .shared-kpis { grid-template-columns:repeat(3,minmax(0,1fr)); }
   body.shared-printing .shared-step { break-inside:avoid; }
-  .execution-photo { break-inside:avoid; }
+  /* Nada e cortado ao virar a pagina: cada bloco de leitura viaja inteiro,
+     e titulo nenhum fica sozinho no pe da folha. */
+  h1, h2, h3, h4, .panel-heading, .chart-heading, .shared-section-heading, .block-label { break-after: avoid; page-break-after: avoid; }
+  p, li { orphans: 3; widows: 3; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr, img, figure { break-inside: avoid; page-break-inside: avoid; }
+  .execution-step, .execution-photo, .print-photo, .interval-comment, .shared-step, .metric-card,
+  .dashboard-kpi, .status-hero, .status-clock, .duration-row, .timeline-compare-row,
+  .comments-panel > header, .photo-appendix > header { break-inside: avoid; page-break-inside: avoid; }
+  /* Campo em branco e botao nao valem tinta: no papel interessa o registro. */
+  .execution-photos #execution-photo-form, #execution-photos-locked,
+  #execution-comment-form, #execution-comments-locked,
+  .execution-finish-panel, .execution-photo figcaption button { display: none !important; }
+  .photo-gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  /* O anexo repete as fotos da execucao em tamanho de leitura, duas por linha,
+     em folha propria. Sem foto anexada ele sai do PDF: uma pagina em branco no
+     fim do relatorio parece falha de exportacao. */
+  .photo-appendix { display: block; break-before: page; page-break-before: always; }
+  .photo-appendix[data-empty="true"] { display: none !important; }
+  .photo-appendix > header { margin-bottom: 8px; padding-bottom: 6px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 2px solid var(--blue); }
+  .photo-appendix > header h2 { color: var(--blue); font-size: 15px; }
+  .photo-appendix > header span { color: var(--muted); font-size: 9px; }
+  .photo-appendix-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7mm 8mm; }
+  .print-photo { margin: 0; display: grid; gap: 5px; }
+  .print-photo img { width: 100%; height: 72mm; display: block; object-fit: contain; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  .print-photo figcaption { display: grid; gap: 2px; }
+  .print-photo figcaption strong { color: var(--blue); font-size: 10px; overflow-wrap: anywhere; }
+  .print-photo figcaption span { color: var(--muted); font-size: 8px; }
   .photo-viewer { display:none; }
 }
 

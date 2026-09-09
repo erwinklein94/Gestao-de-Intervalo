@@ -58,4 +58,38 @@ assert.match(app, /touch-action|pointerdown/, "o visualizador precisa tratar arr
 assert.match(styles, /\.photo-viewer-stage \{[^}]*touch-action: none;/);
 assert.match(styles, /body\.has-photo-viewer \{ overflow: hidden; \}/);
 
-console.log("interval-photos: upload imutável, acompanhamento protegido e zoom no visualizador");
+
+// As fotos voltam no fim do PDF, maiores e duas por linha, sem partir na virada
+// da pagina, e a planilha ganha uma aba propria com os mesmos registros.
+assert.ok(execution.includes('id="execution-photo-appendix"'), "execução sem anexo fotográfico");
+assert.ok(shared.includes('id="shared-photo-appendix"'), "acompanhamento sem anexo fotográfico");
+for (const page of [execution, shared]) {
+  assert.ok(page.includes('class="photo-appendix-grid"'), "anexo sem grade de fotos");
+  assert.ok(page.includes("data-appendix-count"), "anexo sem contagem de fotos");
+}
+assert.match(app, /function photoAppendixHtml/);
+assert.match(app, /renderPhotoAppendix\("execution-photo-appendix", photos\)/);
+assert.match(app, /renderPhotoAppendix\("shared-photo-appendix", sharedPhotos\)/);
+assert.match(app, /appendix\.dataset\.empty = photos\.length \? "false" : "true"/);
+assert.match(app, /function waitForPrintImages/, "o PDF precisa esperar as fotos carregarem");
+assert.match(app, /waitForPrintImages\(\)\.then\(\(\) => setTimeout\(\(\) => window\.print\(\)/);
+
+assert.match(app, /function photosSheetXml/);
+assert.match(app, /async function exportPlanToXlsx\(plan, photos = \[\]\)/);
+assert.match(app, /worksheets\.file\("sheet2\.xml", photosSheetXml\(/);
+assert.match(app, /<sheet name="Fotos" sheetId="2" r:id="rId3"\/>/);
+assert.match(app, /Id="rId3"[^>]*Target="worksheets\/sheet2\.xml"/, "a aba de fotos precisa do relacionamento rId3");
+assert.match(app, /PartName="\/xl\/worksheets\/sheet2\.xml"/, "a aba de fotos precisa entrar no Content_Types");
+assert.match(app, /<f>HYPERLINK\(/, "o link da foto vai como fórmula clicável");
+assert.match(app, /exportPlanToXlsx\(plan, await planPhotosForExport\(plan, knownPhotos\)\)/);
+
+assert.match(styles, /^\.photo-appendix \{ display: none; \}$/m, "o anexo não aparece na tela");
+assert.match(styles, /\.photo-appendix \{ display: block; break-before: page; page-break-before: always; \}/);
+assert.match(styles, /\.photo-appendix\[data-empty="true"\] \{ display: none !important; \}/);
+assert.match(styles, /\.photo-appendix-grid \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/, "o anexo imprime duas fotos por linha");
+assert.match(styles, /\.execution-step, \.execution-photo, \.print-photo[^{]*\{ break-inside: avoid; page-break-inside: avoid; \}/);
+assert.doesNotMatch(styles, /\.execution-step \{ break-inside: auto;/, "etapa não pode partir na virada da página");
+assert.match(styles, /tr, img, figure \{ break-inside: avoid; page-break-inside: avoid; \}/);
+assert.match(styles, /thead \{ display: table-header-group; \}/, "cabeçalho de tabela se repete a cada página");
+
+console.log("interval-photos: upload imutável, zoom, anexo no PDF e aba de fotos na planilha");

@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="pt-BR">
   <head>
-<script src="assets/startup.js?v=20260909-8"></script>
+<script src="assets/startup.js?v=20260909-9"></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#003865" />
-    <script src="assets/auth-guard.js?v=20260909-8"></script>
+    <script src="assets/auth-guard.js?v=20260909-9"></script>
     <meta
       name="description"
       content="Acompanhamento em tempo real de intervalos de manutenção de via permanente."
@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <script src="assets/pwa.js" defer></script>
-<link rel="stylesheet" href="styles.css?v=20260909-8" />
+<link rel="stylesheet" href="styles.css?v=20260909-9" />
     <script src="assets/jszip.min.js" defer></script>
-    <script src="assets/supabase.min.js?v=20260909-8" defer></script>
-<script src="app.js?v=20260909-8" defer></script>
+    <script src="assets/supabase.min.js?v=20260909-9" defer></script>
+<script src="app.js?v=20260909-9" defer></script>
   </head>
   <body data-page="execution">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -205,6 +205,11 @@
             </div>
             <button class="button button-accent large" id="finish-execution-button" type="button">Finalizar execução</button>
           </section>
+          <section class="photo-appendix" id="execution-photo-appendix" data-empty="true">
+            <header><h2>Anexo fotográfico</h2><span data-appendix-count></span></header>
+            <div class="photo-appendix-grid"></div>
+          </section>
+
         </div>
       </section>
     </main>

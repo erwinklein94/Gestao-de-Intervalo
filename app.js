@@ -1633,6 +1633,48 @@
     }).join("");
   }
 
+  // No PDF as miniaturas continuam onde estao, dentro do relato da execucao,
+  // e as mesmas fotos voltam no fim em tamanho de leitura, duas por linha.
+  function photoAppendixHtml(photos) {
+    return photos.map((photo, index) => {
+      const date = new Date(photo.created_at);
+      const dateLabel = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+      const description = photo.caption || photo.original_name || "Foto da execução";
+      const credit = `${photo.author_name || "Usuário"}${dateLabel ? ` · ${dateLabel}` : ""}`;
+      return `<figure class="print-photo">
+        <img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}">
+        <figcaption><strong>Foto ${String(index + 1).padStart(2, "0")}${photo.caption ? ` · ${escapeHtml(photo.caption)}` : ""}</strong><span>${escapeHtml(credit)}</span></figcaption>
+      </figure>`;
+    }).join("");
+  }
+
+  function renderPhotoAppendix(appendixId, photos) {
+    const appendix = document.getElementById(appendixId);
+    if (!appendix) return;
+    const grid = appendix.querySelector(".photo-appendix-grid");
+    const count = appendix.querySelector("[data-appendix-count]");
+    grid.innerHTML = photoAppendixHtml(photos);
+    if (count) count.textContent = photos.length ? pluralize(photos.length, "foto", "fotos") : "";
+    // Sem foto o anexo sai da impressao: uma pagina em branco no fim do
+    // relatorio parece falha de exportacao.
+    appendix.dataset.empty = photos.length ? "false" : "true";
+  }
+
+  // O planejamento e o painel nao carregam fotos para a tela; na exportacao
+  // elas sao buscadas sob demanda para que toda planilha tenha a mesma aba.
+  async function planPhotosForExport(plan, known = []) {
+    if (known.length) return known;
+    if (!plan?.databaseId || !cloudClient || !navigator.onLine) return [];
+    try {
+      const { data, error } = await cloudClient.from("interval_photos").select("*").eq("plan_id", plan.databaseId).order("created_at");
+      if (error) throw error;
+      return await withSignedPhotoUrls(cloudClient, data || []);
+    } catch (error) {
+      console.warn("Fotos indisponíveis para a exportação.", error);
+      return [];
+    }
+  }
+
   const PHOTO_ZOOM_MIN = 1;
   const PHOTO_ZOOM_MAX = 6;
   const PHOTO_ZOOM_STEP = 1.4;
@@ -1890,7 +1932,42 @@
     return `<c r="${reference}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
   }
 
-  async function exportPlanToXlsx(plan) {
+  // O link assinado vai como formula HYPERLINK: abre a foto com um clique e
+  // dispensa a papelada de relacionamentos externos do pacote xlsx.
+  function excelLinkCell(column, row, url, label, style = 5) {
+    const reference = `${excelColumn(column)}${row}`;
+    if (!url) return `<c r="${reference}" s="${style}"/>`;
+    return `<c r="${reference}" s="${style}"><f>HYPERLINK("${escapeXml(String(url).replaceAll('"', ""))}","${escapeXml(label)}")</f></c>`;
+  }
+
+  function photosSheetXml(photos) {
+    const rows = [];
+    rows.push(`<row r="1" ht="30" customHeight="1">${excelCell(1, 1, "FOTOS DA EXECUÇÃO", 1)}</row>`);
+    rows.push(`<row r="2" ht="8" customHeight="1"></row>`);
+    rows.push(`<row r="3" ht="30" customHeight="1">${excelCell(1, 3, photos.length
+      ? "Os links abrem a foto original no navegador e valem por cerca de uma hora a partir desta exportação. Depois disso, exporte a planilha novamente."
+      : "Nenhuma foto foi anexada a este intervalo.", 9)}</row>`);
+    const headers = ["#", "Legenda", "Arquivo", "Registrada por", "Registrada em", "Foto"];
+    rows.push(`<row r="4" ht="28" customHeight="1">${headers.map((header, index) => excelCell(index + 1, 4, header, 4)).join("")}</row>`);
+    photos.forEach((photo, index) => {
+      const rowNumber = index + 5;
+      const date = new Date(photo.created_at);
+      const dateLabel = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+      rows.push(`<row r="${rowNumber}" ht="26" customHeight="1">`
+        + excelCell(1, rowNumber, index + 1)
+        + excelCell(2, rowNumber, photo.caption || "", 9)
+        + excelCell(3, rowNumber, photo.original_name || "")
+        + excelCell(4, rowNumber, photo.author_name || "")
+        + excelCell(5, rowNumber, dateLabel)
+        + excelLinkCell(6, rowNumber, photo.signed_url, `Foto ${String(index + 1).padStart(2, "0")}`)
+        + `</row>`);
+    });
+    const lastRow = Math.max(4, photos.length + 4);
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="46" customWidth="1"/><col min="3" max="3" width="34" customWidth="1"/><col min="4" max="4" width="26" customWidth="1"/><col min="5" max="5" width="20" customWidth="1"/><col min="6" max="6" width="18" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData>${photos.length ? `<autoFilter ref="A4:F${lastRow}"/>` : ""}<mergeCells count="2"><mergeCell ref="A1:F1"/><mergeCell ref="A3:F3"/></mergeCells></worksheet>`;
+  }
+
+  async function exportPlanToXlsx(plan, photos = []) {
     if (typeof JSZip === "undefined") throw new Error("Gerador de Excel indisponível");
     const timeline = buildTimeline(plan);
     const headers = ["#", "Atividade", "Início programado", "Fim programado", "Duração programada (min)", "Início realizado", "Fim realizado", "Duração realizada (min)", "Desvio no cronograma (min)", "Situação", "O que foi realizado"];
@@ -1942,14 +2019,16 @@
     const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Verdana"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font></fonts><fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF003865"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF32A6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE5EBEE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9F8F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF0ED"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF6D1"/></patternFill></fill></fills><borders count="2"><border/><border><left style="thin"><color rgb="FFCAD6DD"/></left><right style="thin"><color rgb="FFCAD6DD"/></right><top style="thin"><color rgb="FFCAD6DD"/></top><bottom style="thin"><color rgb="FFCAD6DD"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0"/><xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFont="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
     const zip = new JSZip();
-    zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`);
+    zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`);
     zip.folder("_rels").file(".rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`);
     zip.folder("docProps").file("app.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Gestão de Intervalo</Application></Properties>`);
     zip.folder("docProps").file("core.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${escapeXml(plan.title)}</dc:title><dc:creator>Gestão de Intervalo</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:created></cp:coreProperties>`);
     const xl = zip.folder("xl");
-    xl.file("workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Intervalo" sheetId="1" r:id="rId1"/></sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`);
-    xl.folder("_rels").file("workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
-    xl.folder("worksheets").file("sheet1.xml", sheetXml);
+    xl.file("workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Intervalo" sheetId="1" r:id="rId1"/><sheet name="Fotos" sheetId="2" r:id="rId3"/></sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`);
+    xl.folder("_rels").file("workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>`);
+    const worksheets = xl.folder("worksheets");
+    worksheets.file("sheet1.xml", sheetXml);
+    worksheets.file("sheet2.xml", photosSheetXml(Array.isArray(photos) ? photos : []));
     xl.file("styles.xml", stylesXml);
     const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", compression: "DEFLATE" });
     const link = document.createElement("a");
@@ -1962,6 +2041,21 @@
 
   function fileSlug(value) {
     return String(value || "relatorio").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase();
+  }
+
+  // O anexo fotografico so entra no papel se as imagens ja estiverem
+  // decodificadas: chamar print() antes disso imprime molduras vazias.
+  // O limite de tempo evita prender o botao numa foto que nunca chega.
+  function waitForPrintImages(timeout = 5000) {
+    const pending = [...document.images].filter((image) => image.getAttribute("src") && !image.complete);
+    if (!pending.length) return Promise.resolve();
+    return Promise.race([
+      Promise.all(pending.map((image) => new Promise((resolve) => {
+        image.addEventListener("load", resolve, { once: true });
+        image.addEventListener("error", resolve, { once: true });
+      }))),
+      new Promise((resolve) => setTimeout(resolve, timeout))
+    ]);
   }
 
   function exportPageToPdf(button, fileName, idleLabel, printClass = "exporting-pdf") {
@@ -1978,14 +2072,14 @@
       window.removeEventListener("afterprint", restore);
     };
     window.addEventListener("afterprint", restore);
-    setTimeout(() => window.print(), 80);
+    waitForPrintImages().then(() => setTimeout(() => window.print(), 80));
   }
 
-  async function exportPlanFromButton(button, plan, idleLabel = "Exportar Excel") {
+  async function exportPlanFromButton(button, plan, idleLabel = "Exportar Excel", knownPhotos = []) {
     button.disabled = true;
     button.textContent = "Gerando planilha…";
     try {
-      await exportPlanToXlsx(plan);
+      await exportPlanToXlsx(plan, await planPhotosForExport(plan, knownPhotos));
       showToast("Planilha Excel exportada com sucesso.");
     } catch (error) {
       console.error(error);
@@ -2722,6 +2816,7 @@
         ...photo,
         can_delete: allowed && photo.author_user_id === currentUser.id
       })), "Nenhuma foto foi anexada a este intervalo.");
+      renderPhotoAppendix("execution-photo-appendix", photos);
       $("#execution-photo-form").hidden = !allowed;
       $("#execution-photos-locked").hidden = allowed;
     }
@@ -3357,7 +3452,7 @@
       }
     });
     $("#export-execution-xlsx").addEventListener("click", async () => {
-      try { await exportPlanFromButton($("#export-execution-xlsx"), plan); } catch (_) { /* feedback exibido */ }
+      try { await exportPlanFromButton($("#export-execution-xlsx"), plan, "Exportar Excel", photos); } catch (_) { /* feedback exibido */ }
     });
     $("#print-button").addEventListener("click", () => exportPageToPdf($("#print-button"), `execucao-${plan.title || "intervalo"}`, "Exportar PDF", "execution-printing"));
 
@@ -4212,6 +4307,7 @@
     // Edge Function devolve; no modo autenticado, o id do plano.
     let activeFront = params.get("front") || "";
     let sharedFronts = [];
+    let sharedPhotos = [];
     const loading = $("#shared-loading");
     const errorPanel = $("#shared-error");
     const content = $("#shared-content");
@@ -4223,7 +4319,7 @@
 
     $("#export-shared-xlsx").addEventListener("click", async () => {
       if (!sharedPlan) return;
-      try { await exportPlanFromButton($("#export-shared-xlsx"), sharedPlan); } catch (_) { /* estado do botão restaurado */ }
+      try { await exportPlanFromButton($("#export-shared-xlsx"), sharedPlan, "Exportar Excel", sharedPhotos); } catch (_) { /* estado do botão restaurado */ }
     });
     $("#export-shared-pdf").addEventListener("click", () => {
       if (!sharedPlan) return;
@@ -4325,9 +4421,10 @@
       const sharedComments = metadata.comments || [];
       $("#shared-comment-count").textContent = sharedComments.length;
       $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
-      const sharedPhotos = metadata.photos || [];
+      sharedPhotos = metadata.photos || [];
       $("#shared-photo-count").textContent = sharedPhotos.length;
       $("#shared-photos").innerHTML = photoGalleryHtml(sharedPhotos, metadata.photos_unavailable ? "As fotos estão indisponíveis no momento. Os demais dados do intervalo continuam disponíveis." : "Nenhuma foto registrada neste intervalo.");
+      renderPhotoAppendix("shared-photo-appendix", sharedPhotos);
 
       const hasLate = execution.lateNow.length > 0 || execution.lateFinished.length > 0;
       const status = $("#shared-status");
@@ -4910,6 +5007,7 @@
     window.__GESTAO_TEST_API__ = {
       buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation,
       stepScheduleDeviation, wholeMinutes, snapshotSignature, exportPlanToXlsx,
+      photoGalleryHtml, photoAppendixHtml, renderPhotoAppendix, photosSheetXml,
       blankPlan, normalizePlan, planToDatabase, databaseToPlan,
       frontsOf, frontLabel, nextFrontPosition, propagateSharedFields, closureCredit,
       ccoGrantMinutes, ccoGrantLabel, planDeadlineStamp, shiftPlanSchedule, hasStartedExecution,
