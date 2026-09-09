@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+<script src="assets/startup.js?v=20260910-2"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#003865" />
+    <script src="assets/auth-guard.js?v=20260910-2"></script>
+    <meta name="description" content="Registro fotográfico do intervalo: antes, durante e depois do serviço." />
+    <title>Gestão de Intervalo | Fotos</title>
+    <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png" />
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<script src="assets/pwa.js" defer></script>
+<link rel="stylesheet" href="styles.css?v=20260910-2" />
+    <script src="assets/jszip.min.js" defer></script>
+    <script src="assets/supabase.min.js?v=20260910-2" defer></script>
+<script src="app.js?v=20260910-2" defer></script>
+  </head>
+  <body data-page="photos">
+    <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Gestão de Intervalo - início">
+        <img src="assets/rumo-logo-white.png" alt="Rumo" />
+        <span>Gestão de Intervalo</span>
+      </a>
+      <nav class="primary-nav" aria-label="Navegação principal">
+        <a href="index.html"><span>1</span> Planejar</a>
+        <a href="executar.html"><span>2</span> Executar</a>
+        <a href="dashboard.html"><span>3</span> Dashboard</a>
+        <a class="active" href="fotos.html" aria-current="page"><span>4</span> Fotos</a>
+        <a href="conta.html"><span>5</span> Conta</a>
+      </nav>
+      <div class="header-tools">
+        <div class="save-state" id="save-state">Dados deste dispositivo</div>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false"><span aria-hidden="true">☾</span><b>Tema escuro</b></button>
+      </div>
+    </header>
+
+    <main id="conteudo">
+      <section class="dashboard-hero">
+        <div>
+          <p class="eyebrow">Registro fotográfico do intervalo</p>
+          <h1>O antes, o durante<br />e o depois do serviço.</h1>
+          <p>Reúna as evidências de campo em um só lugar. O PDF sai com o resumo gerencial do intervalo e, na sequência, as fotos de cada momento.</p>
+        </div>
+        <label class="dashboard-plan-picker" for="dashboard-plan-selector">
+          <span>Intervalo</span>
+          <select id="dashboard-plan-selector" aria-label="Selecionar intervalo"></select>
+        </label>
+      </section>
+
+      <section class="dashboard-workspace photos-workspace">
+        <div class="dashboard-print-header">
+          <img src="assets/rumo-logo-blue.png" alt="Rumo" />
+          <div><strong>Gestão de Intervalo</strong><span>Relatório fotográfico · Antes, durante e depois</span></div>
+        </div>
+        <div class="dashboard-context">
+          <div>
+            <p class="section-kicker">Resumo do intervalo</p>
+            <h2 id="dashboard-title">Intervalo</h2>
+            <p id="dashboard-subtitle">—</p>
+          </div>
+          <div class="page-export-actions"><button class="button button-secondary" id="export-photos-pdf" type="button">Exportar PDF</button></div>
+        </div>
+
+        <!-- Resumo gerencial. Na tela ele seria a repetição da página Dashboard;
+             no PDF é a primeira parte do relatório, antes das fotos. -->
+        <div class="photos-report">
+          <section class="dashboard-kpis" aria-label="Indicadores do intervalo">
+            <article class="dashboard-kpi"><span>Progresso</span><strong id="dashboard-progress">0%</strong><small id="dashboard-progress-note">0 de 0 etapas concluídas</small></article>
+            <article class="dashboard-kpi"><span>Tempo programado</span><strong id="dashboard-planned-total">—</strong><small>somatório das etapas</small></article>
+            <article class="dashboard-kpi"><span>Tempo gasto no intervalo</span><strong id="dashboard-actual-total">—</strong><small id="dashboard-actual-note">Aguardando o primeiro início realizado</small></article>
+            <article class="dashboard-kpi featured" id="dashboard-variance-card"><span id="dashboard-variance-label">Situação do cronograma em execução</span><strong id="dashboard-variance">—</strong><small id="dashboard-variance-note">Aguardando o primeiro marco operacional</small></article>
+          </section>
+
+          <section class="dashboard-grid">
+            <article class="chart-card chart-card-wide timeline-comparison-card">
+              <header class="chart-heading">
+                <div><p class="section-kicker">Linha do tempo do intervalo</p><h2>Planejado x execução</h2><small id="dashboard-timeline-range">—</small></div>
+                <div class="chart-legend timeline-legend" aria-label="Legenda da linha do tempo">
+                  <span><i class="timeline-planned-key"></i>Planejado</span>
+                  <span><i class="timeline-realized-key"></i>Executado</span>
+                  <span><i class="timeline-running-key"></i>Em andamento</span>
+                </div>
+              </header>
+              <p class="timeline-help">Cada atividade apresenta o horário planejado e, logo abaixo, o período efetivamente executado.</p>
+              <div class="timeline-comparison" id="dashboard-timeline"></div>
+            </article>
+
+            <article class="chart-card chart-card-wide">
+              <header class="chart-heading">
+                <div><p class="section-kicker">Duração por atividade</p><h2>Programado x realizado</h2></div>
+                <div class="chart-legend"><span><i class="planned"></i>Programado</span><span><i class="actual"></i>Realizado</span></div>
+              </header>
+              <div class="duration-chart" id="duration-chart"></div>
+            </article>
+
+            <article class="chart-card">
+              <header class="chart-heading"><div><p class="section-kicker">Avanço</p><h2>Conclusão das etapas</h2></div></header>
+              <div class="completion-chart">
+                <div class="completion-ring" id="completion-ring"><div><strong id="completion-value">0%</strong><span>concluído</span></div></div>
+                <div class="completion-breakdown" id="completion-breakdown"></div>
+              </div>
+            </article>
+
+            <article class="chart-card">
+              <header class="chart-heading"><div><p class="section-kicker">Pontualidade</p><h2>Desvio no fim de cada etapa</h2></div></header>
+              <div class="variance-chart" id="variance-chart"></div>
+            </article>
+          </section>
+
+          <section class="chart-card dashboard-table-card">
+            <header class="chart-heading"><div><p class="section-kicker">Detalhamento</p><h2>Leitura operacional</h2></div></header>
+            <div class="dashboard-table-wrap">
+              <table class="dashboard-table">
+                <thead><tr><th>Atividade</th><th>Duração prevista</th><th>Duração realizada</th><th>Desvio no cronograma</th><th>Situação</th></tr></thead>
+                <tbody id="dashboard-table-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div class="photo-phases">
+          <section class="photo-phase execution-photos panel" data-phase="before">
+            <div class="panel-heading compact">
+              <div><span class="step-number">01</span><div><h2>Antes do intervalo</h2><p>Estado da via antes do bloqueio: o ponto de partida do serviço. Pode ser completado depois, se alguma foto ficou para trás.</p></div></div>
+              <span class="phase-count" data-phase-count="before">0</span>
+            </div>
+            <div class="execution-photos-body">
+              <div class="photo-gallery" data-phase-gallery="before"></div>
+              <form class="photo-upload-form" data-phase-form="before">
+                <label class="field"><span>Legenda (opcional)</span><input name="caption" type="text" maxlength="500" placeholder="Ex.: via antes do bloqueio no km 120"></label>
+                <input id="photo-input-before" data-phase-input="before" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+                <div class="photo-upload-actions">
+                  <label class="button button-secondary" for="photo-input-before">Escolher fotos da galeria</label>
+                  <span class="auth-feedback" data-phase-feedback="before" role="status" aria-live="polite"></span>
+                </div>
+                <small>JPG, PNG ou WebP, até 25 MB por foto. É necessária conexão com a internet.</small>
+              </form>
+              <p class="comments-locked" data-phase-locked="before" hidden>Este intervalo não recebe mais fotos.</p>
+            </div>
+          </section>
+
+          <section class="photo-phase execution-photos panel" data-phase="during">
+            <div class="panel-heading compact">
+              <div><span class="step-number">02</span><div><h2>Durante o intervalo</h2><p>As fotos anexadas na tela de Execução aparecem aqui automaticamente. Anexe outras se precisar.</p></div></div>
+              <span class="phase-count" data-phase-count="during">0</span>
+            </div>
+            <div class="execution-photos-body">
+              <div class="photo-gallery" data-phase-gallery="during"></div>
+              <form class="photo-upload-form" data-phase-form="during">
+                <label class="field"><span>Legenda (opcional)</span><input name="caption" type="text" maxlength="500" placeholder="Ex.: escavação concluída"></label>
+                <input id="photo-input-during" data-phase-input="during" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+                <div class="photo-upload-actions">
+                  <label class="button button-secondary" for="photo-input-during">Escolher fotos da galeria</label>
+                  <span class="auth-feedback" data-phase-feedback="during" role="status" aria-live="polite"></span>
+                </div>
+                <small>JPG, PNG ou WebP, até 25 MB por foto. É necessária conexão com a internet.</small>
+              </form>
+              <p class="comments-locked" data-phase-locked="during" hidden>O registro do durante abre quando a execução começa.</p>
+            </div>
+          </section>
+
+          <section class="photo-phase execution-photos panel" data-phase="after">
+            <div class="panel-heading compact">
+              <div><span class="step-number">03</span><div><h2>Depois do intervalo</h2><p>Como a via foi entregue: a conferência depois da liberação. Esta seção continua aberta com o intervalo já encerrado.</p></div></div>
+              <span class="phase-count" data-phase-count="after">0</span>
+            </div>
+            <div class="execution-photos-body">
+              <div class="photo-gallery" data-phase-gallery="after"></div>
+              <form class="photo-upload-form" data-phase-form="after">
+                <label class="field"><span>Legenda (opcional)</span><input name="caption" type="text" maxlength="500" placeholder="Ex.: via liberada após o serviço"></label>
+                <input id="photo-input-after" data-phase-input="after" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+                <div class="photo-upload-actions">
+                  <label class="button button-secondary" for="photo-input-after">Escolher fotos da galeria</label>
+                  <span class="auth-feedback" data-phase-feedback="after" role="status" aria-live="polite"></span>
+                </div>
+                <small>JPG, PNG ou WebP, até 25 MB por foto. É necessária conexão com a internet.</small>
+              </form>
+              <p class="comments-locked" data-phase-locked="after" hidden>O registro do depois abre quando a execução começa.</p>
+            </div>
+          </section>
+        </div>
+
+        <section class="photo-appendix" id="photos-appendix-before" data-empty="true">
+          <header><h2>Antes do intervalo</h2><span data-appendix-count></span></header>
+          <div class="photo-appendix-grid"></div>
+        </section>
+        <section class="photo-appendix" id="photos-appendix-during" data-empty="true">
+          <header><h2>Durante o intervalo</h2><span data-appendix-count></span></header>
+          <div class="photo-appendix-grid"></div>
+        </section>
+        <section class="photo-appendix" id="photos-appendix-after" data-empty="true">
+          <header><h2>Depois do intervalo</h2><span data-appendix-count></span></header>
+          <div class="photo-appendix-grid"></div>
+        </section>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <footer class="site-footer">
+      <img src="assets/rumo-logo-blue.png" alt="Rumo" />
+      <span>Gestão de Intervalo · Operação com clareza e segurança</span>
+    </footer>
+  </body>
+</html>

@@ -1658,6 +1658,108 @@
     }).filter((photo) => photo.signed_url);
   }
 
+  const PHOTO_PHASES = ["before", "during", "after"];
+  const PHOTO_PHASE_LABELS = { before: "Antes", during: "Durante", after: "Depois" };
+
+  function photoPhase(photo) {
+    const value = String(photo?.phase || "during");
+    return PHOTO_PHASES.includes(value) ? value : "during";
+  }
+
+  // Uma foto por vez: o arquivo sobe primeiro e a linha em interval_photos
+  // vem logo atras. Se o metadado falhar, o arquivo orfao e removido no mesmo
+  // passo, senao ele ficaria ocupando o bucket sem aparecer em lugar nenhum.
+  async function uploadPhotosToPlan({ plan, files, caption = "", phase = "during", report = () => {} }) {
+    let uploaded = 0;
+    for (const [index, file] of files.entries()) {
+      report(`Enviando foto ${index + 1} de ${files.length}…`);
+      const clientId = uid();
+      const extension = INTERVAL_PHOTO_TYPES.get(file.type);
+      const storagePath = `${plan.databaseId}/${currentUser.id}/${clientId}.${extension}`;
+      const { error: uploadError } = await cloudClient.storage.from(INTERVAL_PHOTO_BUCKET).upload(storagePath, file, {
+        cacheControl: "31536000", contentType: file.type, upsert: false
+      });
+      if (uploadError) throw Object.assign(uploadError, { uploaded });
+      const metadata = {
+        client_id: clientId,
+        dataset_id: plan.datasetId,
+        plan_id: plan.databaseId,
+        storage_path: storagePath,
+        original_name: file.name.slice(0, 180) || `foto.${extension}`,
+        mime_type: file.type,
+        file_size: file.size,
+        caption,
+        phase
+      };
+      let { error: metadataError } = await cloudClient.from("interval_photos").insert(metadata);
+      // A publicacao do site e a migracao do banco nao acontecem no mesmo
+      // minuto. Enquanto a coluna phase nao existir, a foto da execucao entra
+      // sem ela em vez de o envio falhar -- e la o momento e sempre "durante".
+      if (metadataError && phase === "during" && /phase/i.test(metadataError.message || "")) {
+        const { phase: _ignorado, ...semFase } = metadata;
+        ({ error: metadataError } = await cloudClient.from("interval_photos").insert(semFase));
+      }
+      if (metadataError) {
+        await cloudClient.storage.from(INTERVAL_PHOTO_BUCKET).remove([storagePath]).catch(() => {});
+        throw Object.assign(metadataError, { uploaded });
+      }
+      uploaded += 1;
+    }
+    return uploaded;
+  }
+
+  // Girar entra so como atributo na foto que ja esta na tela: refazer o HTML
+  // aqui mandaria o navegador buscar a mesma imagem de novo. Quem chama diz,
+  // pelo onChange, o que mais precisa acompanhar o novo angulo.
+  async function rotatePhotoInPlace(photo, figure, { onChange = () => {}, feedback = null } = {}) {
+    if (!photo || photo.author_user_id !== currentUser?.id || !cloudClient) return;
+    const previous = photoRotation(photo);
+    const showRotation = (angle) => {
+      photo.rotation = angle;
+      figure?.querySelector("img")?.setAttribute("data-rotation", String(angle));
+      figure?.querySelector("[data-photo-view]")?.setAttribute("data-photo-rotation", String(angle));
+      onChange(angle);
+    };
+    showRotation((previous + 90) % 360);
+    try {
+      const { error } = await cloudClient.from("interval_photos")
+        .update({ rotation: photoRotation(photo) }).eq("id", photo.id).eq("author_user_id", currentUser.id);
+      if (error) throw error;
+      if (feedback) feedback.textContent = "Orientação da foto atualizada.";
+    } catch (error) {
+      console.error("Falha ao girar a foto.", error);
+      showRotation(previous);
+      if (feedback) feedback.textContent = error.message || "Não foi possível girar a foto.";
+    }
+  }
+
+  // O metadado sai primeiro: sem ele a foto ja nao aparece para ninguem, e o
+  // arquivo orfao continua removivel por quem enviou.
+  async function deleteIntervalPhoto(photo) {
+    const { error: metadataError } = await cloudClient.from("interval_photos")
+      .delete().eq("id", photo.id).eq("author_user_id", currentUser.id);
+    if (metadataError) throw metadataError;
+    const { error: storageError } = await cloudClient.storage.from(INTERVAL_PHOTO_BUCKET).remove([photo.storage_path]);
+    if (storageError) throw storageError;
+  }
+
+  // As janelas de cada momento, iguais as do banco. Elas seguem abertas depois
+  // do encerramento: a foto do depois so existe com o servico terminado, e quem
+  // volta do campo precisa poder completar o antes e o durante que faltaram.
+  // Antes de a execucao comecar so o antes faz sentido, e intervalo cancelado
+  // nao recebe foto nenhuma.
+  function phaseAcceptsPhotos(plan, phase) {
+    if (!plan) return false;
+    const status = plan.status || "planning";
+    if (phase === "before") return ["planning", "executing", "completed"].includes(status);
+    if (phase === "during" || phase === "after") return ["executing", "completed"].includes(status);
+    return false;
+  }
+
+  function invalidPhotoFile(files) {
+    return files.find((file) => !INTERVAL_PHOTO_TYPES.has(file.type) || file.size < 1 || file.size > MAX_INTERVAL_PHOTO_SIZE);
+  }
+
   function photoRotation(photo) {
     const value = Number(photo?.rotation) || 0;
     return [0, 90, 180, 270].includes(value) ? value : 0;
@@ -1683,6 +1785,9 @@
   // No PDF as miniaturas continuam onde estao, dentro do relato da execucao,
   // e as mesmas fotos voltam no fim em tamanho de leitura, duas por linha.
   function photoAppendixHtml(photos) {
+    // O anexo da pagina de Fotos ja separa os momentos pelo titulo; quando a
+    // lista mistura os tres, cada foto diz a qual momento pertence.
+    const mixedPhases = new Set(photos.map(photoPhase)).size > 1;
     return photos.map((photo, index) => {
       const date = new Date(photo.created_at);
       const dateLabel = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
@@ -1690,7 +1795,7 @@
       const credit = `${photo.author_name || "Usuário"}${dateLabel ? ` · ${dateLabel}` : ""}`;
       return `<figure class="print-photo">
         <span class="print-photo-frame" data-rotation="${photoRotation(photo)}"><img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}"></span>
-        <figcaption><strong>Foto ${String(index + 1).padStart(2, "0")}${photo.caption ? ` · ${escapeHtml(photo.caption)}` : ""}</strong><span>${escapeHtml(credit)}</span></figcaption>
+        <figcaption><strong>Foto ${String(index + 1).padStart(2, "0")}${mixedPhases ? ` · ${PHOTO_PHASE_LABELS[photoPhase(photo)]}` : ""}${photo.caption ? ` · ${escapeHtml(photo.caption)}` : ""}</strong><span>${escapeHtml(credit)}</span></figcaption>
       </figure>`;
     }).join("");
   }
@@ -2014,7 +2119,7 @@
     rows.push(`<row r="3" ht="30" customHeight="1">${excelCell(1, 3, photos.length
       ? "Os links abrem a foto original no navegador e valem por cerca de uma hora a partir desta exportação. Depois disso, exporte a planilha novamente."
       : "Nenhuma foto foi anexada a este intervalo.", 9)}</row>`);
-    const headers = ["#", "Legenda", "Arquivo", "Registrada por", "Registrada em", "Foto"];
+    const headers = ["#", "Momento", "Legenda", "Arquivo", "Registrada por", "Registrada em", "Foto"];
     rows.push(`<row r="4" ht="28" customHeight="1">${headers.map((header, index) => excelCell(index + 1, 4, header, 4)).join("")}</row>`);
     photos.forEach((photo, index) => {
       const rowNumber = index + 5;
@@ -2022,16 +2127,17 @@
       const dateLabel = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
       rows.push(`<row r="${rowNumber}" ht="26" customHeight="1">`
         + excelCell(1, rowNumber, index + 1)
-        + excelCell(2, rowNumber, photo.caption || "", 9)
-        + excelCell(3, rowNumber, photo.original_name || "")
-        + excelCell(4, rowNumber, photo.author_name || "")
-        + excelCell(5, rowNumber, dateLabel)
-        + excelLinkCell(6, rowNumber, photo.signed_url, `Foto ${String(index + 1).padStart(2, "0")}`)
+        + excelCell(2, rowNumber, PHOTO_PHASE_LABELS[photoPhase(photo)])
+        + excelCell(3, rowNumber, photo.caption || "", 9)
+        + excelCell(4, rowNumber, photo.original_name || "")
+        + excelCell(5, rowNumber, photo.author_name || "")
+        + excelCell(6, rowNumber, dateLabel)
+        + excelLinkCell(7, rowNumber, photo.signed_url, `Foto ${String(index + 1).padStart(2, "0")}`)
         + `</row>`);
     });
     const lastRow = Math.max(4, photos.length + 4);
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="46" customWidth="1"/><col min="3" max="3" width="34" customWidth="1"/><col min="4" max="4" width="26" customWidth="1"/><col min="5" max="5" width="20" customWidth="1"/><col min="6" max="6" width="18" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData>${photos.length ? `<autoFilter ref="A4:F${lastRow}"/>` : ""}<mergeCells count="2"><mergeCell ref="A1:F1"/><mergeCell ref="A3:F3"/></mergeCells></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="1" width="6" customWidth="1"/><col min="2" max="2" width="12" customWidth="1"/><col min="3" max="3" width="46" customWidth="1"/><col min="4" max="4" width="34" customWidth="1"/><col min="5" max="5" width="26" customWidth="1"/><col min="6" max="6" width="20" customWidth="1"/><col min="7" max="7" width="18" customWidth="1"/></cols><sheetData>${rows.join("")}</sheetData>${photos.length ? `<autoFilter ref="A4:G${lastRow}"/>` : ""}<mergeCells count="2"><mergeCell ref="A1:G1"/><mergeCell ref="A3:G3"/></mergeCells></worksheet>`;
   }
 
   async function exportPlanToXlsx(plan, photos = []) {
@@ -2864,7 +2970,11 @@
       const { data, error } = await cloudClient.from("interval_photos").select("*").eq("plan_id", requestedPlanId).order("created_at");
       if (error) { console.warn("Não foi possível atualizar as fotos.", error); renderPhotos(); return; }
       try {
-        const signed = await withSignedPhotoUrls(cloudClient, data || [], 3600, photos);
+        // A tela de execucao mostra so o que aconteceu dentro do intervalo; o
+        // antes e o depois vivem na pagina de Fotos. O filtro fica no cliente
+        // para a consulta nao depender da coluna phase ja existir.
+        const durante = (data || []).filter((photo) => photoPhase(photo) === "during");
+        const signed = await withSignedPhotoUrls(cloudClient, durante, 3600, photos);
         if (plan.databaseId !== requestedPlanId) return;
         photos = signed;
         photosPlanId = requestedPlanId;
@@ -2910,35 +3020,19 @@
 
     async function rotatePhoto(button) {
       const photo = photos.find((item) => item.id === button.dataset.photoRotate);
-      if (!photo || photo.author_user_id !== currentUser.id || !cloudClient) return;
-      const previous = photoRotation(photo);
-      const figure = button.closest(".execution-photo");
-      const feedback = $("#execution-photo-feedback");
-      // O giro entra so como atributo: recriar a galeria aqui faria o navegador
-      // buscar de novo a foto que ja esta na tela.
-      const showRotation = (angle) => {
-        photo.rotation = angle;
-        figure?.querySelector("img")?.setAttribute("data-rotation", String(angle));
-        figure?.querySelector("[data-photo-view]")?.setAttribute("data-photo-rotation", String(angle));
-        const gallery = $("#execution-photos");
-        if (gallery) gallery.dataset.signature = photoGallerySignature(visiblePhotos());
-        renderPhotoAppendix("execution-photo-appendix", photos);
-      };
-      showRotation((previous + 90) % 360);
+      if (!photo) return;
       button.disabled = true;
-      try {
-        const { error } = await cloudClient.from("interval_photos")
-          .update({ rotation: photoRotation(photo) }).eq("id", photo.id).eq("author_user_id", currentUser.id);
-        if (error) throw error;
-        feedback.textContent = "Orientação da foto atualizada.";
-      } catch (error) {
-        console.error("Falha ao girar a foto.", error);
-        showRotation(previous);
-        feedback.textContent = error.message || "Não foi possível girar a foto.";
-      } finally {
-        button.disabled = false;
-      }
+      await rotatePhotoInPlace(photo, button.closest(".execution-photo"), {
+        feedback: $("#execution-photo-feedback"),
+        onChange: () => {
+          const gallery = $("#execution-photos");
+          if (gallery) gallery.dataset.signature = photoGallerySignature(visiblePhotos());
+          renderPhotoAppendix("execution-photo-appendix", photos);
+        }
+      });
+      button.disabled = false;
     }
+
     function renderComments() {
       const commentsRoot = $("#execution-comments");
       if (!commentsRoot) return;
@@ -3487,11 +3581,7 @@
       const feedback = $("#execution-photo-feedback");
       feedback.textContent = "Excluindo foto…";
       try {
-        const { error: metadataError } = await cloudClient.from("interval_photos")
-          .delete().eq("id", photo.id).eq("author_user_id", currentUser.id);
-        if (metadataError) throw metadataError;
-        const { error: storageError } = await cloudClient.storage.from(INTERVAL_PHOTO_BUCKET).remove([photo.storage_path]);
-        if (storageError) throw storageError;
+        await deleteIntervalPhoto(photo);
         photos = photos.filter((item) => item.id !== photo.id);
         feedback.textContent = "Foto excluída.";
         renderPhotos();
@@ -3518,7 +3608,7 @@
         input.value = "";
         return;
       }
-      const invalid = files.find((file) => !INTERVAL_PHOTO_TYPES.has(file.type) || file.size < 1 || file.size > MAX_INTERVAL_PHOTO_SIZE);
+      const invalid = invalidPhotoFile(files);
       if (invalid) {
         feedback.textContent = `${invalid.name}: use JPG, PNG ou WebP com até 25 MB.`;
         input.value = "";
@@ -3529,38 +3619,19 @@
       const submitLabel = form.querySelector("label[for='execution-photo-input']");
       input.disabled = true;
       submitLabel.classList.add("is-disabled");
-      let uploaded = 0;
       try {
-        for (const [index, file] of files.entries()) {
-          feedback.textContent = `Enviando foto ${index + 1} de ${files.length}…`;
-          const clientId = uid();
-          const extension = INTERVAL_PHOTO_TYPES.get(file.type);
-          const storagePath = `${uploadPlan.databaseId}/${currentUser.id}/${clientId}.${extension}`;
-          const { error: uploadError } = await cloudClient.storage.from(INTERVAL_PHOTO_BUCKET).upload(storagePath, file, {
-            cacheControl: "31536000", contentType: file.type, upsert: false
-          });
-          if (uploadError) throw uploadError;
-          const { error: metadataError } = await cloudClient.from("interval_photos").insert({
-            client_id: clientId,
-            dataset_id: uploadPlan.datasetId,
-            plan_id: uploadPlan.databaseId,
-            storage_path: storagePath,
-            original_name: file.name.slice(0, 180) || `foto.${extension}`,
-            mime_type: file.type,
-            file_size: file.size,
-            caption
-          });
-          if (metadataError) {
-            await cloudClient.storage.from(INTERVAL_PHOTO_BUCKET).remove([storagePath]).catch(() => {});
-            throw metadataError;
-          }
-          uploaded += 1;
-        }
+        // A tela de execucao registra o que acontece dentro do intervalo: tudo
+        // que sai daqui e foto do momento "durante".
+        const uploaded = await uploadPhotosToPlan({
+          plan: uploadPlan, files, caption, phase: "during",
+          report: (mensagem) => { feedback.textContent = mensagem; }
+        });
         form.reset();
         feedback.textContent = `${uploaded} ${uploaded === 1 ? "foto anexada" : "fotos anexadas"} permanentemente.`;
         await loadExecutionPhotos(true);
       } catch (error) {
         console.error("Falha ao anexar foto.", error);
+        const uploaded = Number(error.uploaded) || 0;
         feedback.textContent = uploaded
           ? `${uploaded} ${uploaded === 1 ? "foto foi salva" : "fotos foram salvas"}; o restante falhou. Tente novamente.`
           : error.message || "Não foi possível anexar a foto.";
@@ -3894,10 +3965,10 @@
       render();
     });
 
-    $("#export-dashboard-xlsx").addEventListener("click", async () => {
+    $("#export-dashboard-xlsx")?.addEventListener("click", async () => {
       try { await exportPlanFromButton($("#export-dashboard-xlsx"), activePlan()); } catch (_) { /* feedback exibido */ }
     });
-    $("#export-dashboard-pdf").addEventListener("click", () => exportPageToPdf($("#export-dashboard-pdf"), `dashboard-${activePlan()?.title || "intervalo"}`, "Exportar PDF", "dashboard-printing"));
+    $("#export-dashboard-pdf")?.addEventListener("click", () => exportPageToPdf($("#export-dashboard-pdf"), `dashboard-${activePlan()?.title || "intervalo"}`, "Exportar PDF", "dashboard-printing"));
 
     const requestedPlan = new URLSearchParams(location.search).get("plan");
     if (requestedPlan) selectPlan(requestedPlan);
@@ -3905,6 +3976,187 @@
     render();
     pageRefreshHandler = () => { renderPlanOptions(); render(); };
     setInterval(render, 1000);
+  }
+
+  function photosPage() {
+    // O resumo que abre o PDF e o mesmo do painel: reaproveitar a pagina
+    // inteira evita duas versoes do mesmo calculo saindo de lugares diferentes.
+    dashboardPage();
+    const refreshReport = pageRefreshHandler;
+    const selector = $("#dashboard-plan-selector");
+    let photos = [];
+    let photosPlanId = null;
+    let photosLoadedAt = 0;
+
+    const feedbackOf = (phase) => $(`[data-phase-feedback="${phase}"]`);
+    const photosOfPhase = (phase) => photos.filter((photo) => photoPhase(photo) === phase);
+
+    function visiblePhotosOfPhase(phase) {
+      const open = phaseAcceptsPhotos(activePlan(), phase);
+      return photosOfPhase(phase).map((photo) => ({
+        ...photo,
+        can_delete: open && photo.author_user_id === currentUser?.id,
+        can_rotate: photo.author_user_id === currentUser?.id
+      }));
+    }
+
+    function gallerySignature(list) {
+      return list.map((photo) => `${photo.id}:${photo.signed_url}:${photoRotation(photo)}:${photo.can_delete ? 1 : 0}:${photo.can_rotate ? 1 : 0}`).join("|");
+    }
+
+    const EMPTY_MESSAGES = {
+      before: "Nenhuma foto do antes foi anexada a este intervalo.",
+      during: "Nenhuma foto do durante foi anexada. As fotos enviadas na tela de Execução aparecem aqui.",
+      after: "Nenhuma foto do depois foi anexada a este intervalo."
+    };
+
+    function renderPhase(phase) {
+      const gallery = $(`[data-phase-gallery="${phase}"]`);
+      if (!gallery) return;
+      const visible = visiblePhotosOfPhase(phase);
+      const open = phaseAcceptsPhotos(activePlan(), phase);
+      // Mesma economia da tela de execucao: sem mudanca real, o HTML fica como
+      // esta e o navegador nao busca as mesmas fotos outra vez.
+      const signature = gallerySignature(visible);
+      if (gallery.dataset.signature !== signature) {
+        gallery.dataset.signature = signature;
+        gallery.innerHTML = photoGalleryHtml(visible, EMPTY_MESSAGES[phase]);
+      }
+      $(`[data-phase-count="${phase}"]`).textContent = visible.length;
+      $(`[data-phase-form="${phase}"]`).hidden = !open;
+      $(`[data-phase-locked="${phase}"]`).hidden = open;
+      renderPhotoAppendix(`photos-appendix-${phase}`, photosOfPhase(phase));
+    }
+
+    function renderPhases() {
+      PHOTO_PHASES.forEach(renderPhase);
+    }
+
+    async function loadPhotos(force = false) {
+      const plan = activePlan();
+      const requestedPlanId = plan?.databaseId;
+      if (!requestedPlanId || !cloudClient || !navigator.onLine) { renderPhases(); return; }
+      if (!force && photosPlanId === requestedPlanId && Date.now() - photosLoadedAt < 10 * 60 * 1000) { renderPhases(); return; }
+      const { data, error } = await cloudClient.from("interval_photos").select("*").eq("plan_id", requestedPlanId).order("created_at");
+      if (error) { console.warn("Não foi possível atualizar as fotos.", error); renderPhases(); return; }
+      try {
+        const signed = await withSignedPhotoUrls(cloudClient, data || [], 3600, photos);
+        if (activePlan()?.databaseId !== requestedPlanId) return;
+        photos = signed;
+        photosPlanId = requestedPlanId;
+        photosLoadedAt = Date.now();
+      } catch (error) {
+        console.warn("Não foi possível abrir as fotos.", error);
+      }
+      renderPhases();
+    }
+
+    async function sendPhotos(phase, input) {
+      const plan = activePlan();
+      const files = [...(input.files || [])];
+      const feedback = feedbackOf(phase);
+      const form = $(`[data-phase-form="${phase}"]`);
+      const caption = form.caption.value.trim();
+      if (!files.length) return;
+      if (!phaseAcceptsPhotos(plan, phase)) {
+        feedback.textContent = "Este momento do intervalo não aceita fotos agora.";
+        input.value = "";
+        return;
+      }
+      if (!navigator.onLine || !plan.databaseId) {
+        feedback.textContent = "Conecte-se à internet e aguarde a sincronização do intervalo.";
+        input.value = "";
+        return;
+      }
+      const invalid = invalidPhotoFile(files);
+      if (invalid) {
+        feedback.textContent = `${invalid.name}: use JPG, PNG ou WebP com até 25 MB.`;
+        input.value = "";
+        return;
+      }
+      const submitLabel = form.querySelector(`label[for="photo-input-${phase}"]`);
+      input.disabled = true;
+      submitLabel.classList.add("is-disabled");
+      try {
+        const uploaded = await uploadPhotosToPlan({
+          plan, files, caption, phase,
+          report: (mensagem) => { feedback.textContent = mensagem; }
+        });
+        form.reset();
+        feedback.textContent = `${uploaded} ${uploaded === 1 ? "foto anexada" : "fotos anexadas"} permanentemente.`;
+        await loadPhotos(true);
+      } catch (error) {
+        console.error("Falha ao anexar foto.", error);
+        const uploaded = Number(error.uploaded) || 0;
+        feedback.textContent = uploaded
+          ? `${uploaded} ${uploaded === 1 ? "foto foi salva" : "fotos foram salvas"}; o restante falhou. Tente novamente.`
+          : error.message || "Não foi possível anexar a foto.";
+        await loadPhotos(true);
+      } finally {
+        input.disabled = false;
+        input.value = "";
+        submitLabel.classList.remove("is-disabled");
+      }
+    }
+
+    for (const phase of PHOTO_PHASES) {
+      $(`[data-phase-form="${phase}"]`)?.addEventListener("submit", (event) => event.preventDefault());
+      $(`[data-phase-input="${phase}"]`)?.addEventListener("change", (event) => sendPhotos(phase, event.currentTarget));
+      $(`[data-phase-gallery="${phase}"]`)?.addEventListener("click", async (event) => {
+        const rotateButton = event.target.closest("[data-photo-rotate]");
+        if (rotateButton) {
+          const photo = photos.find((item) => item.id === rotateButton.dataset.photoRotate);
+          if (!photo) return;
+          rotateButton.disabled = true;
+          await rotatePhotoInPlace(photo, rotateButton.closest(".execution-photo"), {
+            feedback: feedbackOf(phase),
+            onChange: () => {
+              const gallery = $(`[data-phase-gallery="${phase}"]`);
+              if (gallery) gallery.dataset.signature = gallerySignature(visiblePhotosOfPhase(phase));
+              renderPhotoAppendix(`photos-appendix-${phase}`, photosOfPhase(phase));
+            }
+          });
+          rotateButton.disabled = false;
+          return;
+        }
+        const deleteButton = event.target.closest("[data-photo-delete]");
+        if (!deleteButton || !phaseAcceptsPhotos(activePlan(), phase)) return;
+        const photo = photos.find((item) => item.id === deleteButton.dataset.photoDelete);
+        if (!photo || photo.author_user_id !== currentUser.id) return;
+        if (!confirm("Excluir esta foto do intervalo? Esta ação não pode ser desfeita.")) return;
+        deleteButton.disabled = true;
+        const feedback = feedbackOf(phase);
+        feedback.textContent = "Excluindo foto…";
+        try {
+          await deleteIntervalPhoto(photo);
+          photos = photos.filter((item) => item.id !== photo.id);
+          feedback.textContent = "Foto excluída.";
+          renderPhases();
+        } catch (error) {
+          console.error("Falha ao excluir foto.", error);
+          feedback.textContent = error.message || "Não foi possível excluir a foto.";
+          await loadPhotos(true);
+        }
+      });
+    }
+
+    // O seletor de plano ja troca o intervalo analisado no resumo; aqui ele
+    // tambem descarta as fotos do intervalo anterior.
+    selector?.addEventListener("change", () => {
+      photos = [];
+      photosPlanId = null;
+      photosLoadedAt = 0;
+      renderPhases();
+      loadPhotos(true);
+    });
+
+    $("#export-photos-pdf")?.addEventListener("click", () => exportPageToPdf(
+      $("#export-photos-pdf"), `fotos-${activePlan()?.title || "intervalo"}`, "Exportar PDF", "photos-printing"
+    ));
+
+    renderPhases();
+    loadPhotos();
+    pageRefreshHandler = () => { refreshReport?.(); loadPhotos(); };
   }
 
   async function signOutAndReturn() {
@@ -3931,9 +4183,9 @@
     if (!nav || !currentProfile) return;
     let links;
     if (currentProfile.role === "manager") {
-      links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
+      links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["fotos.html", "Fotos", "photos"], ["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (isOperatorRole(currentProfile.role)) {
-      links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
+      links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["fotos.html", "Fotos", "photos"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
     } else if (currentProfile.role === "editor") {
       // O Editor administra o sistema; nao planeja nem executa intervalos.
       links = [["intervalos.html", "Intervalos", "intervals"], ["admin.html", "Administração", "admin"], ["auditoria.html", "Auditoria", "audit"], ["conta.html", "Minha conta", "account"]];
@@ -3953,7 +4205,7 @@
   }
 
   function routeAllowedForRole() {
-    if (!["planning", "execution", "dashboard"].includes(page)) return true;
+    if (!["planning", "execution", "dashboard", "photos"].includes(page)) return true;
     // O Editor administra o sistema; nao e responsavel por intervalo.
     return isOperatorRole(currentProfile?.role);
   }
@@ -4121,6 +4373,7 @@
     if (page === "planning") planningPage();
     if (page === "execution") executionPage();
     if (page === "dashboard") dashboardPage();
+    if (page === "photos") photosPage();
     if (page === "account") accountPage();
     if (page === "shared") sharedPage();
   }
@@ -5136,6 +5389,7 @@
       stepScheduleDeviation, wholeMinutes, snapshotSignature, exportPlanToXlsx,
       photoGalleryHtml, photoAppendixHtml, renderPhotoAppendix, photosSheetXml,
       photoRotation, reusePhotoUrls, withSignedPhotoUrls, openPhotoViewer, closePhotoViewer,
+      photoPhase, phaseAcceptsPhotos, photosPage, PHOTO_PHASES, PHOTO_PHASE_LABELS,
       blankPlan, normalizePlan, planToDatabase, databaseToPlan,
       frontsOf, frontLabel, nextFrontPosition, propagateSharedFields, closureCredit,
       ccoGrantMinutes, ccoGrantLabel, planDeadlineStamp, shiftPlanSchedule, hasStartedExecution,

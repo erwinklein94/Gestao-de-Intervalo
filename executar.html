@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="pt-BR">
   <head>
-<script src="assets/startup.js?v=20260910-1"></script>
+<script src="assets/startup.js?v=20260910-2"></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#003865" />
-    <script src="assets/auth-guard.js?v=20260910-1"></script>
+    <script src="assets/auth-guard.js?v=20260910-2"></script>
     <meta
       name="description"
       content="Acompanhamento em tempo real de intervalos de manutenção de via permanente."
@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <script src="assets/pwa.js" defer></script>
-<link rel="stylesheet" href="styles.css?v=20260910-1" />
+<link rel="stylesheet" href="styles.css?v=20260910-2" />
     <script src="assets/jszip.min.js" defer></script>
-    <script src="assets/supabase.min.js?v=20260910-1" defer></script>
-<script src="app.js?v=20260910-1" defer></script>
+    <script src="assets/supabase.min.js?v=20260910-2" defer></script>
+<script src="app.js?v=20260910-2" defer></script>
   </head>
   <body data-page="execution">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -31,7 +31,8 @@
         <a href="index.html"><span>1</span> Planejar</a>
         <a class="active" href="executar.html" aria-current="page"><span>2</span> Executar</a>
         <a href="dashboard.html"><span>3</span> Dashboard</a>
-        <a href="conta.html"><span>4</span> Conta</a>
+        <a href="fotos.html"><span>4</span> Fotos</a>
+        <a href="conta.html"><span>5</span> Conta</a>
       </nav>
       <div class="header-tools">
         <div class="save-state" id="save-state" role="status" aria-live="polite">Salvo neste dispositivo</div>
@@ -180,7 +181,7 @@
             </div>
             <div class="execution-photos-body">
               <div class="photo-gallery" id="execution-photos"></div>
-              <form id="execution-photo-form">
+              <form class="photo-upload-form" id="execution-photo-form">
                 <label class="field"><span>Legenda (opcional)</span><input name="caption" type="text" maxlength="500" placeholder="Ex.: liberação da via após o serviço"></label>
                 <input id="execution-photo-input" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
                 <div class="photo-upload-actions">

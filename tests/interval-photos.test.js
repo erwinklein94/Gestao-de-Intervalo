@@ -137,4 +137,54 @@ assert.match(rotation, /create trigger interval_photos_rotation_guard/);
 assert.match(rotation, /Somente a orientacao da foto pode ser alterada\./);
 assert.match(edge, /caption,rotation,author_name/, "o link compartilhado precisa enviar a orientação");
 
-console.log("interval-photos: upload imutável, giro do autor, cache das imagens, anexo no PDF e aba na planilha");
+
+// Página de Fotos: antes, durante e depois do intervalo, no mesmo lugar.
+const photosPage = read("fotos.html");
+assert.match(photosPage, /<body[^>]*data-page="photos"/);
+for (const phase of ["before", "during", "after"]) {
+  assert.ok(photosPage.includes(`data-phase="${phase}"`), `fotos.html sem a seção ${phase}`);
+  assert.ok(photosPage.includes(`data-phase-gallery="${phase}"`), `fotos.html sem a galeria ${phase}`);
+  assert.ok(photosPage.includes(`data-phase-form="${phase}"`), `fotos.html sem o envio ${phase}`);
+  assert.ok(photosPage.includes(`data-phase-input="${phase}"`), `fotos.html sem o seletor de arquivo ${phase}`);
+  assert.ok(photosPage.includes(`data-phase-locked="${phase}"`), `fotos.html sem o aviso ${phase}`);
+  assert.ok(photosPage.includes(`id="photos-appendix-${phase}"`), `fotos.html sem o anexo ${phase}`);
+}
+// O PDF abre pelo resumo gerencial e só então mostra os três momentos.
+assert.ok(photosPage.includes('class="photos-report"'), "fotos.html sem o resumo gerencial do PDF");
+for (const marker of ["dashboard-plan-selector", "dashboard-title", "dashboard-progress", "dashboard-timeline", "duration-chart", "completion-ring", "variance-chart", "dashboard-table-body"]) {
+  assert.ok(photosPage.includes(`id="${marker}"`), `resumo gerencial sem ${marker}`);
+}
+assert.ok(photosPage.includes('id="export-photos-pdf"'), "fotos.html sem a exportação em PDF");
+assert.match(app, /function photosPage\(\)/);
+assert.match(app, /if \(page === "photos"\) photosPage\(\);/);
+assert.match(app, /\["planning", "execution", "dashboard", "photos"\]\.includes\(page\)/, "a rota de Fotos é dos perfis operacionais");
+assert.match(app, /\["fotos\.html", "Fotos", "photos"\]/, "o menu precisa levar à página de Fotos");
+assert.match(app, /dashboardPage\(\);\n    const refreshReport = pageRefreshHandler;/, "o resumo do PDF reaproveita o painel");
+assert.match(app, /\$\("#export-photos-pdf"\)\?\.addEventListener/);
+assert.match(app, /"Exportar PDF", "photos-printing"/);
+assert.match(styles, /body\.photos-printing \.photos-report \{ display: block; \}/);
+assert.match(styles, /body\.photos-printing \.photo-phases \{ display: none !important; \}/);
+assert.match(styles, /^\.photos-report \{ display: none; \}$/m, "o resumo gerencial não se repete na tela");
+
+// A tela de Execução continua registrando só o durante.
+assert.match(app, /phase: "during"/, "o envio da execução é sempre do momento durante");
+assert.match(app, /\(data \|\| \[\]\)\.filter\(\(photo\) => photoPhase\(photo\) === "during"\)/);
+assert.match(app, /async function uploadPhotosToPlan\(\{ plan, files, caption = "", phase = "during", report/);
+assert.match(app, /function phaseAcceptsPhotos\(plan, phase\)/);
+assert.match(app, /if \(phase === "before"\) return \["planning", "executing", "completed"\]\.includes\(status\);/);
+assert.match(app, /if \(phase === "during" \|\| phase === "after"\) return \["executing", "completed"\]\.includes\(status\);/);
+assert.match(app, /PHOTO_PHASE_LABELS\[photoPhase\(photo\)\]/, "a planilha e o anexo mostram o momento");
+
+const phase = read("supabase/migrations/20260910090000_add_interval_photo_phase.sql");
+assert.match(phase, /add column phase text not null default 'during'/);
+assert.match(phase, /check \(phase in \('before', 'during', 'after'\)\)/);
+assert.match(phase, /when 'before' then plan\.status in \('planning', 'executing', 'completed'\)/);
+assert.match(phase, /when 'during' then plan\.status in \('executing', 'completed'\)/);
+assert.match(phase, /when 'after' then plan\.status in \('executing', 'completed'\)/);
+assert.match(phase, /create policy "Authorized members attach photos in open phases"/);
+assert.match(phase, /with check \(private\.interval_accepts_photos\(plan_id, phase\)\)/);
+assert.match(phase, /or new\.phase <> old\.phase/, "o giro não pode mudar o momento da foto");
+assert.match(phase, /private\.interval_accepts_any_photo\(/, "o upload no storage não conhece o momento");
+assert.match(edge, /rotation,phase,author_name/, "o link compartilhado precisa enviar o momento");
+
+console.log("interval-photos: antes, durante e depois; giro do autor, cache das imagens e relatório fotográfico");

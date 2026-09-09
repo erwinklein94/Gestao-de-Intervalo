@@ -88,7 +88,7 @@ Deno.serve(async (request) => {
     if (commentsError) throw commentsError;
 
     const { data: photos, error: photosError } = await admin.from("interval_photos")
-      .select("client_id,storage_path,original_name,mime_type,file_size,caption,rotation,author_name,author_role,author_role_gender,created_at")
+      .select("client_id,storage_path,original_name,mime_type,file_size,caption,rotation,phase,author_name,author_role,author_role_gender,created_at")
       .eq("plan_id", plan.id).eq("dataset_id", realDataset.id).order("created_at");
     if (photosError) throw photosError;
     const { data: signedPhotos, error: signedPhotosError } = photos?.length

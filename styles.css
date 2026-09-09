@@ -951,8 +951,8 @@ html[data-theme="dark"] .toast-icon { background: #26455b; color: #b9ddf5; }
 .execution-comments #execution-comment-form > div { display: grid; gap: 6px; }
 .interval-comment.is-pending { border-style: dashed; opacity: .82; }
 .execution-photos-body { padding: 0 26px 26px; }
-.execution-photos #execution-photo-form { margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
-.execution-photos #execution-photo-form > small { grid-column: 1 / -1; color: var(--muted); }
+.photo-upload-form { margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.photo-upload-form > small { grid-column: 1 / -1; color: var(--muted); }
 .photo-upload-actions { display: grid; gap: 6px; }
 .photo-upload-actions .button { cursor: pointer; }
 .photo-upload-actions .button.is-disabled { opacity: .55; pointer-events: none; }
@@ -981,6 +981,14 @@ html[data-theme="dark"] .toast-icon { background: #26455b; color: #b9ddf5; }
 /* O anexo fotografico existe so para o PDF: na tela as fotos ja estao logo
    acima, na galeria da execucao. */
 .photo-appendix { display: none; }
+/* Pagina de Fotos: o antes, o durante e o depois do intervalo.
+   O resumo gerencial fica so no PDF -- na tela ele seria a repeticao literal da
+   pagina Dashboard, que esta a um clique de distancia no menu. */
+.photos-report { display: none; }
+.photos-workspace .photo-phases { display: grid; gap: 20px; margin-top: 22px; }
+.photo-phase { margin: 0; }
+.photo-phase .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.phase-count { flex: 0 0 auto; min-width: 34px; height: 34px; padding: 0 10px; display: grid; place-items: center; border-radius: 999px; background: var(--surface-2); color: var(--blue); font-size: 13px; font-weight: 800; }
 .photo-viewer { position: fixed; z-index: 70; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; padding: 14px; background: rgba(0, 25, 45, .93); opacity: 0; visibility: hidden; transition: opacity .18s ease, visibility 0s linear .18s; }
 .photo-viewer.show { opacity: 1; visibility: visible; transition: opacity .18s ease, visibility 0s; }
 .photo-viewer-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; color: #fff; }
@@ -1317,7 +1325,9 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .site-header { min-height: auto; padding: 12px 20px 0; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; }
   .brand { min-width: 0; grid-column: 1; grid-row: 1; }
   .brand img { max-width: 100%; }
-  .primary-nav { grid-column: 1 / -1; grid-row: 2; width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* A quantidade de itens muda com o perfil e com a pagina de Fotos; a nav
+     acompanha em vez de assumir quatro colunas fixas. */
+  .primary-nav { grid-column: 1 / -1; grid-row: 2; width: 100%; display: grid; grid-template-columns: repeat(var(--nav-count, 5), minmax(0, 1fr)); }
   .primary-nav a { min-width: 0; min-height: 52px; padding: 7px 6px 9px; gap: 5px; flex-direction: column; line-height: 1.1; text-align: center; }
   .primary-nav a::after { left: 6px; right: 6px; }
   .header-tools { position: static; grid-column: 2; grid-row: 1; justify-self: end; min-width: 0; gap: 8px; }
@@ -1553,7 +1563,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .detail-status > strong { margin-left: 0; }
   #detail-comment-form { grid-template-columns: 1fr; }
   .execution-comments #execution-comment-form { grid-template-columns: 1fr; }
-  .execution-photos #execution-photo-form { grid-template-columns: 1fr; }
+  .photo-upload-form { grid-template-columns: 1fr; }
   .photo-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .detail-progress-list > div { grid-template-columns: 1fr; }
   .detail-progress-list b { text-align: left; }
@@ -1913,7 +1923,7 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .dashboard-kpi, .status-hero, .status-clock, .duration-row, .timeline-compare-row,
   .comments-panel > header, .photo-appendix > header { break-inside: avoid; page-break-inside: avoid; }
   /* Campo em branco e botao nao valem tinta: no papel interessa o registro. */
-  .execution-photos #execution-photo-form, #execution-photos-locked,
+  .photo-upload-form, .comments-locked,
   #execution-comment-form, #execution-comments-locked,
   .execution-finish-panel, .execution-photo figcaption button { display: none !important; }
   .photo-gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
@@ -1938,6 +1948,13 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .print-photo figcaption { display: grid; gap: 2px; }
   .print-photo figcaption strong { color: var(--blue); font-size: 10px; overflow-wrap: anywhere; }
   .print-photo figcaption span { color: var(--muted); font-size: 8px; }
+  /* O PDF da pagina de Fotos comeca pelo resumo gerencial do intervalo e so
+     entao abre os tres momentos, cada um em folha propria e em tamanho de
+     leitura. As galerias de miniatura ficam fora: no papel elas seriam a mesma
+     foto duas vezes, uma delas pequena demais para servir de evidencia. */
+  body.photos-printing .photos-report { display: block; }
+  body.photos-printing .photo-phases { display: none !important; }
+  body.photos-printing .dashboard-hero { display: none !important; }
   .photo-viewer { display:none; }
 }
 
