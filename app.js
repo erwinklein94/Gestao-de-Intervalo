@@ -10,7 +10,7 @@
   const SUPABASE_URL = "https://rzsybguxlueorjpsstmu.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sHHGnU3rob-unvk-_CCdcA_Ut4omY23";
   const INTERVAL_PHOTO_BUCKET = "interval-photos";
-  const MAX_INTERVAL_PHOTO_SIZE = 6 * 1024 * 1024;
+  const MAX_INTERVAL_PHOTO_SIZE = 25 * 1024 * 1024;
   const INTERVAL_PHOTO_TYPES = new Map([
     ["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]
   ]);
@@ -3045,7 +3045,7 @@
       }
       const invalid = files.find((file) => !INTERVAL_PHOTO_TYPES.has(file.type) || file.size < 1 || file.size > MAX_INTERVAL_PHOTO_SIZE);
       if (invalid) {
-        feedback.textContent = `${invalid.name}: use JPG, PNG ou WebP com até 6 MB.`;
+        feedback.textContent = `${invalid.name}: use JPG, PNG ou WebP com até 25 MB.`;
         input.value = "";
         return;
       }
