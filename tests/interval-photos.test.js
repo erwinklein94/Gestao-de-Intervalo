@@ -46,4 +46,16 @@ assert.match(deleteMigration, /author_user_id = \(select auth\.uid\(\)\)/);
 assert.match(deleteMigration, /private\.interval_accepts_comments\(plan_id\)/);
 assert.match(deleteMigration, /grant select, insert, delete on public\.interval_photos to authenticated/);
 
-console.log("interval-photos: upload imutável e acompanhamento protegidos");
+// O clique na miniatura abre o visualizador com zoom, sem perder o link para o original.
+const styles = read("styles.css");
+assert.match(app, /data-photo-view="\$\{escapeHtml\(photo\.signed_url\)\}"/);
+assert.match(app, /target="_blank" rel="noopener noreferrer" data-photo-view=/, "o link original precisa continuar disponível sem JS");
+assert.match(app, /closest\("\[data-photo-view\]"\)/);
+assert.match(app, /function openPhotoViewer/);
+assert.match(app, /function setPhotoZoom/);
+assert.match(app, /event\.key === "Escape"/);
+assert.match(app, /touch-action|pointerdown/, "o visualizador precisa tratar arrasto por toque");
+assert.match(styles, /\.photo-viewer-stage \{[^}]*touch-action: none;/);
+assert.match(styles, /body\.has-photo-viewer \{ overflow: hidden; \}/);
+
+console.log("interval-photos: upload imutável, acompanhamento protegido e zoom no visualizador");

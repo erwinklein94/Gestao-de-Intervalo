@@ -1623,11 +1623,244 @@
       const date = new Date(photo.created_at);
       const dateLabel = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
       const description = photo.caption || photo.original_name || "Foto da execução";
+      const credit = `${photo.author_name || "Usuário"}${dateLabel ? ` · ${dateLabel}` : ""}`;
+      // O link continua apontando para a imagem: sem JS, ou ao abrir em nova aba,
+      // a foto segue acessivel; com JS o clique abre o visualizador com zoom.
       return `<figure class="execution-photo">
-        <a href="${escapeHtml(photo.signed_url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}" loading="lazy"></a>
+        <a href="${escapeHtml(photo.signed_url)}" target="_blank" rel="noopener noreferrer" data-photo-view="${escapeHtml(photo.signed_url)}" data-photo-title="${escapeHtml(description)}" data-photo-credit="${escapeHtml(credit)}" aria-label="Ampliar foto: ${escapeHtml(description)}"><img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}" loading="lazy"></a>
         <figcaption>${photo.caption ? `<strong>${escapeHtml(photo.caption)}</strong>` : ""}<span>${escapeHtml(photo.author_name || "Usuário")}${dateLabel ? ` · ${escapeHtml(dateLabel)}` : ""}</span>${photo.can_delete ? `<button type="button" data-photo-delete="${escapeHtml(photo.id)}">Excluir foto</button>` : ""}</figcaption>
       </figure>`;
     }).join("");
+  }
+
+  const PHOTO_ZOOM_MIN = 1;
+  const PHOTO_ZOOM_MAX = 6;
+  const PHOTO_ZOOM_STEP = 1.4;
+  let photoViewer = null;
+
+  function createPhotoViewer() {
+    const overlay = document.createElement("div");
+    overlay.className = "photo-viewer";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Foto do intervalo");
+
+    const bar = document.createElement("header");
+    bar.className = "photo-viewer-bar";
+    const info = document.createElement("div");
+    info.className = "photo-viewer-info";
+    const title = document.createElement("strong");
+    const credit = document.createElement("span");
+    info.append(title, credit);
+
+    const tools = document.createElement("div");
+    tools.className = "photo-viewer-tools";
+    const toolButton = (label, text, extraClass = "") => {
+      const button = document.createElement("button");
+      button.type = "button";
+      if (extraClass) button.className = extraClass;
+      button.setAttribute("aria-label", label);
+      button.textContent = text;
+      return button;
+    };
+    const zoomOut = toolButton("Reduzir zoom", "−");
+    const level = document.createElement("output");
+    level.className = "photo-viewer-level";
+    const zoomIn = toolButton("Ampliar zoom", "+");
+    const reset = toolButton("Ajustar a foto à tela", "Ajustar");
+    const original = document.createElement("a");
+    original.target = "_blank";
+    original.rel = "noopener noreferrer";
+    original.textContent = "Abrir original";
+    const close = toolButton("Fechar visualizador", "×", "photo-viewer-close");
+    tools.append(zoomOut, level, zoomIn, reset, original, close);
+    bar.append(info, tools);
+
+    const stage = document.createElement("div");
+    stage.className = "photo-viewer-stage";
+    const image = document.createElement("img");
+    image.className = "photo-viewer-image";
+    image.alt = "";
+    image.draggable = false;
+    stage.append(image);
+
+    const hint = document.createElement("p");
+    hint.className = "photo-viewer-hint";
+    hint.textContent = "Role ou use os botões para ampliar · arraste para mover · Esc para fechar";
+
+    overlay.append(bar, stage, hint);
+    document.body.append(overlay);
+
+    photoViewer = {
+      overlay, stage, image, title, credit, level, original, close, zoomIn, zoomOut,
+      scale: PHOTO_ZOOM_MIN, x: 0, y: 0, moved: false, open: false,
+      pointers: new Map(), pinch: null, previousFocus: null, cleanupTimer: null
+    };
+
+    image.addEventListener("load", () => applyPhotoTransform());
+    zoomIn.addEventListener("click", () => setPhotoZoom(photoViewer.scale * PHOTO_ZOOM_STEP));
+    zoomOut.addEventListener("click", () => setPhotoZoom(photoViewer.scale / PHOTO_ZOOM_STEP));
+    reset.addEventListener("click", () => resetPhotoZoom());
+    close.addEventListener("click", () => closePhotoViewer());
+    overlay.addEventListener("click", (event) => {
+      // O arrasto termina em clique: fechar so quando a foto ficou parada.
+      if (photoViewer.moved) return;
+      if (event.target === overlay || event.target === stage) closePhotoViewer();
+    });
+    stage.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+      setPhotoZoom(photoViewer.scale * Math.exp(-delta * 0.0015), event.clientX, event.clientY);
+    }, { passive: false });
+    stage.addEventListener("dblclick", (event) => {
+      setPhotoZoom(photoViewer.scale > PHOTO_ZOOM_MIN + 0.05 ? PHOTO_ZOOM_MIN : 2.5, event.clientX, event.clientY);
+    });
+    stage.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      photoViewer.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      photoViewer.moved = false;
+      if (photoViewer.pointers.size === 2) photoViewer.pinch = { distance: pinchDistance(), scale: photoViewer.scale };
+      // A captura so melhora o arrasto que sai do palco; sem ela o zoom continua utilizavel.
+      try { stage.setPointerCapture(event.pointerId); } catch (error) { /* ponteiro sem captura disponivel */ }
+    });
+    stage.addEventListener("pointermove", (event) => {
+      const pointer = photoViewer.pointers.get(event.pointerId);
+      if (!pointer) return;
+      const previousX = pointer.x;
+      const previousY = pointer.y;
+      pointer.x = event.clientX;
+      pointer.y = event.clientY;
+      if (photoViewer.pointers.size >= 2) {
+        if (!photoViewer.pinch || photoViewer.pinch.distance < 1) return;
+        const center = pinchCenter();
+        photoViewer.moved = true;
+        setPhotoZoom(photoViewer.pinch.scale * (pinchDistance() / photoViewer.pinch.distance), center.x, center.y);
+        return;
+      }
+      if (photoViewer.scale <= PHOTO_ZOOM_MIN) return;
+      photoViewer.x += event.clientX - previousX;
+      photoViewer.y += event.clientY - previousY;
+      photoViewer.moved = true;
+      applyPhotoTransform();
+    });
+    const releasePointer = (event) => {
+      photoViewer.pointers.delete(event.pointerId);
+      if (photoViewer.pointers.size < 2) photoViewer.pinch = null;
+    };
+    stage.addEventListener("pointerup", releasePointer);
+    stage.addEventListener("pointercancel", releasePointer);
+    overlay.addEventListener("keydown", handlePhotoViewerKeys);
+    return photoViewer;
+  }
+
+  function pinchDistance() {
+    const [first, second] = [...photoViewer.pointers.values()];
+    return Math.hypot(first.x - second.x, first.y - second.y);
+  }
+
+  function pinchCenter() {
+    const [first, second] = [...photoViewer.pointers.values()];
+    return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+  }
+
+  function applyPhotoTransform() {
+    if (!photoViewer) return;
+    const { image, stage } = photoViewer;
+    // A imagem so pode deslizar dentro da sobra que o zoom criou.
+    const maxX = Math.max(0, (image.clientWidth * photoViewer.scale - stage.clientWidth) / 2);
+    const maxY = Math.max(0, (image.clientHeight * photoViewer.scale - stage.clientHeight) / 2);
+    photoViewer.x = Math.min(maxX, Math.max(-maxX, photoViewer.x));
+    photoViewer.y = Math.min(maxY, Math.max(-maxY, photoViewer.y));
+    image.style.transform = `translate(${photoViewer.x}px, ${photoViewer.y}px) scale(${photoViewer.scale})`;
+    photoViewer.level.textContent = `${Math.round(photoViewer.scale * 100)}%`;
+    stage.dataset.zoomed = photoViewer.scale > PHOTO_ZOOM_MIN + 0.01 ? "true" : "false";
+    photoViewer.zoomOut.disabled = photoViewer.scale <= PHOTO_ZOOM_MIN + 0.01;
+    photoViewer.zoomIn.disabled = photoViewer.scale >= PHOTO_ZOOM_MAX - 0.01;
+  }
+
+  function setPhotoZoom(target, anchorX, anchorY) {
+    if (!photoViewer) return;
+    const next = Math.min(PHOTO_ZOOM_MAX, Math.max(PHOTO_ZOOM_MIN, target));
+    if (next === photoViewer.scale) return;
+    const rect = photoViewer.stage.getBoundingClientRect();
+    // Mantem sob o cursor (ou sob os dedos) o mesmo ponto da foto durante o zoom.
+    const pointX = Number.isFinite(anchorX) ? anchorX - (rect.left + rect.width / 2) : 0;
+    const pointY = Number.isFinite(anchorY) ? anchorY - (rect.top + rect.height / 2) : 0;
+    const ratio = next / photoViewer.scale;
+    photoViewer.x = pointX - (pointX - photoViewer.x) * ratio;
+    photoViewer.y = pointY - (pointY - photoViewer.y) * ratio;
+    photoViewer.scale = next;
+    applyPhotoTransform();
+  }
+
+  function resetPhotoZoom() {
+    if (!photoViewer) return;
+    photoViewer.scale = PHOTO_ZOOM_MIN;
+    photoViewer.x = 0;
+    photoViewer.y = 0;
+    applyPhotoTransform();
+  }
+
+  function handlePhotoViewerKeys(event) {
+    if (!photoViewer?.open) return;
+    if (event.key === "Escape") { closePhotoViewer(); return; }
+    if (event.key === "+" || event.key === "=") { event.preventDefault(); setPhotoZoom(photoViewer.scale * PHOTO_ZOOM_STEP); return; }
+    if (event.key === "-" || event.key === "_") { event.preventDefault(); setPhotoZoom(photoViewer.scale / PHOTO_ZOOM_STEP); return; }
+    if (event.key === "0") { event.preventDefault(); resetPhotoZoom(); return; }
+    const steps = { ArrowLeft: [40, 0], ArrowRight: [-40, 0], ArrowUp: [0, 40], ArrowDown: [0, -40] };
+    if (steps[event.key] && photoViewer.scale > PHOTO_ZOOM_MIN) {
+      event.preventDefault();
+      photoViewer.x += steps[event.key][0];
+      photoViewer.y += steps[event.key][1];
+      applyPhotoTransform();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    // Prende o Tab no visualizador enquanto ele estiver aberto.
+    const focusable = [...photoViewer.overlay.querySelectorAll("button:not(:disabled), a[href]")];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  }
+
+  function openPhotoViewer(trigger) {
+    const url = trigger.dataset.photoView;
+    if (!url) return;
+    const viewer = photoViewer || createPhotoViewer();
+    clearTimeout(viewer.cleanupTimer);
+    viewer.previousFocus = document.activeElement;
+    viewer.title.textContent = trigger.dataset.photoTitle || "Foto do intervalo";
+    viewer.credit.textContent = trigger.dataset.photoCredit || "";
+    viewer.credit.hidden = !viewer.credit.textContent;
+    viewer.image.alt = viewer.title.textContent;
+    viewer.original.href = url;
+    if (viewer.image.getAttribute("src") !== url) viewer.image.src = url;
+    viewer.open = true;
+    viewer.moved = false;
+    viewer.pointers.clear();
+    viewer.pinch = null;
+    document.body.classList.add("has-photo-viewer");
+    viewer.overlay.classList.add("show");
+    resetPhotoZoom();
+    viewer.close.focus({ preventScroll: true });
+  }
+
+  function closePhotoViewer() {
+    if (!photoViewer?.open) return;
+    photoViewer.open = false;
+    photoViewer.overlay.classList.remove("show");
+    photoViewer.pointers.clear();
+    photoViewer.pinch = null;
+    document.body.classList.remove("has-photo-viewer");
+    const previousFocus = photoViewer.previousFocus;
+    photoViewer.previousFocus = null;
+    // Fotos chegam a 25 MB: solta a imagem depois que a transicao termina.
+    photoViewer.cleanupTimer = setTimeout(() => {
+      if (!photoViewer.open) photoViewer.image.removeAttribute("src");
+    }, 400);
+    if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true });
   }
 
   function escapeXml(value) {
@@ -4688,6 +4921,14 @@
   }
 
   initializeTheme();
+  // Uma unica delegacao atende todas as galerias: execucao, acompanhamento e link compartilhado.
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const trigger = event.target instanceof Element ? event.target.closest("[data-photo-view]") : null;
+    if (!trigger) return;
+    event.preventDefault();
+    openPhotoViewer(trigger);
+  });
   window.addEventListener("online", () => {
     if (store.pendingSync) scheduleCloudSync(true);
     else refreshCloudStore();
