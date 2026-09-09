@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.112.3";
 
 const allowedOrigins = new Set(["https://erwinklein94.github.io", "https://www.sistemagestaodeintervalos.com.br", "https://sistemagestaodeintervalos.com.br", "http://www.sistemagestaodeintervalos.com.br", "http://sistemagestaodeintervalos.com.br", "http://localhost:4173", "http://localhost:4174", "http://localhost:8000"]);
+const photoBucket = "interval-photos";
 
 function json(origin: string | null, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -86,6 +87,19 @@ Deno.serve(async (request) => {
       .eq("plan_id", plan.id).eq("dataset_id", realDataset.id).is("deleted_at", null).order("created_at");
     if (commentsError) throw commentsError;
 
+    const { data: photos, error: photosError } = await admin.from("interval_photos")
+      .select("client_id,storage_path,original_name,mime_type,file_size,caption,author_name,author_role,author_role_gender,created_at")
+      .eq("plan_id", plan.id).eq("dataset_id", realDataset.id).order("created_at");
+    if (photosError) throw photosError;
+    const { data: signedPhotos, error: signedPhotosError } = photos?.length
+      ? await admin.storage.from(photoBucket).createSignedUrls(photos.map((photo) => photo.storage_path), 900)
+      : { data: [], error: null };
+    if (signedPhotosError) throw signedPhotosError;
+    const visiblePhotos = (photos || []).map((photo, index) => ({
+      ...photo,
+      signed_url: signedPhotos?.[index]?.signedUrl || "",
+    })).filter((photo) => photo.signed_url);
+
     const { data: touched } = await admin.from("interval_share_links").update({ last_accessed_at: now })
       .eq("id", share.id).eq("token_hash", tokenHash).is("revoked_at", null).gt("expires_at", now).select("id").maybeSingle();
     if (!touched) return json(origin, { error: "Link inválido ou indisponível." }, 404);
@@ -101,7 +115,7 @@ Deno.serve(async (request) => {
     }));
 
     const { id: _id, dataset_id: _dataset, coordinator_member_id: _coordinator, ...safePlan } = plan;
-    return json(origin, { plan: safePlan, fronts, comments: comments || [], share: { expires_at: share.expires_at }, fetched_at: now });
+    return json(origin, { plan: safePlan, fronts, comments: comments || [], photos: visiblePhotos, share: { expires_at: share.expires_at }, fetched_at: now });
   } catch (error) {
     console.error("interval-share", error instanceof Error ? error.message : "unknown");
     return json(origin, { error: "Não foi possível carregar o acompanhamento agora." }, 500);

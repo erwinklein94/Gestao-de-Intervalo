@@ -9,6 +9,11 @@
   const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const SUPABASE_URL = "https://rzsybguxlueorjpsstmu.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sHHGnU3rob-unvk-_CCdcA_Ut4omY23";
+  const INTERVAL_PHOTO_BUCKET = "interval-photos";
+  const MAX_INTERVAL_PHOTO_SIZE = 6 * 1024 * 1024;
+  const INTERVAL_PHOTO_TYPES = new Map([
+    ["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]
+  ]);
   const page = document.body.dataset.page;
   let currentUser = null;
   let currentProfile = null;
@@ -1601,6 +1606,28 @@
       .replaceAll("'", "&#039;");
   }
 
+  async function withSignedPhotoUrls(client, rows, expiresIn = 3600) {
+    const photos = Array.isArray(rows) ? rows : [];
+    if (!photos.length) return [];
+    const paths = photos.map((photo) => photo.storage_path);
+    const { data, error } = await client.storage.from(INTERVAL_PHOTO_BUCKET).createSignedUrls(paths, expiresIn);
+    if (error) throw error;
+    return photos.map((photo, index) => ({ ...photo, signed_url: data?.[index]?.signedUrl || "" })).filter((photo) => photo.signed_url);
+  }
+
+  function photoGalleryHtml(photos, emptyMessage = "Nenhuma foto anexada.") {
+    if (!photos.length) return `<div class="chart-empty">${escapeHtml(emptyMessage)}</div>`;
+    return photos.map((photo) => {
+      const date = new Date(photo.created_at);
+      const dateLabel = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+      const description = photo.caption || photo.original_name || "Foto da execução";
+      return `<figure class="execution-photo">
+        <a href="${escapeHtml(photo.signed_url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}" loading="lazy"></a>
+        <figcaption>${photo.caption ? `<strong>${escapeHtml(photo.caption)}</strong>` : ""}<span>${escapeHtml(photo.author_name || "Usuário")}${dateLabel ? ` · ${escapeHtml(dateLabel)}` : ""}</span></figcaption>
+      </figure>`;
+    }).join("");
+  }
+
   function escapeXml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -2398,6 +2425,9 @@
     let plan = activePlan();
     let notifiedBlockedPlanId = null;
     let comments = [];
+    let photos = [];
+    let photosPlanId = null;
+    let photosLoadedAt = 0;
     const root = $("#execution-steps");
     const blocked = $("#execution-blocked");
     const content = $("#execution-content");
@@ -2429,6 +2459,33 @@
       const pending = pendingCommentsForPlan().filter((local) => !(data || []).some((remote) => remote.client_id === local.client_id));
       comments = [...(data || []), ...pending];
       renderComments();
+    }
+
+    async function loadExecutionPhotos(force = false) {
+      const requestedPlanId = plan.databaseId;
+      if (!requestedPlanId || !cloudClient || !navigator.onLine) { renderPhotos(); return; }
+      if (!force && photosPlanId === requestedPlanId && Date.now() - photosLoadedAt < 10 * 60 * 1000) { renderPhotos(); return; }
+      const { data, error } = await cloudClient.from("interval_photos").select("*").eq("plan_id", requestedPlanId).order("created_at");
+      if (error) { console.warn("Não foi possível atualizar as fotos.", error); renderPhotos(); return; }
+      try {
+        const signed = await withSignedPhotoUrls(cloudClient, data || []);
+        if (plan.databaseId !== requestedPlanId) return;
+        photos = signed;
+        photosPlanId = requestedPlanId;
+        photosLoadedAt = Date.now();
+      } catch (error) {
+        console.warn("Não foi possível abrir as fotos.", error);
+      }
+      renderPhotos();
+    }
+
+    function renderPhotos() {
+      const gallery = $("#execution-photos");
+      if (!gallery) return;
+      gallery.innerHTML = photoGalleryHtml(photos, "Nenhuma foto foi anexada a este intervalo.");
+      const allowed = plan.status === "executing";
+      $("#execution-photo-form").hidden = !allowed;
+      $("#execution-photos-locked").hidden = allowed;
     }
 
     function renderComments() {
@@ -2966,6 +3023,77 @@
       renderComments();
       scheduleCloudSync(true);
     });
+    $("#execution-photo-form")?.addEventListener("submit", (event) => event.preventDefault());
+    $("#execution-photo-input")?.addEventListener("change", async (event) => {
+      const input = event.currentTarget;
+      const files = [...(input.files || [])];
+      const feedback = $("#execution-photo-feedback");
+      const form = $("#execution-photo-form");
+      const caption = form.caption.value.trim();
+      if (!files.length) return;
+      if (plan.status !== "executing") {
+        feedback.textContent = "O intervalo precisa estar em execução para receber fotos.";
+        input.value = "";
+        return;
+      }
+      if (!navigator.onLine || !plan.databaseId) {
+        feedback.textContent = "Conecte-se à internet e aguarde a sincronização do intervalo.";
+        input.value = "";
+        return;
+      }
+      const invalid = files.find((file) => !INTERVAL_PHOTO_TYPES.has(file.type) || file.size < 1 || file.size > MAX_INTERVAL_PHOTO_SIZE);
+      if (invalid) {
+        feedback.textContent = `${invalid.name}: use JPG, PNG ou WebP com até 6 MB.`;
+        input.value = "";
+        return;
+      }
+
+      const uploadPlan = plan;
+      const submitLabel = form.querySelector("label[for='execution-photo-input']");
+      input.disabled = true;
+      submitLabel.classList.add("is-disabled");
+      let uploaded = 0;
+      try {
+        for (const [index, file] of files.entries()) {
+          feedback.textContent = `Enviando foto ${index + 1} de ${files.length}…`;
+          const clientId = uid();
+          const extension = INTERVAL_PHOTO_TYPES.get(file.type);
+          const storagePath = `${uploadPlan.databaseId}/${currentUser.id}/${clientId}.${extension}`;
+          const { error: uploadError } = await cloudClient.storage.from(INTERVAL_PHOTO_BUCKET).upload(storagePath, file, {
+            cacheControl: "31536000", contentType: file.type, upsert: false
+          });
+          if (uploadError) throw uploadError;
+          const { error: metadataError } = await cloudClient.from("interval_photos").insert({
+            client_id: clientId,
+            dataset_id: uploadPlan.datasetId,
+            plan_id: uploadPlan.databaseId,
+            storage_path: storagePath,
+            original_name: file.name.slice(0, 180) || `foto.${extension}`,
+            mime_type: file.type,
+            file_size: file.size,
+            caption
+          });
+          if (metadataError) {
+            await cloudClient.storage.from(INTERVAL_PHOTO_BUCKET).remove([storagePath]).catch(() => {});
+            throw metadataError;
+          }
+          uploaded += 1;
+        }
+        form.reset();
+        feedback.textContent = `${uploaded} ${uploaded === 1 ? "foto anexada" : "fotos anexadas"} permanentemente.`;
+        await loadExecutionPhotos(true);
+      } catch (error) {
+        console.error("Falha ao anexar foto.", error);
+        feedback.textContent = uploaded
+          ? `${uploaded} ${uploaded === 1 ? "foto foi salva" : "fotos foram salvas"}; o restante falhou. Tente novamente.`
+          : error.message || "Não foi possível anexar a foto.";
+        await loadExecutionPhotos(true);
+      } finally {
+        input.disabled = false;
+        input.value = "";
+        submitLabel.classList.remove("is-disabled");
+      }
+    });
     $("#export-execution-xlsx").addEventListener("click", async () => {
       try { await exportPlanFromButton($("#export-execution-xlsx"), plan); } catch (_) { /* feedback exibido */ }
     });
@@ -3063,6 +3191,11 @@
 
     function renderPage() {
       plan = activePlan();
+      if (photosPlanId && photosPlanId !== plan.databaseId) {
+        photos = [];
+        photosPlanId = null;
+        photosLoadedAt = 0;
+      }
       const fronts = frontsOf(plan);
       const executionAvailable = plan.locked || hasExecutionData(plan);
       blocked.hidden = executionAvailable;
@@ -3098,6 +3231,7 @@
       renderClosing();
       renderClock();
       loadExecutionComments();
+      loadExecutionPhotos();
     }
 
     renderPage();
@@ -3929,6 +4063,9 @@
       const sharedComments = metadata.comments || [];
       $("#shared-comment-count").textContent = sharedComments.length;
       $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
+      const sharedPhotos = metadata.photos || [];
+      $("#shared-photo-count").textContent = sharedPhotos.length;
+      $("#shared-photos").innerHTML = photoGalleryHtml(sharedPhotos, "Nenhuma foto registrada neste intervalo.");
 
       const hasLate = execution.lateNow.length > 0 || execution.lateFinished.length > 0;
       const status = $("#shared-status");
@@ -4076,7 +4213,7 @@
       }
       const { data: plan, error } = await internalClient
         .from("interval_plans")
-        .select("*,interval_steps(*),interval_comments(*)")
+        .select("*,interval_steps(*),interval_comments(*),interval_photos(*)")
         .eq("id", requestedPlanId)
         .maybeSingle();
       if (error) throw error;
@@ -4099,10 +4236,12 @@
       }));
       renderSharedFronts();
 
+      const signedPhotos = await withSignedPhotoUrls(internalClient, plan.interval_photos || []);
       renderSharedPlan(databaseToPlan(plan), {
         access_mode: "profile",
         fetched_at: new Date().toISOString(),
-        comments: (plan.interval_comments || []).filter((comment) => !comment.deleted_at)
+        comments: (plan.interval_comments || []).filter((comment) => !comment.deleted_at),
+        photos: signedPhotos
       });
     }
 

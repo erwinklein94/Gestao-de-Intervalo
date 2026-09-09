@@ -162,8 +162,10 @@ includesAll(execution, [
   'assets/jszip.min.js',
   'id="front-strip"',
   'id="execution-silence"',
-  'id="closing-fronts"'
-], "comentários, frentes, silêncio e encerramento da execução");
+  'id="closing-fronts"',
+  'id="execution-photos-panel"',
+  'id="execution-photo-input"'
+], "comentários, fotos, frentes, silêncio e encerramento da execução");
 
 const dashboard = read("dashboard.html");
 includesAll(dashboard, ['id="export-dashboard-xlsx"', 'id="export-dashboard-pdf"', 'assets/jszip.min.js'], "exportações do dashboard");
@@ -171,7 +173,7 @@ includesAll(dashboard, ['id="export-dashboard-xlsx"', 'id="export-dashboard-pdf"
 const shared = read("acompanhar.html");
 assert.deepEqual(attributeValues(shared, "data-shared-tab"), ["plan", "execution", "dashboard"]);
 assert.deepEqual(attributeValues(shared, "data-shared-view"), ["plan", "execution", "dashboard"]);
-includesAll(shared, ['assets/supabase.min.js', 'assets/jszip.min.js', 'id="export-shared-xlsx"', 'id="export-shared-pdf"', 'id="shared-plan-summary"', 'id="shared-planning-notes"', 'id="shared-planned-steps"', 'id="shared-comments"', 'id="shared-access-title"', 'id="shared-access-description"'], "acompanhamento público e autenticado somente leitura");
+includesAll(shared, ['assets/supabase.min.js', 'assets/jszip.min.js', 'id="export-shared-xlsx"', 'id="export-shared-pdf"', 'id="shared-plan-summary"', 'id="shared-planning-notes"', 'id="shared-planned-steps"', 'id="shared-comments"', 'id="shared-photos"', 'id="shared-photo-count"', 'id="shared-access-title"', 'id="shared-access-description"'], "acompanhamento público e autenticado somente leitura");
 includesAll(read("app.js"), [
   // Deixou de ser const porque trocar de frente reaponta o plano exibido.
   'let requestedPlanId = params.get("plan")',

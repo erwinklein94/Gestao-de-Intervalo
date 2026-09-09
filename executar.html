@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <script src="assets/pwa.js" defer></script>
-<link rel="stylesheet" href="styles.css?v=20260909-2" />
+<link rel="stylesheet" href="styles.css?v=20260909-3" />
     <script src="assets/jszip.min.js" defer></script>
     <script src="assets/supabase.min.js?v=20260909-2" defer></script>
-<script src="app.js?v=20260909-2" defer></script>
+<script src="app.js?v=20260909-3" defer></script>
   </head>
   <body data-page="execution">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -174,9 +174,28 @@
             </div>
           </section>
 
+          <section class="execution-photos panel" id="execution-photos-panel">
+            <div class="panel-heading compact">
+              <div><span class="step-number">04</span><div><h2>Fotos da execução</h2><p>Anexe evidências do trabalho em campo. Depois de enviadas, as fotos permanecem para sempre no intervalo.</p></div></div>
+            </div>
+            <div class="execution-photos-body">
+              <div class="photo-gallery" id="execution-photos"></div>
+              <form id="execution-photo-form">
+                <label class="field"><span>Legenda (opcional)</span><input name="caption" type="text" maxlength="500" placeholder="Ex.: liberação da via após o serviço"></label>
+                <input id="execution-photo-input" name="photos" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" multiple hidden>
+                <div class="photo-upload-actions">
+                  <label class="button button-secondary" for="execution-photo-input">Anexar fotos</label>
+                  <span class="auth-feedback" id="execution-photo-feedback" role="status" aria-live="polite"></span>
+                </div>
+                <small>JPG, PNG ou WebP, até 6 MB por foto. É necessária conexão com a internet.</small>
+              </form>
+              <p class="comments-locked" id="execution-photos-locked" hidden>Novas fotos só podem ser anexadas enquanto o intervalo está em execução. As fotos existentes permanecem no histórico.</p>
+            </div>
+          </section>
+
           <section class="execution-finish-panel" id="execution-finish-panel" hidden aria-labelledby="execution-finish-title">
             <div>
-              <span class="step-number light">04</span>
+              <span class="step-number light">05</span>
               <div>
                 <h2 id="execution-finish-title">Encerrar o intervalo</h2>
                 <p id="closing-description">Finalize somente depois que todas as etapas estiverem concluídas ou marcadas como não executadas. O registro passará a fazer parte do histórico.</p>
