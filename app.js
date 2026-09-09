@@ -1294,7 +1294,9 @@
       } else if (step.start != null) {
         projectedStart = nowAbs == null ? step.start : Math.max(step.start, nowAbs);
         if (chainEnd != null && chainPlannedEnd != null && step.start >= chainPlannedEnd) {
-          projectedStart = Math.max(projectedStart, chainEnd);
+          // Conserva a folga planejada e transmite também o ganho da execução.
+          const chainedStart = chainEnd + (step.start - chainPlannedEnd);
+          projectedStart = nowAbs == null ? chainedStart : Math.max(chainedStart, nowAbs);
         }
         projectedEnd = projectedStart + duration;
       }

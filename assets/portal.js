@@ -113,7 +113,9 @@
       else if (actualStart != null) stepEnd = Math.max(actualStart + duration, current);
       else if (start != null) {
         let projectedStart = Math.max(start, current);
-        if (chainEnd != null && chainPlannedEnd != null && start >= chainPlannedEnd) projectedStart = Math.max(projectedStart, chainEnd);
+        if (chainEnd != null && chainPlannedEnd != null && start >= chainPlannedEnd) {
+          projectedStart = Math.max(chainEnd + (start - chainPlannedEnd), current);
+        }
         stepEnd = projectedStart + duration;
       }
       if (Number.isFinite(stepEnd)) {

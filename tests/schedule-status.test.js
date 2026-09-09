@@ -70,6 +70,30 @@ function statusOf(candidate) {
   return executionStatus(candidate, buildTimeline(candidate));
 }
 
+// O ganho de uma etapa precisa chegar ao fim da sequência, em ambas as telas.
+{
+  const portalSandbox = { console, document: {}, window: { __GESTAO_TEST_MODE__: true } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "assets", "portal.js"), "utf8"), portalSandbox);
+  const metrics = portalSandbox.window.__GESTAO_PORTAL_TEST_API__.intervalMetrics;
+  for (const [actualStart, expected] of [["08:44", -16], ["08:00", -45], ["09:00", 0], ["09:15", 15]]) {
+    const candidate = plan([
+      { plannedStart: "09:00", plannedEnd: "10:00", actualStart },
+      { plannedStart: "10:00", plannedEnd: "11:00" },
+      { plannedStart: "11:10", plannedEnd: "12:00" }
+    ], { windowStart: "09:00", windowEnd: "12:00", status: "executing" });
+    const status = statusOf(candidate);
+    assert.equal(status.delay, expected, "ganho, consumo pelo relógio e folga planejada");
+    const remote = {
+      status: "executing", window_end: candidate.windowEnd,
+      interval_steps: candidate.steps.map((step, position) => ({
+        position, planned_start: step.plannedStart, planned_end: step.plannedEnd,
+        actual_start: step.actualStart, actual_end: step.actualEnd, status: step.executionStatus
+      }))
+    };
+    assert.equal(metrics(remote, new Date(fixedNow)).variance, expected, "gestão e acompanhamento concordam");
+  }
+}
+
 {
   const candidate = plan([
     { plannedStart: "08:00", plannedEnd: "09:00", actualStart: "07:55" },
