@@ -10,7 +10,7 @@
 // informação velha exibida como se fosse atual, que é exatamente o erro que
 // esta operação não pode cometer.
 
-const VERSION = "20260910-6";
+const VERSION = "20260910-7";
 const CACHE = `gestao-intervalo-${VERSION}`;
 
 const SHELL = [
@@ -35,8 +35,6 @@ const SHELL = [
   "assets/pwa.js",
   `assets/supabase.min.js?v=${VERSION}`,
   "assets/jszip.min.js",
-  "assets/rumo-logo-blue.png",
-  "assets/rumo-logo-white.png",
   "assets/icon.svg",
   "manifest.webmanifest"
 ];

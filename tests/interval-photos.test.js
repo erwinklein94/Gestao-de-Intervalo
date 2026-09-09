@@ -247,4 +247,29 @@ for (const page of ["index.html", "executar.html", "dashboard.html", "fotos.html
     `${page}: o cabeçalho precisa marcar exatamente uma página atual`);
 }
 
+
+// A marca da Rumo sai das telas; ficam as cores e o nome do sistema.
+const logoPages = fs.readdirSync(root).filter((file) => file.endsWith(".html") && file !== "_syntax.html");
+for (const page of logoPages) {
+  const markup = read(page);
+  assert.doesNotMatch(markup, /rumo-logo/, `${page} ainda carrega a marca em imagem`);
+  assert.ok(markup.includes("Gestão de Intervalo"), `${page} sem o nome do sistema`);
+}
+assert.ok(!fs.existsSync(path.join(root, "assets/rumo-logo-white.png")), "o arquivo da marca precisa sair do repositório");
+assert.ok(!fs.existsSync(path.join(root, "assets/rumo-logo-blue.png")), "o arquivo da marca precisa sair do repositório");
+assert.ok(fs.existsSync(path.join(root, "assets/icon.svg")), "o ícone próprio do app continua");
+assert.doesNotMatch(read("sw.js"), /rumo-logo/, "o cache offline não pode pedir um arquivo que não existe mais");
+for (const page of logoPages) {
+  const markup = read(page);
+  if (markup.includes('rel="icon"')) assert.match(markup, /rel="icon" href="assets\/icon\.svg"/, `${page}: favicon precisa ser o ícone próprio`);
+}
+assert.doesNotMatch(styles, /\.brand img/, "sem imagem no cabeçalho, a regra não tem alvo");
+assert.doesNotMatch(styles, /\.site-footer img/);
+assert.doesNotMatch(styles, /\.login-brand-panel > img/);
+assert.doesNotMatch(styles, /print-header img/);
+// O nome do sistema e a unica identidade que restou: nao pode ser escondido.
+assert.doesNotMatch(styles, /\.brand span \{ display: none; \}/, "o nome do sistema não pode sumir em tela nenhuma");
+assert.match(styles, /\.brand \{[^}]*font-size: 16px;[^}]*font-weight: 800;/, "o nome assume o peso que era da marca");
+assert.match(styles, /\.brand span \{ white-space: nowrap; \}/);
+
 console.log("interval-photos: antes, durante e depois; giro do autor, cache das imagens e relatório fotográfico");

@@ -1,26 +1,26 @@
 <!doctype html>
 <html lang="pt-BR" class="auth-checking">
 <head>
-<script src="assets/startup.js?v=20260910-6"></script>
+<script src="assets/startup.js?v=20260910-7"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#003865">
-  <script src="assets/auth-guard.js?v=20260910-6"></script>
+  <script src="assets/auth-guard.js?v=20260910-7"></script>
   <meta name="description" content="Todos os intervalos do sistema, separados por status.">
   <title>Gestão de Intervalo | Todos os intervalos</title>
-  <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <script src="assets/pwa.js" defer></script>
-  <link rel="stylesheet" href="styles.css?v=20260910-6">
+  <link rel="stylesheet" href="styles.css?v=20260910-7">
   <script src="assets/jszip.min.js" defer></script>
-  <script src="assets/supabase.min.js?v=20260910-6" defer></script>
-  <script src="assets/portal.js?v=20260910-6" defer></script>
+  <script src="assets/supabase.min.js?v=20260910-7" defer></script>
+  <script src="assets/portal.js?v=20260910-7" defer></script>
 </head>
 <body data-page="intervals">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
   <header class="site-header">
-    <a class="brand" href="intervalos.html" aria-label="Gestão de Intervalo - início"><img src="assets/rumo-logo-white.png" alt="Rumo"><span>Gestão de Intervalo</span></a>
+    <a class="brand" href="intervalos.html" aria-label="Gestão de Intervalo - início"><span>Gestão de Intervalo</span></a>
     <nav class="primary-nav" aria-label="Navegação principal" data-role-nav></nav>
     <div class="header-tools"><span class="save-state" id="portal-state">Carregando…</span><button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false"><span>☾</span><b>Tema escuro</b></button></div>
   </header>
@@ -41,7 +41,7 @@
     </section>
 
     <section class="management-workspace intervals-workspace">
-      <div class="portal-print-header"><img src="assets/rumo-logo-blue.png" alt="Rumo"><div><strong id="portal-print-title">Todos os intervalos</strong><span id="portal-print-filters">Visão do sistema</span></div></div>
+      <div class="portal-print-header"><div><strong id="portal-print-title">Todos os intervalos</strong><span id="portal-print-filters">Visão do sistema</span></div></div>
 
       <section class="portal-filters" aria-label="Filtros">
       <header class="portal-filters-heading">
@@ -96,6 +96,6 @@
 
   <dialog class="interval-detail-dialog" id="interval-detail"><div id="interval-detail-content"></div></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <footer class="site-footer"><img src="assets/rumo-logo-blue.png" alt="Rumo"><span>Gestão de Intervalo · Operação com clareza e segurança</span></footer>
+  <footer class="site-footer"><span>Gestão de Intervalo · Operação com clareza e segurança</span></footer>
 </body>
 </html>
