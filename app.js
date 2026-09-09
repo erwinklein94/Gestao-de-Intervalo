@@ -3819,9 +3819,15 @@
     function renderPlanOptions() {
       selector.innerHTML = store.plans.map((plan) => {
         const fronts = frontsOf(plan);
-        const label = fronts.length > 1
-          ? `${plan.title || "Plano sem nome"} · ${frontLabel(plan)}`
-          : (plan.title || "Plano sem nome");
+        // O mesmo trecho volta a ser trabalhado semana após semana com titulo
+        // igual ou quase igual; a data e o que permite escolher o intervalo
+        // certo sem abrir um por um.
+        const dateLabel = plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "";
+        const label = [
+          plan.title || "Plano sem nome",
+          fronts.length > 1 ? frontLabel(plan) : "",
+          dateLabel
+        ].filter(Boolean).join(" · ");
         return `<option value="${plan.id}" ${plan.id === store.activePlanId ? "selected" : ""}>${escapeHtml(label)}</option>`;
       }).join("");
     }

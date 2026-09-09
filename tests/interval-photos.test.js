@@ -204,4 +204,10 @@ assert.match(app, /renderPhotoAppendix\(`shared-photo-appendix-\$\{phase\}`, lis
 assert.match(app, /\[data-shared-gallery="\$\{phase\}"\]/);
 assert.match(styles, /body\.shared-printing #shared-photos-view \{ display:none !important; \}/);
 
+
+// O mesmo trecho volta com titulo parecido semana após semana: a data no
+// seletor é o que permite escolher o intervalo certo.
+assert.match(app, /const dateLabel = plan\.date \? new Date\(`\$\{plan\.date\}T12:00:00`\)\.toLocaleDateString\("pt-BR"\) : "";/);
+assert.match(app, /const label = \[\s*\n\s*plan\.title \|\| "Plano sem nome",/);
+
 console.log("interval-photos: antes, durante e depois; giro do autor, cache das imagens e relatório fotográfico");
