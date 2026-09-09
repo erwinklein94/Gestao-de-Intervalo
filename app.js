@@ -15,7 +15,7 @@
   let activeStorageKey = window.__GESTAO_USER_ID__ ? `${STORAGE_KEY}.${window.__GESTAO_USER_ID__}` : STORAGE_KEY;
   let store;
   let saveTimer;
-  let toastTimer;
+  let toastEscapeHandler = null;
   let cloudClient = null;
   let cloudTimer;
   let cloudSyncing = false;
@@ -821,14 +821,32 @@
     }
   }
 
+  function notificationType(message) {
+    const text = String(message || "").toLocaleLowerCase("pt-BR");
+    if (/não foi possível|conflito|falha|erro/.test(text)) return "error";
+    if (/com sucesso|criad[ao]|copiad[ao]|exportad[ao]|registrad[ao]|reativad[ao]|atualizad[ao]|cronograma travado|destravad[ao]|liberad[ao]|adicionad[ao]|removid[ao]|revogad[ao]|ativad[ao]|desativad[ao]/.test(text)) return "success";
+    if (/não pode|não podem|cancelad[ao]|sem confirmação|máximo|já registrou|informe|precisa|preencha|mantenha|somente|revise|reative|limpe|ainda há|aguarde|em aberto|antes de|primeiro/.test(text)) return "warning";
+    return "info";
+  }
+
   function showToast(message, options = {}) {
     const toast = $("#toast");
     if (!toast) return;
-    const type = ["info", "success", "warning", "error"].includes(options.type) ? options.type : "info";
-    const titles = { info: "Aviso", success: "Tudo certo", warning: "Atenção", error: "Não foi possível continuar" };
+    if (toastEscapeHandler) document.removeEventListener("keydown", toastEscapeHandler);
+    const type = ["info", "success", "warning", "error"].includes(options.type) ? options.type : notificationType(message);
+    const titles = { info: "Informação", success: "Tudo certo", warning: "Atenção", error: "Não foi possível continuar" };
     const icons = { info: "i", success: "✓", warning: "!", error: "×" };
+    const previousFocus = document.activeElement;
+    let backdrop = $(".toast-backdrop");
+    if (!backdrop) {
+      backdrop = document.createElement("div");
+      backdrop.className = "toast-backdrop";
+      backdrop.setAttribute("aria-hidden", "true");
+      document.body.append(backdrop);
+    }
     toast.dataset.type = type;
-    toast.setAttribute("role", type === "error" || type === "warning" ? "alert" : "status");
+    toast.setAttribute("role", "alertdialog");
+    toast.setAttribute("aria-modal", "true");
     toast.setAttribute("aria-atomic", "true");
     toast.innerHTML = "";
 
@@ -850,14 +868,21 @@
     close.className = "toast-close";
     close.setAttribute("aria-label", "Fechar notificação");
     close.textContent = "×";
-    close.addEventListener("click", () => {
-      clearTimeout(toastTimer);
+    const closeNotification = () => {
       toast.classList.remove("show");
-    });
+      backdrop.classList.remove("show");
+      document.removeEventListener("keydown", closeOnEscape);
+      toastEscapeHandler = null;
+      if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true });
+    };
+    const closeOnEscape = (event) => event.key === "Escape" && closeNotification();
+    toastEscapeHandler = closeOnEscape;
+    close.addEventListener("click", closeNotification);
     toast.append(icon, content, close);
+    backdrop.classList.add("show");
     toast.classList.add("show");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove("show"), options.duration || (type === "warning" || type === "error" ? 5200 : 3200));
+    document.addEventListener("keydown", closeOnEscape);
+    setTimeout(() => close.focus({ preventScroll: true }), 0);
   }
 
   function timeToMinutes(value) {

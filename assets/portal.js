@@ -321,7 +321,7 @@
   let members = [];
   let managerAssignments = [];
   let accessRequests = [];
-  let toastTimer;
+  let toastEscapeHandler = null;
 
   function initializeTheme() {
     let theme = "light";
@@ -344,13 +344,66 @@
     }));
   }
 
-  function showToast(message) {
+  function notificationType(message) {
+    const text = String(message || "").toLocaleLowerCase("pt-BR");
+    if (/não foi possível|conflito|falha|erro/.test(text)) return "error";
+    if (/com sucesso|criad[ao]|copiad[ao]|exportad[ao]|registrad[ao]|reativad[ao]|atualizad[ao]|liberad[ao]|adicionad[ao]|removid[ao]|revogad[ao]|ativad[ao]|desativad[ao]/.test(text)) return "success";
+    if (/não pode|não podem|cancelad[ao]|sem confirmação|máximo|informe|precisa|preencha|mantenha|somente|revise|reative|limpe|ainda há|aguarde|em aberto|antes de|recusad[ao]/.test(text)) return "warning";
+    return "info";
+  }
+
+  function showToast(message, options = {}) {
     const toast = $("#toast");
     if (!toast) return;
-    toast.textContent = message;
+    if (toastEscapeHandler) document.removeEventListener("keydown", toastEscapeHandler);
+    const type = ["info", "success", "warning", "error"].includes(options.type) ? options.type : notificationType(message);
+    const titles = { info: "Informação", success: "Tudo certo", warning: "Atenção", error: "Não foi possível continuar" };
+    const icons = { info: "i", success: "✓", warning: "!", error: "×" };
+    const previousFocus = document.activeElement;
+    let backdrop = $(".toast-backdrop");
+    if (!backdrop) {
+      backdrop = document.createElement("div");
+      backdrop.className = "toast-backdrop";
+      backdrop.setAttribute("aria-hidden", "true");
+      document.body.append(backdrop);
+    }
+    toast.dataset.type = type;
+    toast.setAttribute("role", "alertdialog");
+    toast.setAttribute("aria-modal", "true");
+    toast.setAttribute("aria-atomic", "true");
+    toast.innerHTML = "";
+
+    const icon = document.createElement("span");
+    icon.className = "toast-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = icons[type];
+    const content = document.createElement("span");
+    content.className = "toast-content";
+    const title = document.createElement("strong");
+    title.textContent = options.title || titles[type];
+    const text = document.createElement("span");
+    text.textContent = message;
+    content.append(title, text);
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-close";
+    close.setAttribute("aria-label", "Fechar notificação");
+    close.textContent = "×";
+    const closeNotification = () => {
+      toast.classList.remove("show");
+      backdrop.classList.remove("show");
+      document.removeEventListener("keydown", closeOnEscape);
+      toastEscapeHandler = null;
+      if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true });
+    };
+    const closeOnEscape = (event) => event.key === "Escape" && closeNotification();
+    toastEscapeHandler = closeOnEscape;
+    close.addEventListener("click", closeNotification);
+    toast.append(icon, content, close);
+    backdrop.classList.add("show");
     toast.classList.add("show");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove("show"), 3200);
+    document.addEventListener("keydown", closeOnEscape);
+    setTimeout(() => close.focus({ preventScroll: true }), 0);
   }
 
   function setState(message, kind = "ok") {
@@ -807,7 +860,7 @@
       if (deleteButton) {
         const comment = deleteButton.closest("[data-comment-id]");
         const { error } = await dataClient.from("interval_comments").update({ deleted_at: new Date().toISOString() }).eq("id", comment.dataset.commentId);
-        if (error) { showToast(error.message); return; }
+        if (error) { showToast(error.message, { type: "error" }); return; }
         await reloadComments(plan); openPlanDetail(plan.id, "execution"); showToast("Comentário removido.");
       }
     });
