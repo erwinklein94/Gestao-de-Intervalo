@@ -545,8 +545,17 @@ html[data-theme="dark"] .day-select.is-shifted { color: #fadfc6; }
 .execution-notes .field { margin: 20px 28px 0; }
 .panel-heading.compact { padding-bottom: 18px; }
 
-.toast { position: fixed; z-index: 50; left: 50%; bottom: 24px; transform: translate(-50%, 20px); padding: 12px 18px; border-radius: 8px; background: var(--blue); color: var(--white); box-shadow: var(--shadow); font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast { position: fixed; z-index: 50; left: 50%; bottom: 24px; width: min(430px, calc(100vw - 32px)); transform: translate(-50%, 20px); padding: 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; background: var(--blue); color: var(--white); box-shadow: 0 16px 40px rgba(0,25,45,.24); font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; display: flex; align-items: flex-start; gap: 12px; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast[data-type="success"] { background: #14633f; }
+.toast[data-type="warning"] { background: #7a4b00; }
+.toast[data-type="error"] { background: #a52b32; }
+.toast-icon { flex: 0 0 26px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: rgba(255,255,255,.18); font-size: 15px; font-weight: 800; }
+.toast-content { min-width: 0; flex: 1; display: grid; gap: 2px; line-height: 1.4; }
+.toast-content strong { font-size: 13px; }
+.toast-content > span { color: rgba(255,255,255,.88); }
+.toast-close { flex: 0 0 auto; margin: -5px -5px 0 0; width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; font-size: 20px; line-height: 1; }
+.toast-close:hover, .toast-close:focus-visible { background: rgba(255,255,255,.14); outline: none; }
 .site-footer { min-height: 100px; padding: 24px max(24px, calc((100vw - 1280px) / 2)); display: flex; align-items: center; justify-content: space-between; gap: 30px; color: var(--muted); background: var(--white); border-top: 1px solid var(--surface-2); font-size: 11px; }
 .site-footer img { width: 78px; }
 

@@ -821,13 +821,43 @@
     }
   }
 
-  function showToast(message) {
+  function showToast(message, options = {}) {
     const toast = $("#toast");
     if (!toast) return;
-    toast.textContent = message;
+    const type = ["info", "success", "warning", "error"].includes(options.type) ? options.type : "info";
+    const titles = { info: "Aviso", success: "Tudo certo", warning: "Atenção", error: "Não foi possível continuar" };
+    const icons = { info: "i", success: "✓", warning: "!", error: "×" };
+    toast.dataset.type = type;
+    toast.setAttribute("role", type === "error" || type === "warning" ? "alert" : "status");
+    toast.setAttribute("aria-atomic", "true");
+    toast.innerHTML = "";
+
+    const icon = document.createElement("span");
+    icon.className = "toast-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = icons[type];
+
+    const content = document.createElement("span");
+    content.className = "toast-content";
+    const title = document.createElement("strong");
+    title.textContent = options.title || titles[type];
+    const text = document.createElement("span");
+    text.textContent = message;
+    content.append(title, text);
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-close";
+    close.setAttribute("aria-label", "Fechar notificação");
+    close.textContent = "×";
+    close.addEventListener("click", () => {
+      clearTimeout(toastTimer);
+      toast.classList.remove("show");
+    });
+    toast.append(icon, content, close);
     toast.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), options.duration || (type === "warning" || type === "error" ? 5200 : 3200));
   }
 
   function timeToMinutes(value) {
@@ -2341,6 +2371,7 @@
 
   function executionPage() {
     let plan = activePlan();
+    let notifiedBlockedPlanId = null;
     let comments = [];
     const root = $("#execution-steps");
     const blocked = $("#execution-blocked");
@@ -3011,6 +3042,13 @@
       const executionAvailable = plan.locked || hasExecutionData(plan);
       blocked.hidden = executionAvailable;
       content.hidden = !executionAvailable;
+      if (!executionAvailable && notifiedBlockedPlanId !== plan.id) {
+        notifiedBlockedPlanId = plan.id;
+        setTimeout(() => showToast(
+          "Trave o planejamento antes de registrar horários ou iniciar etapas.",
+          { type: "warning", title: "Execução ainda não liberada" }
+        ), 0);
+      }
       $("#execution-revision-banner").hidden = plan.locked || !hasExecutionData(plan);
       $("#execution-title").textContent = plan.title || "Intervalo sem nome";
       const dateLabel = plan.date ? new Date(`${plan.date}T12:00:00`).toLocaleDateString("pt-BR") : "Data não informada";
