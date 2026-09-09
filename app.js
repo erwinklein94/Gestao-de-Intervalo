@@ -4795,16 +4795,26 @@
       $("#shared-comment-count").textContent = sharedComments.length;
       $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
       sharedPhotos = reusePhotoUrls(metadata.photos, sharedPhotos);
-      $("#shared-photo-count").textContent = sharedPhotos.length;
-      // O acompanhamento se atualiza sozinho a cada meio minuto; refazer o HTML
-      // faria o navegador buscar as mesmas fotos em cada volta.
-      const sharedGallery = $("#shared-photos");
-      const sharedSignature = `${metadata.photos_unavailable ? "off" : "on"}|${sharedPhotos.map((photo) => `${photo.client_id || photo.id}:${photo.signed_url}:${photoRotation(photo)}`).join("|")}`;
-      if (sharedGallery.dataset.signature !== sharedSignature) {
-        sharedGallery.dataset.signature = sharedSignature;
-        sharedGallery.innerHTML = photoGalleryHtml(sharedPhotos, metadata.photos_unavailable ? "As fotos estão indisponíveis no momento. Os demais dados do intervalo continuam disponíveis." : "Nenhuma foto registrada neste intervalo.");
+      const unavailableMessage = "As fotos estão indisponíveis no momento. Os demais dados do intervalo continuam disponíveis.";
+      const emptyByPhase = {
+        before: "Nenhuma foto do antes registrada neste intervalo.",
+        during: "Nenhuma foto do durante registrada neste intervalo.",
+        after: "Nenhuma foto do depois registrada neste intervalo."
+      };
+      for (const phase of PHOTO_PHASES) {
+        const list = sharedPhotos.filter((photo) => photoPhase(photo) === phase);
+        const gallery = $(`[data-shared-gallery="${phase}"]`);
+        $(`[data-shared-photo-count="${phase}"]`).textContent = list.length;
+        // O acompanhamento se atualiza sozinho a cada dez segundos; refazer o
+        // HTML faria o navegador buscar as mesmas fotos em cada volta.
+        const signature = `${metadata.photos_unavailable ? "off" : "on"}|${list.map((photo) => `${photo.client_id || photo.id}:${photo.signed_url}:${photoRotation(photo)}`).join("|")}`;
+        if (gallery && gallery.dataset.signature !== signature) {
+          gallery.dataset.signature = signature;
+          gallery.innerHTML = photoGalleryHtml(list, metadata.photos_unavailable ? unavailableMessage : emptyByPhase[phase]);
+        }
+        renderPhotoAppendix(`shared-photo-appendix-${phase}`, list);
       }
-      renderPhotoAppendix("shared-photo-appendix", sharedPhotos);
+      $("#shared-photo-total").textContent = sharedPhotos.length;
 
       const hasLate = execution.lateNow.length > 0 || execution.lateFinished.length > 0;
       const status = $("#shared-status");
@@ -5081,7 +5091,7 @@
       $$('[data-shared-view]').forEach((view) => { view.hidden = view.dataset.sharedView !== tab; });
     }
     $$('[data-shared-tab]').forEach((button) => button.addEventListener("click", () => activateSharedView(button.dataset.sharedTab)));
-    activateSharedView(["plan", "execution", "dashboard"].includes(requestedView) ? requestedView : "plan");
+    activateSharedView(["plan", "execution", "photos", "dashboard"].includes(requestedView) ? requestedView : "plan");
     $("#shared-retry").addEventListener("click", () => loadSharedPlan(true));
     loadSharedPlan(true);
     refreshTimer = setInterval(() => loadSharedPlan(false), 10000);

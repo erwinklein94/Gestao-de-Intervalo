@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<script src="assets/startup.js?v=20260910-2"></script>
+<script src="assets/startup.js?v=20260910-3"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <meta name="theme-color" content="#003865">
@@ -12,10 +12,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <script src="assets/pwa.js" defer></script>
-  <link rel="stylesheet" href="styles.css?v=20260910-2">
+  <link rel="stylesheet" href="styles.css?v=20260910-3">
   <script src="assets/jszip.min.js" defer></script>
-  <script src="assets/supabase.min.js?v=20260910-2" defer></script>
-  <script src="app.js?v=20260910-2" defer></script>
+  <script src="assets/supabase.min.js?v=20260910-3" defer></script>
+  <script src="app.js?v=20260910-3" defer></script>
 </head>
 <body data-page="shared">
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -66,6 +66,7 @@
         <button class="active" type="button" role="tab" data-shared-tab="plan" aria-selected="true">Plano</button>
         <button type="button" role="tab" data-shared-tab="execution" aria-selected="false">Execução</button>
         <button type="button" role="tab" data-shared-tab="dashboard" aria-selected="false">Dashboard</button>
+        <button type="button" role="tab" data-shared-tab="photos" aria-selected="false">Fotos</button>
       </nav>
 
       <section class="shared-view" id="shared-plan" data-shared-view="plan">
@@ -105,7 +106,6 @@
 
         <section class="shared-section-heading"><div><p class="section-kicker">Leitura operacional</p><h2>Etapas do intervalo</h2></div><p>Horários planejados e realizados, sem possibilidade de edição.</p></section>
         <div class="shared-steps" id="shared-steps"></div>
-        <section class="comments-panel shared-photos"><header><div><p class="section-kicker">Registro visual permanente</p><h3>Fotos da execução</h3></div><span id="shared-photo-count">0</span></header><div class="photo-gallery" id="shared-photos"></div></section>
         <section class="comments-panel shared-comments"><header><div><p class="section-kicker">Registro permanente</p><h3>Comentários da execução</h3></div><span id="shared-comment-count">0</span></header><div class="comments-list" id="shared-comments"></div></section>
       </section>
 
@@ -132,8 +132,23 @@
         </article>
       </section>
 
-      <section class="photo-appendix" id="shared-photo-appendix" data-empty="true">
-        <header><h2>Anexo fotográfico</h2><span data-appendix-count></span></header>
+      <section class="shared-view" id="shared-photos-view" data-shared-view="photos" hidden>
+        <section class="shared-section-heading"><div><p class="section-kicker">Registro fotográfico</p><h2>Antes, durante e depois do serviço</h2></div><p><span id="shared-photo-total">0</span> foto(s) anexadas pela equipe, na ordem em que o serviço aconteceu.</p></section>
+        <section class="comments-panel shared-photos"><header><div><p class="section-kicker">Momento 01</p><h3>Antes do intervalo</h3></div><span data-shared-photo-count="before">0</span></header><div class="photo-gallery" data-shared-gallery="before"></div></section>
+        <section class="comments-panel shared-photos"><header><div><p class="section-kicker">Momento 02</p><h3>Durante o intervalo</h3></div><span data-shared-photo-count="during">0</span></header><div class="photo-gallery" data-shared-gallery="during"></div></section>
+        <section class="comments-panel shared-photos"><header><div><p class="section-kicker">Momento 03</p><h3>Depois do intervalo</h3></div><span data-shared-photo-count="after">0</span></header><div class="photo-gallery" data-shared-gallery="after"></div></section>
+      </section>
+
+      <section class="photo-appendix" id="shared-photo-appendix-before" data-empty="true">
+        <header><h2>Antes do intervalo</h2><span data-appendix-count></span></header>
+        <div class="photo-appendix-grid"></div>
+      </section>
+      <section class="photo-appendix" id="shared-photo-appendix-during" data-empty="true">
+        <header><h2>Durante o intervalo</h2><span data-appendix-count></span></header>
+        <div class="photo-appendix-grid"></div>
+      </section>
+      <section class="photo-appendix" id="shared-photo-appendix-after" data-empty="true">
+        <header><h2>Depois do intervalo</h2><span data-appendix-count></span></header>
         <div class="photo-appendix-grid"></div>
       </section>
 

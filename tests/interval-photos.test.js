@@ -187,4 +187,21 @@ assert.match(phase, /or new\.phase <> old\.phase/, "o giro não pode mudar o mom
 assert.match(phase, /private\.interval_accepts_any_photo\(/, "o upload no storage não conhece o momento");
 assert.match(edge, /rotation,phase,author_name/, "o link compartilhado precisa enviar o momento");
 
+
+// O acompanhamento tambem separa as fotos por momento, em aba propria.
+assert.ok(shared.includes('data-shared-tab="photos"'), "acompanhamento sem a aba Fotos");
+assert.ok(shared.includes('data-shared-view="photos"'), "acompanhamento sem a visão de fotos");
+for (const phase of ["before", "during", "after"]) {
+  assert.ok(shared.includes(`data-shared-gallery="${phase}"`), `acompanhamento sem a galeria ${phase}`);
+  assert.ok(shared.includes(`data-shared-photo-count="${phase}"`), `acompanhamento sem o contador ${phase}`);
+  assert.ok(shared.includes(`id="shared-photo-appendix-${phase}"`), `acompanhamento sem o anexo ${phase}`);
+}
+assert.ok(!shared.includes('id="shared-photos"'), "a galeria única saiu da aba Execução");
+assert.ok(shared.includes('id="shared-steps"'), "a aba Execução mantém as etapas");
+assert.ok(shared.includes('id="shared-comments"'), "a aba Execução mantém os comentários");
+assert.match(app, /\["plan", "execution", "photos", "dashboard"\]\.includes\(requestedView\)/, "o link precisa aceitar a visão de fotos");
+assert.match(app, /renderPhotoAppendix\(`shared-photo-appendix-\$\{phase\}`, list\)/);
+assert.match(app, /\[data-shared-gallery="\$\{phase\}"\]/);
+assert.match(styles, /body\.shared-printing #shared-photos-view \{ display:none !important; \}/);
+
 console.log("interval-photos: antes, durante e depois; giro do autor, cache das imagens e relatório fotográfico");

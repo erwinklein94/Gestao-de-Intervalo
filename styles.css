@@ -1912,6 +1912,9 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   body.shared-printing .shared-status { min-height:0; padding:18px; }
   body.shared-printing .shared-kpis { grid-template-columns:repeat(3,minmax(0,1fr)); }
   body.shared-printing .shared-step { break-inside:avoid; }
+  /* No PDF do acompanhamento os tres momentos saem pelos anexos, em tamanho de
+     leitura; repetir as miniaturas seria a mesma foto duas vezes. */
+  body.shared-printing #shared-photos-view { display:none !important; }
   /* Nada e cortado ao virar a pagina: cada bloco de leitura viaja inteiro,
      e titulo nenhum fica sozinho no pe da folha. */
   h1, h2, h3, h4, .panel-heading, .chart-heading, .shared-section-heading, .block-label { break-after: avoid; page-break-after: avoid; }
