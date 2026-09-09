@@ -1608,13 +1608,59 @@
       .replaceAll("'", "&#039;");
   }
 
-  async function withSignedPhotoUrls(client, rows, expiresIn = 3600) {
+  // O link de acompanhamento assina as fotos de novo a cada consulta, e a
+  // pagina se recarrega sozinha: sem reaproveitar o endereco que ainda vale, o
+  // navegador baixaria as mesmas imagens em cada volta.
+  const SHARED_PHOTO_URL_TTL = 10 * 60 * 1000;
+
+  function reusePhotoUrls(incoming, previous) {
+    const known = new Map((previous || []).map((photo) => [photo.client_id || photo.id, photo]));
+    return (incoming || []).map((photo) => {
+      const before = known.get(photo.client_id || photo.id);
+      const stillValid = before?.signed_url && Date.now() - (before.signed_at || 0) < SHARED_PHOTO_URL_TTL;
+      return stillValid
+        ? { ...photo, signed_url: before.signed_url, signed_at: before.signed_at }
+        : { ...photo, signed_at: Date.now() };
+    });
+  }
+
+  // A URL assinada vale uma hora. Assinar de novo a cada atualizacao trocaria o
+  // endereco da imagem e faria o navegador baixar tudo outra vez, entao a foto
+  // que ja tem endereco valido reaproveita o que foi assinado antes.
+  const PHOTO_SIGNATURE_TTL = 3600 * 1000;
+  const PHOTO_SIGNATURE_MARGIN = 5 * 60 * 1000;
+
+  async function withSignedPhotoUrls(client, rows, expiresIn = 3600, known = []) {
     const photos = Array.isArray(rows) ? rows : [];
     if (!photos.length) return [];
-    const paths = photos.map((photo) => photo.storage_path);
-    const { data, error } = await client.storage.from(INTERVAL_PHOTO_BUCKET).createSignedUrls(paths, expiresIn);
-    if (error) throw error;
-    return photos.map((photo, index) => ({ ...photo, signed_url: data?.[index]?.signedUrl || "" })).filter((photo) => photo.signed_url);
+    const reusable = new Map();
+    for (const photo of Array.isArray(known) ? known : []) {
+      if (photo?.storage_path && photo.signed_url && photo.signed_until - Date.now() > PHOTO_SIGNATURE_MARGIN) {
+        reusable.set(photo.storage_path, photo);
+      }
+    }
+    const missing = photos.filter((photo) => !reusable.has(photo.storage_path));
+    let signed = new Map();
+    if (missing.length) {
+      const { data, error } = await client.storage.from(INTERVAL_PHOTO_BUCKET)
+        .createSignedUrls(missing.map((photo) => photo.storage_path), expiresIn);
+      if (error) throw error;
+      const validUntil = Date.now() + Math.min(expiresIn * 1000, PHOTO_SIGNATURE_TTL);
+      signed = new Map(missing.map((photo, index) => [photo.storage_path, {
+        signed_url: data?.[index]?.signedUrl || "",
+        signed_until: validUntil
+      }]));
+    }
+    return photos.map((photo) => {
+      const previous = reusable.get(photo.storage_path);
+      const fresh = signed.get(photo.storage_path);
+      return { ...photo, signed_url: previous?.signed_url || fresh?.signed_url || "", signed_until: previous?.signed_until || fresh?.signed_until || 0 };
+    }).filter((photo) => photo.signed_url);
+  }
+
+  function photoRotation(photo) {
+    const value = Number(photo?.rotation) || 0;
+    return [0, 90, 180, 270].includes(value) ? value : 0;
   }
 
   function photoGalleryHtml(photos, emptyMessage = "Nenhuma foto anexada.") {
@@ -1624,11 +1670,12 @@
       const dateLabel = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
       const description = photo.caption || photo.original_name || "Foto da execução";
       const credit = `${photo.author_name || "Usuário"}${dateLabel ? ` · ${dateLabel}` : ""}`;
+      const rotation = photoRotation(photo);
       // O link continua apontando para a imagem: sem JS, ou ao abrir em nova aba,
       // a foto segue acessivel; com JS o clique abre o visualizador com zoom.
       return `<figure class="execution-photo">
-        <a href="${escapeHtml(photo.signed_url)}" target="_blank" rel="noopener noreferrer" data-photo-view="${escapeHtml(photo.signed_url)}" data-photo-title="${escapeHtml(description)}" data-photo-credit="${escapeHtml(credit)}" aria-label="Ampliar foto: ${escapeHtml(description)}"><img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}" loading="lazy"></a>
-        <figcaption>${photo.caption ? `<strong>${escapeHtml(photo.caption)}</strong>` : ""}<span>${escapeHtml(photo.author_name || "Usuário")}${dateLabel ? ` · ${escapeHtml(dateLabel)}` : ""}</span>${photo.can_delete ? `<button type="button" data-photo-delete="${escapeHtml(photo.id)}">Excluir foto</button>` : ""}</figcaption>
+        <a href="${escapeHtml(photo.signed_url)}" target="_blank" rel="noopener noreferrer" data-photo-view="${escapeHtml(photo.signed_url)}" data-photo-title="${escapeHtml(description)}" data-photo-credit="${escapeHtml(credit)}" data-photo-rotation="${rotation}" aria-label="Ampliar foto: ${escapeHtml(description)}"><img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}" data-rotation="${rotation}" loading="lazy"></a>
+        <figcaption>${photo.caption ? `<strong>${escapeHtml(photo.caption)}</strong>` : ""}<span>${escapeHtml(photo.author_name || "Usuário")}${dateLabel ? ` · ${escapeHtml(dateLabel)}` : ""}</span>${photo.can_rotate || photo.can_delete ? `<span class="photo-actions">${photo.can_rotate ? `<button type="button" class="photo-rotate" data-photo-rotate="${escapeHtml(photo.id)}" title="Girar 90° no sentido horário">Girar</button>` : ""}${photo.can_delete ? `<button type="button" data-photo-delete="${escapeHtml(photo.id)}">Excluir foto</button>` : ""}</span>` : ""}</figcaption>
       </figure>`;
     }).join("");
   }
@@ -1642,7 +1689,7 @@
       const description = photo.caption || photo.original_name || "Foto da execução";
       const credit = `${photo.author_name || "Usuário"}${dateLabel ? ` · ${dateLabel}` : ""}`;
       return `<figure class="print-photo">
-        <img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}">
+        <span class="print-photo-frame" data-rotation="${photoRotation(photo)}"><img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}"></span>
         <figcaption><strong>Foto ${String(index + 1).padStart(2, "0")}${photo.caption ? ` · ${escapeHtml(photo.caption)}` : ""}</strong><span>${escapeHtml(credit)}</span></figcaption>
       </figure>`;
     }).join("");
@@ -1653,6 +1700,10 @@
     if (!appendix) return;
     const grid = appendix.querySelector(".photo-appendix-grid");
     const count = appendix.querySelector("[data-appendix-count]");
+    // Mesmo motivo da galeria: refazer o HTML rebaixaria as fotos do anexo.
+    const signature = photos.map((photo) => `${photo.id || photo.client_id}:${photo.signed_url}:${photoRotation(photo)}`).join("|");
+    if (grid.dataset.signature === signature) return;
+    grid.dataset.signature = signature;
     grid.innerHTML = photoAppendixHtml(photos);
     if (count) count.textContent = photos.length ? pluralize(photos.length, "foto", "fotos") : "";
     // Sem foto o anexo sai da impressao: uma pagina em branco no fim do
@@ -1735,7 +1786,7 @@
 
     photoViewer = {
       overlay, stage, image, title, credit, level, original, close, zoomIn, zoomOut,
-      scale: PHOTO_ZOOM_MIN, x: 0, y: 0, moved: false, open: false,
+      scale: PHOTO_ZOOM_MIN, x: 0, y: 0, rotation: 0, moved: false, open: false,
       pointers: new Map(), pinch: null, previousFocus: null, cleanupTimer: null
     };
 
@@ -1805,15 +1856,30 @@
     return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
   }
 
+  // Girada em 90 ou 270 graus, a foto troca largura por altura e precisa de um
+  // ajuste proprio para continuar cabendo no palco. Esse ajuste e a base do
+  // zoom: 100% segue significando "foto inteira na tela", girada ou nao.
+  function photoFitScale() {
+    const { image, stage, rotation } = photoViewer;
+    if (rotation !== 90 && rotation !== 270) return 1;
+    if (!image.clientWidth || !image.clientHeight || !stage.clientWidth || !stage.clientHeight) return 1;
+    return Math.min(stage.clientWidth / image.clientHeight, stage.clientHeight / image.clientWidth);
+  }
+
   function applyPhotoTransform() {
     if (!photoViewer) return;
-    const { image, stage } = photoViewer;
+    const { image, stage, rotation } = photoViewer;
+    const fit = photoFitScale();
+    const drawn = fit * photoViewer.scale;
+    const turned = rotation === 90 || rotation === 270;
     // A imagem so pode deslizar dentro da sobra que o zoom criou.
-    const maxX = Math.max(0, (image.clientWidth * photoViewer.scale - stage.clientWidth) / 2);
-    const maxY = Math.max(0, (image.clientHeight * photoViewer.scale - stage.clientHeight) / 2);
+    const width = (turned ? image.clientHeight : image.clientWidth) * drawn;
+    const height = (turned ? image.clientWidth : image.clientHeight) * drawn;
+    const maxX = Math.max(0, (width - stage.clientWidth) / 2);
+    const maxY = Math.max(0, (height - stage.clientHeight) / 2);
     photoViewer.x = Math.min(maxX, Math.max(-maxX, photoViewer.x));
     photoViewer.y = Math.min(maxY, Math.max(-maxY, photoViewer.y));
-    image.style.transform = `translate(${photoViewer.x}px, ${photoViewer.y}px) scale(${photoViewer.scale})`;
+    image.style.transform = `translate(${photoViewer.x}px, ${photoViewer.y}px) scale(${drawn})${rotation ? ` rotate(${rotation}deg)` : ""}`;
     photoViewer.level.textContent = `${Math.round(photoViewer.scale * 100)}%`;
     stage.dataset.zoomed = photoViewer.scale > PHOTO_ZOOM_MIN + 0.01 ? "true" : "false";
     photoViewer.zoomOut.disabled = photoViewer.scale <= PHOTO_ZOOM_MIN + 0.01;
@@ -1878,6 +1944,7 @@
     viewer.credit.hidden = !viewer.credit.textContent;
     viewer.image.alt = viewer.title.textContent;
     viewer.original.href = url;
+    viewer.rotation = Number(trigger.dataset.photoRotation) || 0;
     if (viewer.image.getAttribute("src") !== url) viewer.image.src = url;
     viewer.open = true;
     viewer.moved = false;
@@ -2797,7 +2864,7 @@
       const { data, error } = await cloudClient.from("interval_photos").select("*").eq("plan_id", requestedPlanId).order("created_at");
       if (error) { console.warn("Não foi possível atualizar as fotos.", error); renderPhotos(); return; }
       try {
-        const signed = await withSignedPhotoUrls(cloudClient, data || []);
+        const signed = await withSignedPhotoUrls(cloudClient, data || [], 3600, photos);
         if (plan.databaseId !== requestedPlanId) return;
         photos = signed;
         photosPlanId = requestedPlanId;
@@ -2808,19 +2875,70 @@
       renderPhotos();
     }
 
+    function visiblePhotos() {
+      const allowed = plan.status === "executing";
+      return photos.map((photo) => ({
+        ...photo,
+        can_delete: allowed && photo.author_user_id === currentUser.id,
+        // Girar corrige a exibicao, nao o registro: continua liberado ao autor
+        // depois do encerramento, quando o relatorio costuma ser exportado.
+        can_rotate: photo.author_user_id === currentUser.id
+      }));
+    }
+
+    function photoGallerySignature(list) {
+      return list.map((photo) => `${photo.id}:${photo.signed_url}:${photoRotation(photo)}:${photo.can_delete ? 1 : 0}:${photo.can_rotate ? 1 : 0}`).join("|");
+    }
+
     function renderPhotos() {
       const gallery = $("#execution-photos");
       if (!gallery) return;
       const allowed = plan.status === "executing";
-      gallery.innerHTML = photoGalleryHtml(photos.map((photo) => ({
-        ...photo,
-        can_delete: allowed && photo.author_user_id === currentUser.id
-      })), "Nenhuma foto foi anexada a este intervalo.");
+      const visible = visiblePhotos();
+      // Refazer o HTML troca cada <img> por outra igual e manda o navegador
+      // baixar as mesmas fotos de novo. Como esta funcao roda junto de toda
+      // atualizacao do intervalo, o DOM so e refeito quando a galeria muda.
+      const signature = photoGallerySignature(visible);
+      if (gallery.dataset.signature !== signature) {
+        gallery.dataset.signature = signature;
+        gallery.innerHTML = photoGalleryHtml(visible, "Nenhuma foto foi anexada a este intervalo.");
+      }
       renderPhotoAppendix("execution-photo-appendix", photos);
       $("#execution-photo-form").hidden = !allowed;
       $("#execution-photos-locked").hidden = allowed;
     }
 
+    async function rotatePhoto(button) {
+      const photo = photos.find((item) => item.id === button.dataset.photoRotate);
+      if (!photo || photo.author_user_id !== currentUser.id || !cloudClient) return;
+      const previous = photoRotation(photo);
+      const figure = button.closest(".execution-photo");
+      const feedback = $("#execution-photo-feedback");
+      // O giro entra so como atributo: recriar a galeria aqui faria o navegador
+      // buscar de novo a foto que ja esta na tela.
+      const showRotation = (angle) => {
+        photo.rotation = angle;
+        figure?.querySelector("img")?.setAttribute("data-rotation", String(angle));
+        figure?.querySelector("[data-photo-view]")?.setAttribute("data-photo-rotation", String(angle));
+        const gallery = $("#execution-photos");
+        if (gallery) gallery.dataset.signature = photoGallerySignature(visiblePhotos());
+        renderPhotoAppendix("execution-photo-appendix", photos);
+      };
+      showRotation((previous + 90) % 360);
+      button.disabled = true;
+      try {
+        const { error } = await cloudClient.from("interval_photos")
+          .update({ rotation: photoRotation(photo) }).eq("id", photo.id).eq("author_user_id", currentUser.id);
+        if (error) throw error;
+        feedback.textContent = "Orientação da foto atualizada.";
+      } catch (error) {
+        console.error("Falha ao girar a foto.", error);
+        showRotation(previous);
+        feedback.textContent = error.message || "Não foi possível girar a foto.";
+      } finally {
+        button.disabled = false;
+      }
+    }
     function renderComments() {
       const commentsRoot = $("#execution-comments");
       if (!commentsRoot) return;
@@ -3358,6 +3476,8 @@
     });
     $("#execution-photo-form")?.addEventListener("submit", (event) => event.preventDefault());
     $("#execution-photos")?.addEventListener("click", async (event) => {
+      const rotateButton = event.target.closest("[data-photo-rotate]");
+      if (rotateButton) { await rotatePhoto(rotateButton); return; }
       const button = event.target.closest("[data-photo-delete]");
       if (!button || plan.status !== "executing") return;
       const photo = photos.find((item) => item.id === button.dataset.photoDelete);
@@ -4421,9 +4541,16 @@
       const sharedComments = metadata.comments || [];
       $("#shared-comment-count").textContent = sharedComments.length;
       $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
-      sharedPhotos = metadata.photos || [];
+      sharedPhotos = reusePhotoUrls(metadata.photos, sharedPhotos);
       $("#shared-photo-count").textContent = sharedPhotos.length;
-      $("#shared-photos").innerHTML = photoGalleryHtml(sharedPhotos, metadata.photos_unavailable ? "As fotos estão indisponíveis no momento. Os demais dados do intervalo continuam disponíveis." : "Nenhuma foto registrada neste intervalo.");
+      // O acompanhamento se atualiza sozinho a cada meio minuto; refazer o HTML
+      // faria o navegador buscar as mesmas fotos em cada volta.
+      const sharedGallery = $("#shared-photos");
+      const sharedSignature = `${metadata.photos_unavailable ? "off" : "on"}|${sharedPhotos.map((photo) => `${photo.client_id || photo.id}:${photo.signed_url}:${photoRotation(photo)}`).join("|")}`;
+      if (sharedGallery.dataset.signature !== sharedSignature) {
+        sharedGallery.dataset.signature = sharedSignature;
+        sharedGallery.innerHTML = photoGalleryHtml(sharedPhotos, metadata.photos_unavailable ? "As fotos estão indisponíveis no momento. Os demais dados do intervalo continuam disponíveis." : "Nenhuma foto registrada neste intervalo.");
+      }
       renderPhotoAppendix("shared-photo-appendix", sharedPhotos);
 
       const hasLate = execution.lateNow.length > 0 || execution.lateFinished.length > 0;
@@ -4603,7 +4730,7 @@
         const { data: photoRows, error: photoError } = await internalClient.from("interval_photos")
           .select("*").eq("plan_id", plan.id).order("created_at");
         if (photoError) throw photoError;
-        signedPhotos = await withSignedPhotoUrls(internalClient, photoRows || []);
+        signedPhotos = await withSignedPhotoUrls(internalClient, photoRows || [], 3600, sharedPhotos);
       } catch (error) {
         photosUnavailable = true;
         console.warn("Fotos do acompanhamento indisponíveis.", error);
@@ -5008,6 +5135,7 @@
       buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation,
       stepScheduleDeviation, wholeMinutes, snapshotSignature, exportPlanToXlsx,
       photoGalleryHtml, photoAppendixHtml, renderPhotoAppendix, photosSheetXml,
+      photoRotation, reusePhotoUrls, withSignedPhotoUrls, openPhotoViewer, closePhotoViewer,
       blankPlan, normalizePlan, planToDatabase, databaseToPlan,
       frontsOf, frontLabel, nextFrontPosition, propagateSharedFields, closureCredit,
       ccoGrantMinutes, ccoGrantLabel, planDeadlineStamp, shiftPlanSchedule, hasStartedExecution,

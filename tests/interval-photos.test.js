@@ -92,4 +92,49 @@ assert.doesNotMatch(styles, /\.execution-step \{ break-inside: auto;/, "etapa n�
 assert.match(styles, /tr, img, figure \{ break-inside: avoid; page-break-inside: avoid; \}/);
 assert.match(styles, /thead \{ display: table-header-group; \}/, "cabeçalho de tabela se repete a cada página");
 
-console.log("interval-photos: upload imutável, zoom, anexo no PDF e aba de fotos na planilha");
+
+// A foto baixada uma vez fica na tela: nem o endereco assinado nem o HTML da
+// galeria sao refeitos a cada atualizacao do intervalo.
+assert.match(app, /async function withSignedPhotoUrls\(client, rows, expiresIn = 3600, known = \[\]\)/);
+assert.match(app, /reusable\.set\(photo\.storage_path, photo\)/, "endereço ainda válido precisa ser reaproveitado");
+assert.match(app, /const missing = photos\.filter\(\(photo\) => !reusable\.has\(photo\.storage_path\)\)/);
+assert.match(app, /withSignedPhotoUrls\(cloudClient, data \|\| \[\], 3600, photos\)/);
+assert.match(app, /withSignedPhotoUrls\(internalClient, photoRows \|\| \[\], 3600, sharedPhotos\)/);
+assert.match(app, /function reusePhotoUrls\(incoming, previous\)/);
+assert.match(app, /sharedPhotos = reusePhotoUrls\(metadata\.photos, sharedPhotos\)/);
+assert.match(app, /if \(gallery\.dataset\.signature !== signature\)/, "a galeria só é redesenhada quando muda");
+assert.match(app, /if \(grid\.dataset\.signature === signature\) return;/, "o anexo só é redesenhado quando muda");
+assert.match(app, /if \(sharedGallery\.dataset\.signature !== sharedSignature\)/);
+
+// O autor gira a propria foto e o angulo vale na tela e no PDF.
+assert.match(app, /function photoRotation\(photo\)/);
+assert.match(app, /\[0, 90, 180, 270\]\.includes\(value\) \? value : 0/);
+assert.match(app, /async function rotatePhoto\(button\)/);
+assert.match(app, /\.update\(\{ rotation: photoRotation\(photo\) \}\)\.eq\("id", photo\.id\)\.eq\("author_user_id", currentUser\.id\)/);
+assert.match(app, /data-photo-rotate="\$\{escapeHtml\(photo\.id\)\}"/);
+assert.match(app, /data-rotation="\$\{rotation\}"/, "a miniatura carrega o ângulo");
+assert.match(app, /data-photo-rotation="\$\{rotation\}"/, "o visualizador recebe o ângulo pelo link");
+assert.match(app, /class="print-photo-frame" data-rotation="\$\{photoRotation\(photo\)\}"/);
+assert.match(app, /can_rotate: photo\.author_user_id === currentUser\.id/);
+assert.match(app, /rotate\(\$\{rotation\}deg\)/, "o visualizador aplica o giro no transform");
+assert.match(app, /function photoFitScale\(\)/, "girada, a foto precisa de ajuste próprio para caber");
+
+assert.match(styles, /\.execution-photo img\[data-rotation="90"\] \{ --giro: 90deg; --ajuste: 1\.3334; \}/);
+assert.match(styles, /\.execution-photo img\[data-rotation="180"\] \{ --giro: 180deg; \}/);
+assert.match(styles, /\.execution-photo img\[data-rotation="270"\] \{ --giro: 270deg; --ajuste: 1\.3334; \}/);
+assert.match(styles, /\.print-photo-frame \{ height: 72mm; display: flex;/, "centralizar por grid deixa a foto estourar a moldura");
+assert.match(styles, /\.photo-viewer-stage \{[^}]*display: flex;/);
+assert.match(styles, /\.print-photo-frame\[data-rotation="90"\] img, \.print-photo-frame\[data-rotation="270"\] img \{ max-width: 72mm; max-height: 72mm; \}/);
+
+const rotation = read("supabase/migrations/20260909174500_add_interval_photo_rotation.sql");
+assert.match(rotation, /add column rotation smallint not null default 0/);
+assert.match(rotation, /check \(rotation in \(0, 90, 180, 270\)\)/);
+assert.match(rotation, /grant update \(rotation\) on public\.interval_photos to authenticated/, "o UPDATE só pode alcançar a coluna rotation");
+assert.doesNotMatch(rotation, /grant update on public\.interval_photos/, "nenhum UPDATE amplo pode ser concedido");
+assert.match(rotation, /create policy "Authors rotate own photos"/);
+assert.match(rotation, /using \(author_user_id = \(select auth\.uid\(\)\)\)/);
+assert.match(rotation, /create trigger interval_photos_rotation_guard/);
+assert.match(rotation, /Somente a orientacao da foto pode ser alterada\./);
+assert.match(edge, /caption,rotation,author_name/, "o link compartilhado precisa enviar a orientação");
+
+console.log("interval-photos: upload imutável, giro do autor, cache das imagens, anexo no PDF e aba na planilha");

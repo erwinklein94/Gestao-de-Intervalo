@@ -960,11 +960,21 @@ html[data-theme="dark"] .toast-icon { background: #26455b; color: #b9ddf5; }
 .execution-photo { min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .execution-photo a { display: block; aspect-ratio: 4 / 3; overflow: hidden; background: var(--surface-2); cursor: zoom-in; }
 .execution-photo img { width: 100%; height: 100%; display: block; object-fit: cover; transition: transform .2s ease; }
-.execution-photo a:hover img { transform: scale(1.025); }
+.execution-photo a:hover img { --realce: 1.025; }
 .execution-photo figcaption { padding: 11px 12px; display: grid; gap: 4px; }
 .execution-photo figcaption strong { color: var(--blue); overflow-wrap: anywhere; }
 .execution-photo figcaption span { color: var(--muted); font-size: 9px; }
 .execution-photo figcaption button { justify-self: start; padding: 0; border: 0; color: var(--danger); background: transparent; font-size: 9px; font-weight: 700; cursor: pointer; }
+/* Giro da foto. O celular grava a imagem deitada e o EXIF nem sempre chega ao
+   navegador; o autor corrige pelo botao e o angulo vale na miniatura, no
+   visualizador e no anexo do PDF. Na miniatura, cortada em 4:3, girar um quarto
+   de volta troca largura por altura, e o fator 4/3 devolve o preenchimento. */
+.execution-photo img { --giro: 0deg; --ajuste: 1; --realce: 1; transform: rotate(var(--giro)) scale(calc(var(--ajuste) * var(--realce))); }
+.execution-photo img[data-rotation="90"] { --giro: 90deg; --ajuste: 1.3334; }
+.execution-photo img[data-rotation="180"] { --giro: 180deg; }
+.execution-photo img[data-rotation="270"] { --giro: 270deg; --ajuste: 1.3334; }
+.execution-photo figcaption .photo-actions { display: flex; flex-wrap: wrap; gap: 11px; }
+.execution-photo figcaption .photo-rotate { color: var(--blue); }
 .execution-photo figcaption button:disabled { opacity: .55; cursor: wait; }
 .shared-photos { margin-top: 28px; }
 .shared-photos .photo-gallery { margin-top: 15px; }
@@ -983,7 +993,7 @@ html[data-theme="dark"] .toast-icon { background: #26455b; color: #b9ddf5; }
 .photo-viewer-tools button:disabled { opacity: .4; cursor: not-allowed; }
 .photo-viewer-tools .photo-viewer-close { font-size: 19px; }
 .photo-viewer-level { min-width: 54px; color: #fff; font-size: 12px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
-.photo-viewer-stage { position: relative; overflow: hidden; display: grid; place-items: center; touch-action: none; }
+.photo-viewer-stage { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; }
 .photo-viewer-stage[data-zoomed="true"] { cursor: grab; }
 .photo-viewer-stage[data-zoomed="true"]:active { cursor: grabbing; }
 .photo-viewer-image { max-width: 100%; max-height: 100%; display: block; transform-origin: center center; user-select: none; -webkit-user-drag: none; }
@@ -1917,7 +1927,14 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   .photo-appendix > header span { color: var(--muted); font-size: 9px; }
   .photo-appendix-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7mm 8mm; }
   .print-photo { margin: 0; display: grid; gap: 5px; }
-  .print-photo img { width: 100%; height: 72mm; display: block; object-fit: contain; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  .print-photo-frame { height: 72mm; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  .print-photo-frame img { max-width: 100%; max-height: 100%; display: block; }
+  /* Girada um quarto de volta, a foto troca largura por altura: cabe sempre se
+     couber no quadrado do lado menor da moldura. */
+  .print-photo-frame[data-rotation="90"] img, .print-photo-frame[data-rotation="270"] img { max-width: 72mm; max-height: 72mm; }
+  .print-photo-frame[data-rotation="90"] img { transform: rotate(90deg); }
+  .print-photo-frame[data-rotation="180"] img { transform: rotate(180deg); }
+  .print-photo-frame[data-rotation="270"] img { transform: rotate(270deg); }
   .print-photo figcaption { display: grid; gap: 2px; }
   .print-photo figcaption strong { color: var(--blue); font-size: 10px; overflow-wrap: anywhere; }
   .print-photo figcaption span { color: var(--muted); font-size: 8px; }
