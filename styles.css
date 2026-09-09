@@ -84,7 +84,7 @@ a { color: inherit; }
   letter-spacing: .02em;
 }
 .brand img { width: 92px; height: auto; display: block; }
-.brand span { padding-left: 20px; border-left: 1px solid rgba(255,255,255,.35); }
+.brand span { padding-left: 20px; border-left: 1px solid rgba(255,255,255,.35); white-space: nowrap; }
 .primary-nav { display: flex; align-self: stretch; }
 .primary-nav a {
   position: relative;
@@ -98,6 +98,9 @@ a { color: inherit; }
   font-size: 13px;
   text-decoration: none;
   justify-content: center;
+  /* O rotulo em duas linhas desalinha o menu inteiro; quando falta espaco, a
+     propria nav rola na horizontal em vez de espremer os destinos. */
+  white-space: nowrap;
 }
 .primary-nav a::after {
   content: "";
@@ -112,6 +115,10 @@ a { color: inherit; }
 .primary-nav a.active { color: var(--white); }
 .primary-nav a.active::after { background: var(--lime); }
 .primary-nav a span {
+  /* O circulo do numero e um item flex: sem travar o encolhimento, ele achata
+     em elipse quando o menu aperta -- e ele aperta, porque a quantidade de
+     destinos muda com o perfil. Tamanho fixo mantem os seis simetricos. */
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
   width: 23px;
@@ -119,6 +126,7 @@ a { color: inherit; }
   border: 1px solid currentColor;
   border-radius: 50%;
   font-size: 11px;
+  line-height: 1;
 }
 .save-state { justify-self: end; font-size: 11px; color: rgba(255,255,255,.64); }
 .save-state::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--lime); }
@@ -1328,7 +1336,11 @@ html[data-theme="dark"] .portal-empty strong { color: #8ed1f5; }
   /* A quantidade de itens muda com o perfil e com a pagina de Fotos; a nav
      acompanha em vez de assumir quatro colunas fixas. */
   .primary-nav { grid-column: 1 / -1; grid-row: 2; width: 100%; display: grid; grid-template-columns: repeat(var(--nav-count, 5), minmax(0, 1fr)); }
-  .primary-nav a { min-width: 0; min-height: 52px; padding: 7px 6px 9px; gap: 5px; flex-direction: column; line-height: 1.1; text-align: center; }
+  /* Empilhado, o item centraliza o conjunto circulo+rotulo: quem quebra o
+     rotulo em duas linhas -- "Minha conta" -- puxa o proprio circulo para
+     cima e desalinha a fileira. Ancorar no topo mantem os numeros na mesma
+     altura, com uma ou duas linhas de texto. */
+  .primary-nav a { min-width: 0; min-height: 52px; padding: 7px 6px 9px; gap: 5px; flex-direction: column; justify-content: flex-start; line-height: 1.1; text-align: center; }
   .primary-nav a::after { left: 6px; right: 6px; }
   .header-tools { position: static; grid-column: 2; grid-row: 1; justify-self: end; min-width: 0; gap: 8px; }
   .save-state { display: none; }

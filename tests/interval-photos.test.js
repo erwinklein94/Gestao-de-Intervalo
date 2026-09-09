@@ -210,4 +210,14 @@ assert.match(styles, /body\.shared-printing #shared-photos-view \{ display:none 
 assert.match(app, /const dateLabel = plan\.date \? new Date\(`\$\{plan\.date\}T12:00:00`\)\.toLocaleDateString\("pt-BR"\) : "";/);
 assert.match(app, /const label = \[\s*\n\s*plan\.title \|\| "Plano sem nome",/);
 
+
+// O menu cresceu para seis destinos: o circulo do numero nao pode achatar nem
+// o rotulo quebrar a fileira.
+assert.match(styles, /\.primary-nav a span \{[^}]*flex: 0 0 auto;/, "o círculo do número não pode encolher");
+assert.match(styles, /\.primary-nav a span \{[^}]*width: 23px;[^}]*height: 23px;/);
+assert.match(styles, /\.primary-nav a \{[^}]*white-space: nowrap;/, "o rótulo em duas linhas desalinha o menu");
+assert.match(styles, /\.brand span \{[^}]*white-space: nowrap; \}/);
+assert.match(styles, /\.primary-nav a \{[^}]*flex-direction: column; justify-content: flex-start;/, "empilhado, o número fica ancorado no topo");
+assert.match(styles, /grid-template-columns: repeat\(var\(--nav-count, 5\), minmax\(0, 1fr\)\)/, "a nav acompanha a quantidade de destinos");
+
 console.log("interval-photos: antes, durante e depois; giro do autor, cache das imagens e relatório fotográfico");
