@@ -4067,7 +4067,7 @@
       $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
       const sharedPhotos = metadata.photos || [];
       $("#shared-photo-count").textContent = sharedPhotos.length;
-      $("#shared-photos").innerHTML = photoGalleryHtml(sharedPhotos, "Nenhuma foto registrada neste intervalo.");
+      $("#shared-photos").innerHTML = photoGalleryHtml(sharedPhotos, metadata.photos_unavailable ? "As fotos estão indisponíveis no momento. Os demais dados do intervalo continuam disponíveis." : "Nenhuma foto registrada neste intervalo.");
 
       const hasLate = execution.lateNow.length > 0 || execution.lateFinished.length > 0;
       const status = $("#shared-status");
@@ -4215,7 +4215,7 @@
       }
       const { data: plan, error } = await internalClient
         .from("interval_plans")
-        .select("*,interval_steps(*),interval_comments(*),interval_photos(*)")
+        .select("*,interval_steps(*),interval_comments(*)")
         .eq("id", requestedPlanId)
         .maybeSingle();
       if (error) throw error;
@@ -4238,12 +4238,25 @@
       }));
       renderSharedFronts();
 
-      const signedPhotos = await withSignedPhotoUrls(internalClient, plan.interval_photos || []);
+      // Fotos são carregadas separadamente: falha ou migração pendente não
+      // pode impedir a consulta dos horários e do andamento do intervalo.
+      let signedPhotos = [];
+      let photosUnavailable = false;
+      try {
+        const { data: photoRows, error: photoError } = await internalClient.from("interval_photos")
+          .select("*").eq("plan_id", plan.id).order("created_at");
+        if (photoError) throw photoError;
+        signedPhotos = await withSignedPhotoUrls(internalClient, photoRows || []);
+      } catch (error) {
+        photosUnavailable = true;
+        console.warn("Fotos do acompanhamento indisponíveis.", error);
+      }
       renderSharedPlan(databaseToPlan(plan), {
         access_mode: "profile",
         fetched_at: new Date().toISOString(),
         comments: (plan.interval_comments || []).filter((comment) => !comment.deleted_at),
-        photos: signedPhotos
+        photos: signedPhotos,
+        photos_unavailable: photosUnavailable
       });
     }
 
