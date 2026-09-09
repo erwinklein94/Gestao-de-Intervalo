@@ -84,5 +84,65 @@
   const watchdog = setTimeout(() => {
     if (document.documentElement.classList.contains("auth-checking")) fail(new Error("Tempo de abertura excedido."));
   }, 30000);
-  window.AppStartup = { wait, fetch: fetchWithTimeout, fail, ready, createLoginAuth };
+
+  // Menu principal, em um lugar so.
+  //
+  // A lista de destinos vivia duplicada no app.js e no assets/portal.js, e as
+  // duas familias de paginas carregam um ou outro. Bastou a pagina de Fotos
+  // entrar em um lado para o cabecalho ficar diferente conforme a pagina
+  // aberta -- quem estava no Historico nao via Fotos no menu. Aqui a definicao
+  // e unica; os dois arquivos so desenham o que esta escrito neste lugar.
+  const OPERATIONAL_ROLES = ["manager", "coordinator", "specialist"];
+  const MANAGEMENT_ONLY_ROLES = ["director", "executive_manager", "consultant"];
+
+  function navigationLinks(role) {
+    if (role === "manager") {
+      return [
+        ["index.html", "Planejar", "planning"],
+        ["executar.html", "Executar", "execution"],
+        ["dashboard.html", "Dashboard", "dashboard"],
+        ["fotos.html", "Fotos", "photos"],
+        ["gestao.html", "Gestão", "management"],
+        ["conta.html", "Minha conta", "account"]
+      ];
+    }
+    if (OPERATIONAL_ROLES.includes(role)) {
+      return [
+        ["index.html", "Planejar", "planning"],
+        ["executar.html", "Executar", "execution"],
+        ["dashboard.html", "Dashboard", "dashboard"],
+        ["fotos.html", "Fotos", "photos"],
+        ["gestao.html?view=history", "Histórico", "management"],
+        ["conta.html", "Minha conta", "account"]
+      ];
+    }
+    // O Editor administra o sistema; nao planeja nem executa intervalos.
+    if (role === "editor") {
+      return [
+        ["intervalos.html", "Intervalos", "intervals"],
+        ["admin.html", "Administração", "admin"],
+        ["auditoria.html", "Auditoria", "audit"],
+        ["conta.html", "Minha conta", "account"]
+      ];
+    }
+    if (MANAGEMENT_ONLY_ROLES.includes(role)) {
+      return [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
+    }
+    return [["conta.html", "Minha conta", "account"]];
+  }
+
+  function renderNavigation(nav, role, page) {
+    if (!nav) return;
+    const links = navigationLinks(role);
+    // A largura de cada destino no cabecalho empilhado sai daqui: sao de dois a
+    // seis, conforme o perfil.
+    nav.style.setProperty("--nav-count", links.length);
+    nav.innerHTML = links.map(([href, label, target], index) => {
+      const active = page === target;
+      const safeLabel = label.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+      return `<a href="${href}"${active ? ' class="active" aria-current="page"' : ""}><span>${index + 1}</span>${safeLabel}</a>`;
+    }).join("");
+  }
+
+  window.AppStartup = { wait, fetch: fetchWithTimeout, fail, ready, createLoginAuth, navigationLinks, renderNavigation };
 })();

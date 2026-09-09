@@ -4185,23 +4185,10 @@
   }
 
   function renderRoleNavigation() {
-    const nav = $(".primary-nav");
-    if (!nav || !currentProfile) return;
-    let links;
-    if (currentProfile.role === "manager") {
-      links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["fotos.html", "Fotos", "photos"], ["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
-    } else if (isOperatorRole(currentProfile.role)) {
-      links = [["index.html", "Planejar", "planning"], ["executar.html", "Executar", "execution"], ["dashboard.html", "Dashboard", "dashboard"], ["fotos.html", "Fotos", "photos"], ["gestao.html?view=history", "Histórico", "management"], ["conta.html", "Minha conta", "account"]];
-    } else if (currentProfile.role === "editor") {
-      // O Editor administra o sistema; nao planeja nem executa intervalos.
-      links = [["intervalos.html", "Intervalos", "intervals"], ["admin.html", "Administração", "admin"], ["auditoria.html", "Auditoria", "audit"], ["conta.html", "Minha conta", "account"]];
-    } else if (READ_ONLY_MANAGEMENT_ROLES.includes(currentProfile.role)) {
-      links = [["gestao.html", "Gestão", "management"], ["conta.html", "Minha conta", "account"]];
-    } else {
-      links = [["conta.html", "Minha conta", "account"]];
-    }
-    nav.style.setProperty("--nav-count", links.length);
-    nav.innerHTML = links.map(([href, label, target], index) => `<a href="${href}" class="${page === target ? "active" : ""}" ${page === target ? 'aria-current="page"' : ""}><span>${index + 1}</span>${escapeHtml(label)}</a>`).join("");
+    // A lista de destinos e a mesma do portal.js, definida no startup.js: assim
+    // o cabecalho nao muda conforme a pagina aberta.
+    if (!currentProfile) return;
+    window.AppStartup.renderNavigation($(".primary-nav"), currentProfile.role, page);
   }
 
   // Para onde cada perfil vai ao entrar ou ao cair numa pagina que nao lhe cabe.

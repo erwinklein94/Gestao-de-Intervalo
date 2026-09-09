@@ -220,4 +220,31 @@ assert.match(styles, /\.brand span \{[^}]*white-space: nowrap; \}/);
 assert.match(styles, /\.primary-nav a \{[^}]*flex-direction: column; justify-content: flex-start;/, "empilhado, o número fica ancorado no topo");
 assert.match(styles, /grid-template-columns: repeat\(var\(--nav-count, 5\), minmax\(0, 1fr\)\)/, "a nav acompanha a quantidade de destinos");
 
+
+// O menu principal e definido em um lugar so: duplicado, ele divergia -- quem
+// abria o Historico ficava sem Fotos no cabecalho.
+const startup = read("assets/startup.js");
+const portal = read("assets/portal.js");
+assert.match(startup, /function navigationLinks\(role\)/);
+assert.match(startup, /function renderNavigation\(nav, role, page\)/);
+assert.match(startup, /window\.AppStartup = \{[^}]*navigationLinks, renderNavigation \}/);
+assert.match(startup, /\["fotos\.html", "Fotos", "photos"\]/);
+assert.match(app, /window\.AppStartup\.renderNavigation\(\$\("\.primary-nav"\), currentProfile\.role, page\)/);
+assert.match(portal, /window\.AppStartup\.renderNavigation\(\$\("\[data-role-nav\]"\), role, document\.body\.dataset\.page\)/);
+assert.doesNotMatch(app, /links = \[\["index\.html"/, "a lista de destinos não pode voltar a ser duplicada");
+assert.doesNotMatch(portal, /links = \[\["index\.html"/, "a lista de destinos não pode voltar a ser duplicada");
+assert.match(startup, /nav\.style\.setProperty\("--nav-count", links\.length\)/);
+
+// O cabeçalho estático é o primeiro quadro da mesma navegação: se divergir da
+// lista do JS, o menu salta assim que o perfil carrega.
+for (const page of ["index.html", "executar.html", "dashboard.html", "fotos.html"]) {
+  const markup = read(page);
+  for (const destino of ["index.html", "executar.html", "dashboard.html", "fotos.html", "gestao.html?view=history", "conta.html"]) {
+    assert.ok(markup.includes(`href="${destino}"`), `${page}: cabeçalho sem o destino ${destino}`);
+  }
+  assert.ok(markup.includes('style="--nav-count:6"'), `${page}: cabeçalho sem a contagem de destinos`);
+  assert.equal((markup.match(/<a class="active" href="[^"]*" aria-current="page"><span>/g) || []).length, 1,
+    `${page}: o cabeçalho precisa marcar exatamente uma página atual`);
+}
+
 console.log("interval-photos: antes, durante e depois; giro do autor, cache das imagens e relatório fotográfico");

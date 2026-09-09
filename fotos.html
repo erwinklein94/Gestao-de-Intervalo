@@ -1,21 +1,21 @@
 <!doctype html>
 <html lang="pt-BR">
   <head>
-<script src="assets/startup.js?v=20260910-5"></script>
+<script src="assets/startup.js?v=20260910-6"></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#003865" />
-    <script src="assets/auth-guard.js?v=20260910-5"></script>
+    <script src="assets/auth-guard.js?v=20260910-6"></script>
     <meta name="description" content="Registro fotográfico do intervalo: antes, durante e depois do serviço." />
     <title>Gestão de Intervalo | Fotos</title>
     <link rel="icon" href="assets/rumo-logo-blue.png" type="image/png" />
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <script src="assets/pwa.js" defer></script>
-<link rel="stylesheet" href="styles.css?v=20260910-5" />
+<link rel="stylesheet" href="styles.css?v=20260910-6" />
     <script src="assets/jszip.min.js" defer></script>
-    <script src="assets/supabase.min.js?v=20260910-5" defer></script>
-<script src="app.js?v=20260910-5" defer></script>
+    <script src="assets/supabase.min.js?v=20260910-6" defer></script>
+<script src="app.js?v=20260910-6" defer></script>
   </head>
   <body data-page="photos">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -24,12 +24,13 @@
         <img src="assets/rumo-logo-white.png" alt="Rumo" />
         <span>Gestão de Intervalo</span>
       </a>
-      <nav class="primary-nav" aria-label="Navegação principal">
+      <nav class="primary-nav" aria-label="Navegação principal" style="--nav-count:6">
         <a href="index.html"><span>1</span> Planejar</a>
         <a href="executar.html"><span>2</span> Executar</a>
         <a href="dashboard.html"><span>3</span> Dashboard</a>
         <a class="active" href="fotos.html" aria-current="page"><span>4</span> Fotos</a>
-        <a href="conta.html"><span>5</span> Conta</a>
+        <a href="gestao.html?view=history"><span>5</span> Histórico</a>
+        <a href="conta.html"><span>6</span> Minha conta</a>
       </nav>
       <div class="header-tools">
         <div class="save-state" id="save-state">Dados deste dispositivo</div>
