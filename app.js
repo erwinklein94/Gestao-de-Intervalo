@@ -2270,13 +2270,47 @@
     ]);
   }
 
+  function planningReportHtml(plan) {
+    const timeline = buildTimeline(plan);
+    const text = (value) => escapeHtml(value || "—");
+    const fields = [
+      ["Data", plan.date ? plan.date.split("-").reverse().join("/") : ""],
+      ["Frente", frontLabel(plan)], ["Local", plan.location],
+      ["Tipo de serviço", plan.serviceType], ["Responsável", plan.coordinator],
+      ["Contratada", plan.contractorName], ["Encarregado", plan.foremanName],
+      ["Situação", plan.locked ? "Planejamento confirmado" : "Em planejamento"]
+    ];
+    const substeps = (step) => substepsOf(step).filter((item) => !item.deleted).map((item) =>
+      '<li><span>' + text(item.name) + '</span>' + (item.description ? '<small>' + text(item.description) + '</small>' : '') + '</li>').join("");
+    const rows = timeline.steps.map((step, index) => '<tr><td class="report-order">' + String(index + 1).padStart(2, "0") + '</td><td><strong>' + text(step.name) + '</strong>' + (substepsOf(step).some((item) => !item.deleted) ? '<ul class="report-substeps">' + substeps(step) + '</ul>' : '') + '</td><td class="report-time">' + text(stampHuman(step.plannedStart)) + '</td><td class="report-time">' + text(stampHuman(step.plannedEnd)) + '</td><td class="report-time">' + formatMinutes(step.duration) + '</td></tr>').join("");
+    const valid = timeline.steps.filter((step) => step.start != null && step.end != null);
+    const start = Math.min(timeline.windowStart ?? Infinity, ...valid.map((step) => step.start));
+    const end = Math.max(timeline.windowEnd ?? -Infinity, ...valid.map((step) => step.end));
+    const span = end - start;
+    const chart = span > 0 && Number.isFinite(span) ? '<div class="report-chart-axis"><span>' + absoluteToTime(start) + '</span><span>' + absoluteToTime(start + span / 2) + '</span><span>' + absoluteToTime(end) + '</span></div>' + valid.map((step) => '<div class="report-chart-row"><div><strong>' + text(step.name) + '</strong>' + substepsHtml(step, "gantt") + '</div><div class="report-chart-track"><i style="left:' + ((step.start - start) / span * 100) + '%;width:' + Math.max(.5, (step.end - step.start) / span * 100) + '%"></i></div><span>' + text(stampShort(step.plannedStart)) + '–' + text(stampShort(step.plannedEnd)) + '</span></div>').join("") : '<p>Preencha os horários para visualizar a linha do tempo.</p>';
+    return '<header class="report-header"><div><p>GESTÃO DE INTERVALO / PLANEJAMENTO</p><h1>' + text(plan.title || "Planejamento do intervalo") + '</h1></div><span>' + text(frontLabel(plan)) + '</span></header>' +
+      '<dl class="report-details">' + fields.map(([label, value]) => '<div><dt>' + label + '</dt><dd>' + text(value) + '</dd></div>').join("") + '</dl>' +
+      '<div class="report-window"><div><span>Janela programada</span><strong>' + text(stampHuman(plan.windowStart)) + ' → ' + text(stampHuman(plan.windowEnd)) + '</strong></div><div><span>Duração da janela</span><strong>' + formatMinutes(timeline.duration) + '</strong></div>' + (ccoGrantMinutes(plan) ? '<div><span>Concessão CCO</span><strong>+' + text(ccoGrantLabel(plan)) + '</strong></div><div><span>Prazo final</span><strong>' + text(stampHuman(planDeadlineStamp(plan))) + '</strong></div>' : '') + '</div>' +
+      '<section class="report-schedule"><h2>Etapas programadas <span>' + plan.steps.length + ' etapas</span></h2><table><colgroup><col style="width:5%"><col style="width:47%"><col style="width:19%"><col style="width:19%"><col style="width:10%"></colgroup><thead><tr><th>Ordem</th><th>Atividade e subetapas</th><th>Início</th><th>Fim</th><th>Duração</th></tr></thead><tbody>' + (rows || '<tr><td colspan="5">Nenhuma etapa cadastrada.</td></tr>') + '</tbody></table></section>' +
+      (plan.notes ? '<section class="report-notes"><h2>Observações do planejamento</h2><p>' + text(plan.notes) + '</p></section>' : '') +
+      '<section class="report-timeline"><h2>Visão da janela</h2>' + chart + '</section>';
+  }
+
   function exportPageToPdf(button, fileName, idleLabel, printClass = "exporting-pdf") {
+    let planningReport = null;
+    if (printClass === "planning-printing") {
+      planningReport = document.createElement("article");
+      planningReport.className = "planning-report";
+      planningReport.innerHTML = planningReportHtml(activePlan());
+      document.body.append(planningReport);
+    }
     const previousTitle = document.title;
     document.title = fileSlug(fileName);
     document.body.classList.add(printClass);
     button.disabled = true;
     button.textContent = "Preparando PDF…";
     const restore = () => {
+      planningReport?.remove();
       document.title = previousTitle;
       document.body.classList.remove(printClass);
       button.disabled = false;
@@ -5475,7 +5509,7 @@
       photoRotation, reusePhotoUrls, withSignedPhotoUrls, openPhotoViewer, closePhotoViewer,
       photoPhase, phaseAcceptsPhotos, photosPage, PHOTO_PHASES, PHOTO_PHASE_LABELS,
       blankPlan, blankStep, normalizePlan, planToDatabase, databaseToPlan, stepsToDatabase,
-      substepsOf, substepsHtml, pendingSubsteps, mergeStep, confirmPendingSubsteps,
+      planningReportHtml, substepsOf, substepsHtml, pendingSubsteps, mergeStep, confirmPendingSubsteps,
       frontsOf, frontLabel, nextFrontPosition, propagateSharedFields, closureCredit,
       ccoGrantMinutes, ccoGrantLabel, planDeadlineStamp, shiftPlanSchedule, hasStartedExecution,
       silenceMinutes, lastOperationalStamp,
