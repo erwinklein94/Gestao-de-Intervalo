@@ -2220,3 +2220,10 @@ html[data-theme="dark"] .shift-copy strong { color: var(--sky); }
 .substeps-dialog-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
 @media print { .substeps { break-inside: avoid; } .substeps button { display: none; } }
 .substeps > button[data-action="add-substep"] { width: auto; height: auto; padding: .4rem .65rem; white-space: nowrap; }
+
+/* No Gantt, somente os nomes subordinados à etapa principal. */
+.gantt-substeps { list-style: none; margin: .3rem 0 0; padding: 0 0 0 .65rem; font-size: 9px; font-weight: 400; line-height: 1.45; white-space: normal; }
+.gantt-substeps li { margin: .15rem 0; overflow-wrap: anywhere; }
+.gantt-label:has(.gantt-substeps) { white-space: normal; }
+.timeline-compare-label .gantt-substeps { font-size: 8px; }
+@media print { .timeline-compare-label .gantt-substeps { font-size: 6.5px; } }

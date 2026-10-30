@@ -217,6 +217,7 @@
   function substepsHtml(step, mode = "read", disabled = false) {
     const items = substepsOf(step).filter((item) => !item.deleted);
     if (!items.length && mode !== "edit") return "";
+    if (mode === "gantt") return '<ul class="gantt-substeps">' + items.map((item) => '<li>' + escapeHtml(item.name || "Subetapa sem nome") + '</li>').join("") + '</ul>';
     const done = items.filter((item) => item.done).length;
     const rows = items.map((item, index) => {
       const id = escapeHtml(item.id);
@@ -2512,7 +2513,7 @@
         const left = Math.max(0, ((step.start - timeline.windowStart) / timeline.duration) * 100);
         const width = Math.max(0.7, Math.min(100 - left, (step.duration / timeline.duration) * 100));
         return `<div class="gantt-row">
-          <div class="gantt-label" title="${escapeHtml(step.name || `Etapa ${step.index + 1}`)}">${escapeHtml(step.name || `Etapa ${step.index + 1}`)}${substepsHtml(step)}</div>
+          <div class="gantt-label" title="${escapeHtml(step.name || `Etapa ${step.index + 1}`)}">${escapeHtml(step.name || `Etapa ${step.index + 1}`)}${substepsHtml(step, "gantt")}</div>
           <div class="gantt-track"><span class="gantt-bar" style="left:${left}%;width:${width}%"></span></div>
           <span class="gantt-time">${stampShort(step.plannedStart)}–${stampShort(step.plannedEnd)}</span>
         </div>`;
@@ -4003,7 +4004,7 @@
           const plannedTip = timelineTipData(step, index, { ...tipInfo, kind: "Barra planejada" });
           const actualTip = timelineTipData(step, index, { ...tipInfo, kind: runningStep ? "Barra em andamento" : "Barra realizada" });
           return `<div class="timeline-compare-row">
-            <div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><div><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong>${substepsHtml(step)}</div></div>
+            <div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><div><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong>${substepsHtml(step, "gantt")}</div></div>
             <div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${timelineGrid}" aria-label="${escapeHtml(step.name || `Etapa ${index + 1}`)}: planejado ${escapeHtml(stampShort(step.plannedStart))} a ${escapeHtml(stampShort(step.plannedEnd))}; realizado ${escapeHtml(actualText)}">
               <div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${comparisonPosition(step.start)}%;width:${comparisonWidth(step.start, step.end)}%"></i></div>
               <div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${runningStep ? "running" : "complete"}" style="left:${comparisonPosition(step.actualStartMinutes)}%;width:${comparisonWidth(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div>
@@ -5008,7 +5009,7 @@
         const rowTip = timelineTipData(step, index, tipInfo);
         const plannedTip = timelineTipData(step, index, { ...tipInfo, kind: "Barra planejada" });
         const actualTip = timelineTipData(step, index, { ...tipInfo, kind: isRunning ? "Barra em andamento" : "Barra realizada" });
-        return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><div><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong>${substepsHtml(step)}</div></div><div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${sharedGrid}"><div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div></div>`;
+        return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><div><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong>${substepsHtml(step, "gantt")}</div></div><div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${sharedGrid}"><div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div></div>`;
       }).join("")}${timelineAxisHtml(sharedScale.ticks, comparisonStart, comparisonDuration)}`;
       bindTimelineTooltip(sharedTimelineHost);
       restorePinnedChartTooltip(sharedTimelineHost);
