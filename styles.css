@@ -2266,3 +2266,17 @@ html[data-theme="dark"] .shift-copy strong { color: var(--sky); }
   .report-chart-track { position:relative; height:14px; background:repeating-linear-gradient(to right,#eef3f5 0,#eef3f5 calc(25% - 1px),#d7e2e8 calc(25% - 1px),#d7e2e8 25%); border-radius:3px; }
   .report-chart-track i { position:absolute; top:0; bottom:0; background:#159b92; border-radius:3px; }
 }
+
+/* Hierarquia: nomes das etapas principais em negrito. */
+input[data-field="name"],
+.gantt-label,
+.execution-step-title h3,
+.timeline-compare-label strong,
+.duration-label strong,
+#dashboard-table-body td > strong,
+.shared-step header h3,
+#shared-planned-steps article > div > strong,
+.detail-step-list article > div > strong,
+.detail-progress-list > div > span,
+.planning-report td > strong,
+.planning-report .report-chart-row > div > strong { font-weight: 700; }
