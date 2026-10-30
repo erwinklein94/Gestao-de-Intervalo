@@ -298,3 +298,13 @@ Após alterar CSS ou JavaScript, mantenha sincronizados os parâmetros de versã
 - Identidade visual baseada no brand book oficial da Rumo: paleta institucional, combinações de acessibilidade e Verdana como tipografia de sistema para HTML.
 - Fluxo funcional derivado da planilha `00 - CronoAVF.xlsx`: planejado × executado, duração, produtividade/ritmo e visão de Gantt, reorganizados para uso operacional em telas menores.
 - Catálogo de SUBs do Mapa Rumo 2020-V9 usado na primeira versão e retirado depois: o recorte nunca chegou a ser usado na operação e só sobrevivia como cadastro paralelo.
+
+### Subetapas opcionais
+
+Cada etapa pode receber subetapas no planejamento, com nome e descrição breve. Na execução, os checks podem ser marcados e desmarcados. Subetapas não possuem horários e não alteram duração, sequência, indicadores ou encerramento do intervalo.
+
+Ao informar o fim realizado (manualmente ou pelo botão Agora), havendo subetapas pendentes, o modal permite voltar ou encerrar mesmo assim. A confirmação salva o fim sem marcar automaticamente os itens pendentes. O checklist aparece no Gantt, acompanhamento, link compartilhado e exportações. Duplicar um plano preserva nomes e descrições, com novos identificadores e checks desmarcados.
+
+Persistência: `interval_steps.substeps` (JSONB), validado no banco e protegido pelas permissões existentes da etapa. A RPC preserva o checklist quando clientes antigos omitem o campo. A sincronização mescla subetapas por identificador e data de edição; remoções ficam registradas para não reaparecerem após uso offline.
+
+Validação: `node --test tests/substeps.test.js`; a migração está em `supabase/migrations/20261030214118_add_interval_substeps.sql`.

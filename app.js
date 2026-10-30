@@ -209,8 +209,37 @@
     return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10);
   }
 
+
+  function substepsOf(step) {
+    return Array.isArray(step?.substeps) ? step.substeps : [];
+  }
+
+  function substepsHtml(step, mode = "read", disabled = false) {
+    const items = substepsOf(step).filter((item) => !item.deleted);
+    if (!items.length && mode !== "edit") return "";
+    const done = items.filter((item) => item.done).length;
+    const rows = items.map((item, index) => {
+      const id = escapeHtml(item.id);
+      if (mode === "edit") return '<div class="substep-item" data-substep-id="' + id + '"><label>Subetapa ' + (index + 1) + '<input data-substep-field="name" maxlength="140" value="' + escapeHtml(item.name) + '" aria-label="Nome da subetapa ' + (index + 1) + '" ' + (disabled ? 'disabled' : '') + '></label><label>Descrição breve<input data-substep-field="description" maxlength="300" value="' + escapeHtml(item.description) + '" aria-label="Descrição da subetapa ' + (index + 1) + '" ' + (disabled ? 'disabled' : '') + '></label><button type="button" class="row-action delete" data-action="remove-substep" aria-label="Excluir subetapa ' + (index + 1) + '" ' + (disabled ? 'disabled' : '') + '>×</button></div>';
+      const name = escapeHtml(item.name || "Subetapa sem nome");
+      return '<li class="substep-read ' + (item.done ? 'is-done' : '') + '">' + (mode === 'execute' ? '<label><input type="checkbox" data-substep-check="' + id + '" ' + (item.done ? 'checked ' : '') + (disabled ? 'disabled' : '') + '><span>' + name + '</span></label>' : '<span>' + (item.done ? '☑ ' : '☐ ') + name + ' — ' + (item.done ? 'Feita' : 'Pendente') + '</span>') + (item.description ? '<small>' + escapeHtml(item.description) + '</small>' : '') + '</li>';
+    }).join("");
+    return '<section class="substeps"><div class="substeps-heading">Subetapas · ' + done + '/' + items.length + ' feitas</div>' + (mode === 'edit' ? rows + '<button type="button" class="row-action" data-action="add-substep" ' + (disabled ? 'disabled' : '') + '>+ Subetapa</button><small>Organização opcional, sem alterar horários.</small>' : '<ul>' + rows + '</ul>') + '</section>';
+  }
+
+  function pendingSubsteps(step) {
+    return substepsOf(step).filter((item) => !item.deleted && !item.done);
+  }
+
+  function confirmPendingSubsteps(step, onConfirm) {
+    const dialog = createDialog("substeps-dialog", '<div class="cloud-dialog-content"><h2 id="substeps-dialog-title">Encerrar etapa com subetapas pendentes?</h2><p>Você está encerrando esta etapa sem marcar todas as subetapas como feitas. Pode voltar para revisar ou encerrar mesmo assim.</p><ul>' + pendingSubsteps(step).map((item) => '<li>' + escapeHtml(item.name || 'Subetapa sem nome') + '</li>').join('') + '</ul><div class="cloud-dialog-actions substeps-dialog-actions"><button class="button button-ghost" type="button" data-cancel autofocus>Voltar</button><button class="button button-secondary" type="button" data-confirm>Encerrar mesmo assim</button></div></div>');
+    dialog.setAttribute("aria-labelledby", "substeps-dialog-title");
+    dialog.querySelector("[data-cancel]").addEventListener("click", () => dialog.close());
+    dialog.querySelector("[data-confirm]").addEventListener("click", () => { dialog.close(); onConfirm(); });
+  }
+
   function blankStep() {
-    return { id: uid(), name: "", plannedStart: "", plannedEnd: "", actualStart: "", actualEnd: "", actualNotes: "", executionStatus: "pending", skipReason: "" };
+    return { id: uid(), name: "", substeps: [], plannedStart: "", plannedEnd: "", actualStart: "", actualEnd: "", actualNotes: "", executionStatus: "pending", skipReason: "" };
   }
 
   function blankPlan(title = "Novo plano", overrides = {}) {
@@ -369,6 +398,7 @@
     plan.steps.forEach((step) => {
       step.id = step.id || uid();
       step.name = step.name || "";
+      step.substeps = substepsOf(step);
       step.plannedStart = step.plannedStart || step.start || "";
       step.plannedEnd = step.plannedEnd || step.end || "";
       step.actualStart = step.actualStart || "";
@@ -514,6 +544,7 @@
       actual_start: step.actualStart || null,
       actual_end: step.actualEnd || null,
       actual_notes: storedActualNotes(step),
+      substeps: substepsOf(step),
       status: step.executionStatus || "pending",
       skip_reason: step.skipReason || ""
     }));
@@ -567,6 +598,7 @@
           actualStart: stampInput(step.actual_start),
           actualEnd: stampInput(step.actual_end),
           actualNotes: parsedNotes.notes,
+          substeps: Array.isArray(step.substeps) ? step.substeps : [],
           executionStatus: step.status || (parsedNotes.skipped ? "skipped" : step.actual_end ? "completed" : step.actual_start ? "running" : "pending"),
           skipReason: step.skip_reason || parsedNotes.reason,
           revision: Number(step.revision || 0)
@@ -634,6 +666,13 @@
     MERGEABLE_STEP_FIELDS.forEach((field) => {
       merged[field] = mergeField(localStep[field], remoteStep[field], `${label} · ${field}`, divergences);
     });
+    // IDs estáveis e tombstones preservam inclusões e remoções offline.
+    const entries = new Map((localStep.substeps || []).map((item) => [item.id, item]));
+    (remoteStep.substeps || []).forEach((item) => {
+      const local = entries.get(item.id);
+      if (!local || String(item.updatedAt || "") >= String(local.updatedAt || "")) entries.set(item.id, item);
+    });
+    merged.substeps = [...entries.values()];
     // Marcar etapa como nao executada e um ato deliberado; nao se desfaz sozinho
     // num merge. Fora isso, o estado vem dos horarios que sobreviveram.
     merged.executionStatus = localStep.executionStatus === "skipped" || remoteStep.executionStatus === "skipped"
@@ -2155,7 +2194,7 @@
         : step.actualStartMinutes != null
           ? roundedDifference > 0 ? "Em andamento - atrasado" : roundedDifference < 0 ? "Em andamento - adiantado" : "Em andamento"
           : roundedDifference > 0 ? "Início atrasado" : "Aguardando";
-      return [index + 1, step.name, step.plannedStart, step.plannedEnd, step.duration, step.actualStart, step.actualEnd, step.actualDuration, roundedDifference, status, step.actualNotes || step.skipReason];
+      return [index + 1, step.name, step.plannedStart, step.plannedEnd, step.duration, step.actualStart, step.actualEnd, step.actualDuration, roundedDifference, status, [step.actualNotes || step.skipReason, ...substepsOf(step).filter((item) => !item.deleted).map((item) => `Subetapa [${item.done ? "Feita" : "Pendente"}]: ${item.name}${item.description ? " — " + item.description : ""}`)].filter(Boolean).join("\n")];
     });
     const rows = [];
     rows.push(`<row r="1" ht="30" customHeight="1">${excelCell(1, 1, "GESTÃO DE INTERVALO — PROGRAMADO X REALIZADO", 1)}</row>`);
@@ -2423,7 +2462,7 @@
         return `
           <tr data-step-id="${step.id}">
             <td><select class="sequence-select" data-field="executionOrder" aria-label="Ordem de início da etapa ${index + 1}" ${plan.locked ? "disabled" : ""}>${plan.steps.map((_, orderIndex) => `<option value="${orderIndex}" ${orderIndex === index ? "selected" : ""}>${String(orderIndex + 1).padStart(2, "0")}</option>`).join("")}</select></td>
-            <td><input data-field="name" type="text" maxlength="140" aria-label="Nome da etapa ${index + 1}" value="${escapeHtml(step.name)}" placeholder="Descreva a atividade" ${plan.locked ? "disabled" : ""}></td>
+            <td><input data-field="name" type="text" maxlength="140" aria-label="Nome da etapa ${index + 1}" value="${escapeHtml(step.name)}" placeholder="Descreva a atividade" ${plan.locked ? "disabled" : ""}>${substepsHtml(step, "edit", plan.locked)}</td>
             <td><input data-field="plannedStart" type="time" aria-label="Início programado da etapa ${index + 1}" value="${escapeHtml(stampClock(step.plannedStart))}" ${plan.locked ? "disabled" : ""}></td>
             <td><input data-field="plannedEnd" type="time" aria-label="Fim programado da etapa ${index + 1}" value="${escapeHtml(stampClock(step.plannedEnd))}" ${plan.locked ? "disabled" : ""}></td>
             <td>${dayPickerMarkup(plan, step, index)}</td>
@@ -2473,7 +2512,7 @@
         const left = Math.max(0, ((step.start - timeline.windowStart) / timeline.duration) * 100);
         const width = Math.max(0.7, Math.min(100 - left, (step.duration / timeline.duration) * 100));
         return `<div class="gantt-row">
-          <span class="gantt-label" title="${escapeHtml(step.name || `Etapa ${step.index + 1}`)}">${escapeHtml(step.name || `Etapa ${step.index + 1}`)}</span>
+          <div class="gantt-label" title="${escapeHtml(step.name || `Etapa ${step.index + 1}`)}">${escapeHtml(step.name || `Etapa ${step.index + 1}`)}${substepsHtml(step)}</div>
           <div class="gantt-track"><span class="gantt-bar" style="left:${left}%;width:${width}%"></span></div>
           <span class="gantt-time">${stampShort(step.plannedStart)}–${stampShort(step.plannedEnd)}</span>
         </div>`;
@@ -2621,6 +2660,15 @@
       const row = event.target.closest("tr");
       const step = plan.steps.find((item) => item.id === row?.dataset.stepId);
       if (!step) return;
+      if (event.target.dataset.substepField) {
+        const item = substepsOf(step).find((item) => item.id === event.target.closest("[data-substep-id]")?.dataset.substepId);
+        if (!item || item.deleted) return;
+        item[event.target.dataset.substepField] = event.target.value;
+        item.updatedAt = new Date().toISOString();
+        persist();
+        renderGantt();
+        return;
+      }
       if (event.target.dataset.field === "executionOrder") {
         const fromIndex = plan.steps.findIndex((item) => item.id === step.id);
         const toIndex = Math.max(0, Math.min(plan.steps.length - 1, Number(event.target.value)));
@@ -2681,6 +2729,15 @@
       if (plan.locked) return;
       const row = button.closest("tr");
       const index = plan.steps.findIndex((item) => item.id === row.dataset.stepId);
+      if (button.dataset.action === "add-substep") {
+        const step = plan.steps[index];
+        step.substeps = substepsOf(step);
+        step.substeps.push({ id: uid(), name: "", description: "", done: false, updatedAt: new Date().toISOString() });
+      }
+      if (button.dataset.action === "remove-substep") {
+        const item = substepsOf(plan.steps[index]).find((item) => item.id === button.closest("[data-substep-id]")?.dataset.substepId);
+        if (item) { item.deleted = true; item.updatedAt = new Date().toISOString(); }
+      }
       if (button.dataset.action === "delete") {
         const target = plan.steps[index];
         const targetHasExecution = target && (target.actualStart || target.actualEnd || target.executionStatus === "skipped" || target.actualNotes);
@@ -2822,6 +2879,7 @@
       copy.createdAt = new Date().toISOString();
       copy.steps.forEach((step) => {
         step.id = uid();
+        step.substeps = substepsOf(step).filter((item) => !item.deleted).map((item) => ({ ...item, id: uid(), done: false, updatedAt: new Date().toISOString() }));
         delete step.databaseId;
         step.actualStart = "";
         step.actualEnd = "";
@@ -3155,6 +3213,7 @@
             </div>
             <span class="step-variance ${variance.className}" data-step-variance>${variance.text}</span>
           </header>
+          ${substepsHtml(step, "execute", executionClosed || skipped)}
           <div class="execution-step-grid">
             <div class="programmed-block">
               <span class="block-label">Programado</span>
@@ -3427,7 +3486,7 @@
       }
     }
 
-    function updateActualTime(step, field, value) {
+    function updateActualTime(step, field, value, confirmedPending = false) {
       if (plan.status === "completed") return false;
       const previous = step[field];
       if (isStepSkipped(step)) {
@@ -3449,6 +3508,16 @@
         showToast("A duração realizada deve ser maior que zero e não pode superar 12 horas.");
         return false;
       }
+      if (field === "actualEnd" && value && value !== previous && pendingSubsteps(step).length && !confirmedPending) {
+        step[field] = previous;
+        confirmPendingSubsteps(step, () => {
+          if (updateActualTime(step, field, value, true)) {
+            showToast("Fim realizado registrado. As subetapas pendentes foram mantidas.");
+            agendarRedesenho();
+          }
+        });
+        return false;
+      }
       persist(true);
       return true;
     }
@@ -3464,6 +3533,17 @@
     });
 
     root.addEventListener("change", (event) => {
+      if (event.target.dataset.substepCheck) {
+        const step = plan.steps.find((item) => item.id === event.target.closest("[data-step-id]")?.dataset.stepId);
+        if (!step || plan.status === "completed" || isStepSkipped(step)) return;
+        const item = substepsOf(step).find((item) => item.id === event.target.dataset.substepCheck && !item.deleted);
+        if (!item) return;
+        item.done = event.target.checked;
+        item.updatedAt = new Date().toISOString();
+        persist(true);
+        agendarRedesenho();
+        return;
+      }
       if (!event.target.matches('input[type="datetime-local"]')) return;
       const stepElement = event.target.closest("[data-step-id]");
       const step = plan.steps.find((item) => item.id === stepElement?.dataset.stepId);
@@ -3923,7 +4003,7 @@
           const plannedTip = timelineTipData(step, index, { ...tipInfo, kind: "Barra planejada" });
           const actualTip = timelineTipData(step, index, { ...tipInfo, kind: runningStep ? "Barra em andamento" : "Barra realizada" });
           return `<div class="timeline-compare-row">
-            <div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div>
+            <div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><div><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong>${substepsHtml(step)}</div></div>
             <div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${timelineGrid}" aria-label="${escapeHtml(step.name || `Etapa ${index + 1}`)}: planejado ${escapeHtml(stampShort(step.plannedStart))} a ${escapeHtml(stampShort(step.plannedEnd))}; realizado ${escapeHtml(actualText)}">
               <div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${comparisonPosition(step.start)}%;width:${comparisonWidth(step.start, step.end)}%"></i></div>
               <div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${runningStep ? "running" : "complete"}" style="left:${comparisonPosition(step.actualStartMinutes)}%;width:${comparisonWidth(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div>
@@ -3962,7 +4042,7 @@
       $("#dashboard-table-body").innerHTML = timeline.steps.length ? timeline.steps.map((step) => {
         const status = statusFor(step, nowAbs);
         const scheduleDiff = status.variance;
-        return `<tr><td><strong>${escapeHtml(step.name || "Etapa sem nome")}</strong><small>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></td><td>${formatMinutes(step.duration)}</td><td>${step.actualDuration == null ? "—" : formatMinutes(step.actualDuration)}</td><td>${scheduleDiff == null ? "—" : `${scheduleDiff > 0 ? "+" : ""}${scheduleDiff} min`}</td><td><span class="table-status ${status.className}">${status.label}</span></td></tr>`;
+        return `<tr><td><strong>${escapeHtml(step.name || "Etapa sem nome")}</strong>${substepsHtml(step)}<small>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></td><td>${formatMinutes(step.duration)}</td><td>${step.actualDuration == null ? "—" : formatMinutes(step.actualDuration)}</td><td>${scheduleDiff == null ? "—" : `${scheduleDiff > 0 ? "+" : ""}${scheduleDiff} min`}</td><td><span class="table-status ${status.className}">${status.label}</span></td></tr>`;
       }).join("") : `<tr><td colspan="5">Nenhuma etapa cadastrada.</td></tr>`;
     }
 
@@ -4338,8 +4418,8 @@
       if (!data.length) return;
       const plans = mergeCloudPlans(data.map(databaseToPlan));
       const activeId = plans.some((item) => item.id === store.activePlanId) ? store.activePlanId : plans[0].id;
-      const incomingSignature = JSON.stringify(plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes])]));
-      const currentSignature = JSON.stringify(store.plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes])]));
+      const incomingSignature = JSON.stringify(plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes, step.substeps])]));
+      const currentSignature = JSON.stringify(store.plans.map((item) => [item.id, item.updatedAt, item.steps.map((step) => [step.id, step.actualStart, step.actualEnd, step.executionStatus, step.actualNotes, step.substeps])]));
       if (incomingSignature === currentSignature) return;
       const deletedPlanIds = store.deletedPlanIds || [];
       const pendingSync = hasPendingWork();
@@ -4783,7 +4863,7 @@
         ...(plan.completedAt ? [["Encerrado por", closureCredit(plan)]] : [])
       ].map(([label, value]) => `<div><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
       $("#shared-planning-notes").textContent = plan.notes || "Nenhuma observação registrada.";
-      $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small></div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
+      $("#shared-planned-steps").innerHTML = timeline.steps.map((step, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong><small>Planejado · ${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</small>${substepsHtml(step)}</div></article>`).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
       const sharedComments = metadata.comments || [];
       $("#shared-comment-count").textContent = sharedComments.length;
       $("#shared-comments").innerHTML = sharedComments.length ? sharedComments.map((comment) => `<article class="interval-comment"><header><span><strong>${escapeHtml(comment.author_name)}</strong><i>${escapeHtml(roleLabel(comment.author_role, comment.author_role_gender))}</i></span><time>${new Date(comment.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time></header><p>${escapeHtml(comment.content)}</p></article>`).join("") : `<div class="chart-empty">Nenhum comentário registrado.</div>`;
@@ -4863,6 +4943,7 @@
             if (burn.planned == null) return `${formatMinutes(burn.elapsed)} em curso`;
             return `${formatMinutes(burn.elapsed)} de ${formatMinutes(burn.planned)}${wholeMinutes(burn.over) > 0 ? ` · ${formatMinutes(burn.over)} a mais` : ""}`;
           })()}</small></p></div>
+          ${substepsHtml(step)}
           ${step.actualNotes ? `<p class="shared-step-note"><span>Registro operacional</span>${escapeHtml(step.actualNotes)}</p>` : ""}
         </article>`;
       }).join("") || `<div class="chart-empty">Nenhuma etapa cadastrada.</div>`;
@@ -4927,7 +5008,7 @@
         const rowTip = timelineTipData(step, index, tipInfo);
         const plannedTip = timelineTipData(step, index, { ...tipInfo, kind: "Barra planejada" });
         const actualTip = timelineTipData(step, index, { ...tipInfo, kind: isRunning ? "Barra em andamento" : "Barra realizada" });
-        return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong></div><div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${sharedGrid}"><div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div></div>`;
+        return `<div class="timeline-compare-row"><div class="timeline-compare-label"><span>${String(index + 1).padStart(2, "0")}</span><div><strong title="${escapeHtml(step.name)}">${escapeHtml(step.name || `Etapa ${index + 1}`)}</strong>${substepsHtml(step)}</div></div><div class="timeline-compare-track" data-track-start="${comparisonStart}" data-track-span="${comparisonDuration}" ${rowTip} style="${sharedGrid}"><div class="timeline-lane timeline-planned-lane"><i tabindex="0" ${plannedTip} style="left:${position(step.start)}%;width:${width(step.start, step.end)}%"></i></div><div class="timeline-lane timeline-actual-lane">${step.actualStartMinutes != null && !isStepSkipped(step) ? `<i tabindex="0" ${actualTip} class="${isRunning ? "running" : "complete"}" style="left:${position(step.actualStartMinutes)}%;width:${width(step.actualStartMinutes, actualEnd)}%"></i>` : ""}</div></div><div class="timeline-compare-times"><span><b>P</b>${escapeHtml(stampShort(step.plannedStart))}–${escapeHtml(stampShort(step.plannedEnd))}</span><span class="${isRunning ? "running" : isStepComplete(step) ? "complete" : "waiting"}"><b>R</b>${escapeHtml(actualText)}</span></div></div>`;
       }).join("")}${timelineAxisHtml(sharedScale.ticks, comparisonStart, comparisonDuration)}`;
       bindTimelineTooltip(sharedTimelineHost);
       restorePinnedChartTooltip(sharedTimelineHost);
@@ -5393,7 +5474,8 @@
       photoGalleryHtml, photoAppendixHtml, renderPhotoAppendix, photosSheetXml,
       photoRotation, reusePhotoUrls, withSignedPhotoUrls, openPhotoViewer, closePhotoViewer,
       photoPhase, phaseAcceptsPhotos, photosPage, PHOTO_PHASES, PHOTO_PHASE_LABELS,
-      blankPlan, normalizePlan, planToDatabase, databaseToPlan,
+      blankPlan, blankStep, normalizePlan, planToDatabase, databaseToPlan, stepsToDatabase,
+      substepsOf, substepsHtml, pendingSubsteps, mergeStep, confirmPendingSubsteps,
       frontsOf, frontLabel, nextFrontPosition, propagateSharedFields, closureCredit,
       ccoGrantMinutes, ccoGrantLabel, planDeadlineStamp, shiftPlanSchedule, hasStartedExecution,
       silenceMinutes, lastOperationalStamp,
