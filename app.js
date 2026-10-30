@@ -218,14 +218,13 @@
     const items = substepsOf(step).filter((item) => !item.deleted);
     if (!items.length && mode !== "edit") return "";
     if (mode === "gantt") return '<ul class="gantt-substeps">' + items.map((item) => '<li>' + escapeHtml(item.name || "Subetapa sem nome") + '</li>').join("") + '</ul>';
-    const done = items.filter((item) => item.done).length;
     const rows = items.map((item, index) => {
       const id = escapeHtml(item.id);
       if (mode === "edit") return '<div class="substep-item" data-substep-id="' + id + '"><label>Subetapa ' + (index + 1) + '<input data-substep-field="name" maxlength="140" value="' + escapeHtml(item.name) + '" aria-label="Nome da subetapa ' + (index + 1) + '" ' + (disabled ? 'disabled' : '') + '></label><label>Descrição breve<input data-substep-field="description" maxlength="300" value="' + escapeHtml(item.description) + '" aria-label="Descrição da subetapa ' + (index + 1) + '" ' + (disabled ? 'disabled' : '') + '></label><button type="button" class="row-action delete" data-action="remove-substep" aria-label="Excluir subetapa ' + (index + 1) + '" ' + (disabled ? 'disabled' : '') + '>×</button></div>';
       const name = escapeHtml(item.name || "Subetapa sem nome");
-      return '<li class="substep-read ' + (item.done ? 'is-done' : '') + '">' + (mode === 'execute' ? '<label><input type="checkbox" data-substep-check="' + id + '" ' + (item.done ? 'checked ' : '') + (disabled ? 'disabled' : '') + '><span>' + name + '</span></label>' : '<span>' + (item.done ? '☑ ' : '☐ ') + name + ' — ' + (item.done ? 'Feita' : 'Pendente') + '</span>') + (item.description ? '<small>' + escapeHtml(item.description) + '</small>' : '') + '</li>';
+      return '<li class="substep-read ' + (item.done ? 'is-done' : '') + '">' + (mode === 'execute' ? '<label><input type="checkbox" data-substep-check="' + id + '" ' + (item.done ? 'checked ' : '') + (disabled ? 'disabled' : '') + '><span>' + name + '</span></label>' : '<span>' + (item.done ? '☑ ' : '☐ ') + name + '</span>') + (item.description ? '<small>' + escapeHtml(item.description) + '</small>' : '') + '</li>';
     }).join("");
-    return '<section class="substeps"><div class="substeps-heading">Subetapas · ' + done + '/' + items.length + ' feitas</div>' + (mode === 'edit' ? rows + '<button type="button" class="row-action" data-action="add-substep" ' + (disabled ? 'disabled' : '') + '>+ Subetapa</button><small>Organização opcional, sem alterar horários.</small>' : '<ul>' + rows + '</ul>') + '</section>';
+    return '<section class="substeps">' + (mode === 'edit' ? rows + '<button type="button" class="row-action" data-action="add-substep" ' + (disabled ? 'disabled' : '') + '>+ Subetapa</button>' : '<ul>' + rows + '</ul>') + '</section>';
   }
 
   function pendingSubsteps(step) {
