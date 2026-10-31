@@ -2319,3 +2319,7 @@ input[data-field="name"],
 @media screen and (min-width: 1001px) {
   html { zoom: .9; }
 }
+
+/* Títulos longos permanecem na coluna de identificação do Gantt. */
+.timeline-compare-label > div { min-width:0; flex:1 1 0; }
+.timeline-compare-label strong { display:block; white-space:normal; overflow-wrap:anywhere; line-height:1.45; }
