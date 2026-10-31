@@ -51,7 +51,7 @@
   // dentro dele. O que identifica o bloqueio -- titulo, data, janela e local --
   // pertence ao intervalo e vale igual para todas as frentes. O que muda de
   // frente para frente sao as etapas, o tipo de servico e a execucao.
-  const SHARED_INTERVAL_FIELDS = ["title", "date", "windowStart", "windowEnd", "ccoGrantMinutes", "ccoGrantUnit", "location", "coordinator", "coordinatorMemberId", "managerMemberId", "coordinatorType"];
+  const SHARED_INTERVAL_FIELDS = ["title", "date", "windowStart", "windowEnd", "location", "coordinator", "coordinatorMemberId", "managerMemberId", "coordinatorType"];
   const MAX_FRONTS = 12;
 
   // Concessao do CCO: tempo extra autorizado para o termino do intervalo. Fica
@@ -644,7 +644,7 @@
   // Campos onde vale a regra do merge. Status, travamento e encerramento ficam
   // de fora: sao monotonicos e tem regra propria logo abaixo.
   const MERGEABLE_PLAN_FIELDS = ["title", "serviceType", "contractorName", "foremanName", "coordinator",
-    "date", "location", "windowStart", "windowEnd", "notes", "executionNotes", "frontName", "coordinatorType"];
+    "date", "location", "windowStart", "windowEnd", "notes", "executionNotes", "frontName", "coordinatorType", "ccoGrantMinutes", "ccoGrantUnit"];
   const MERGEABLE_STEP_FIELDS = ["name", "plannedStart", "plannedEnd", "actualStart", "actualEnd", "actualNotes", "skipReason"];
   const PLAN_STATUS_ORDER = ["planning", "executing", "completed"];
 
@@ -2567,8 +2567,7 @@
       plan.ccoGrantMinutes = !Number.isFinite(bruto) || bruto <= 0
         ? 0
         : Math.min(MAX_CCO_GRANT_MINUTES, Math.round(unidade === "hours" ? bruto * 60 : bruto));
-      // A concessao vale para o bloqueio inteiro, como a janela.
-      propagateSharedFields(plan);
+      // A concessão pertence somente à frente selecionada.
       persist();
       // Reescrever o campo enquanto se digita destruiria o que ja foi digitado;
       // na troca de unidade e o oposto -- sem reescrever, "30" viraria 24 h em

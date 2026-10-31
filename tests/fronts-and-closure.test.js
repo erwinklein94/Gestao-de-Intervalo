@@ -719,7 +719,7 @@ test("a concessão do CCO chega ao planejamento, ao relatório e ao banco", () =
   assert.ok(app.includes("ccoGrantMinutes: Number(row.cco_grant_minutes"), "a leitura precisa trazer a concessão");
   assert.ok(app.includes('["Concessão do CCO"'), "o acompanhamento precisa mostrar a concessão");
   assert.ok(app.includes("prazo final ${stampShort(planDeadlineStamp(plan))}"), "o Excel do intervalo precisa registrar o prazo final");
-  assert.ok(app.includes('"ccoGrantMinutes", "ccoGrantUnit"'), "a concessão descreve o bloqueio e acompanha as frentes");
+  assert.ok(!app.match(/const SHARED_INTERVAL_FIELDS = \[[^\]]*ccoGrant/), "a concessão pertence à frente, não ao grupo");
 
   const portal = stripJsComments(read("assets/portal.js"));
   assert.ok(portal.includes("plannedEnd + ccoGrantMinutes(plan)"),
@@ -815,4 +815,37 @@ test("janela noturna continua inferindo a madrugada do dia seguinte", () => {
   api.normalizePlan(plan);
   assert.equal(plan.steps[0].plannedStart,"2026-11-01T01:00");
   assert.equal(plan.windowEnd,"2026-11-01T05:00");
+});
+
+test("concessões de frentes são independentes ao editar, remover e propagar janela", () => {
+  const api=loadAppApi();
+  const a=api.blankPlan("Intervalo",{date:"2026-10-31",windowStart:"2026-10-31T08:00",windowEnd:"2026-10-31T17:00",ccoGrantMinutes:30,ccoGrantUnit:"minutes"});
+  const b=api.blankPlan("Intervalo",{groupId:a.groupId,frontPosition:2,date:a.date,windowStart:a.windowStart,windowEnd:a.windowEnd,ccoGrantMinutes:120,ccoGrantUnit:"hours"});
+  api.setStore({plans:[a,b],activePlanId:a.id,deletedPlanIds:[]});
+  a.location="Novo local";
+  api.propagateSharedFields(a);
+  assert.equal(b.ccoGrantMinutes,120); assert.equal(b.ccoGrantUnit,"hours");
+  assert.equal(api.planDeadlineStamp(a),"2026-10-31T17:30");
+  assert.equal(api.planDeadlineStamp(b),"2026-10-31T19:00");
+  a.ccoGrantMinutes=0; api.propagateSharedFields(a);
+  assert.equal(b.ccoGrantMinutes,120);
+  b.ownerId="test-user";
+  const payload=api.planToDatabase(b);
+  assert.equal(payload.cco_grant_minutes,120); assert.equal(payload.cco_grant_unit,"hours");
+  assert.equal(api.planningReportHtml(b).includes("19:00"),true);
+  assert.equal(api.planningReportHtml(a).includes("17:00"),true);
+  const fresh=api.blankPlan("Nova",{groupId:a.groupId,frontPosition:3});
+  assert.equal(fresh.ccoGrantMinutes,0);
+});
+
+test("gerencial usa prazo de cada frente e mantém a pior situação no grupo",()=>{
+  const api=loadPortalApi();
+  const base={group_id:"g",interval_date:"2026-10-31",window_start:"2026-10-31T08:00",window_end:"2026-10-31T17:00",status:"completed",interval_steps:[{position:0,planned_start:"2026-10-31T08:00",planned_end:"2026-10-31T17:00",actual_start:"2026-10-31T08:00",actual_end:"2026-10-31T17:45",status:"completed"}]};
+  const a={...base,id:"a",front_position:1,cco_grant_minutes:30};
+  const b={...base,id:"b",front_position:2,cco_grant_minutes:120};
+  const group=api.groupPlans([a,b])[0];
+  const result=api.groupMetrics(group,new Date("2026-10-31T20:00"));
+  assert.equal(result.parts[0].variance,15);
+  assert.equal(result.parts[1].variance,-75);
+  assert.equal(result.variance,15); assert.equal(result.deadline,"late");
 });

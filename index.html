@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="pt-BR">
   <head>
-<script src="assets/startup.js?v=20261031-1"></script>
+<script src="assets/startup.js?v=20261031-2"></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#003865" />
-    <script src="assets/auth-guard.js?v=20261031-1"></script>
+    <script src="assets/auth-guard.js?v=20261031-2"></script>
     <meta
       name="description"
       content="Planejamento e acompanhamento de intervalos de manutenção de via permanente."
@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <script src="assets/pwa.js" defer></script>
-<link rel="stylesheet" href="styles.css?v=20261031-1" />
+<link rel="stylesheet" href="styles.css?v=20261031-2" />
     <script src="assets/jszip.min.js" defer></script>
-    <script src="assets/supabase.min.js?v=20261031-1" defer></script>
-<script src="app.js?v=20261031-1" defer></script>
+    <script src="assets/supabase.min.js?v=20261031-2" defer></script>
+<script src="app.js?v=20261031-2" defer></script>
   </head>
   <body data-page="planning">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -98,7 +98,7 @@
                 <span class="step-number">01</span>
                 <div>
                   <h3 id="grant-title">Concessão do CCO</h3>
-                  <p>Tempo extra autorizado para o término do intervalo. A execução deixa de ser medida pelo fim da janela e passa a ser medida por ele.</p>
+                  <p>Tempo extra autorizado para a frente selecionada. Cada frente pode ter sua própria concessão, sem alterar a janela programada do intervalo.</p>
                 </div>
               </div>
             </div>
@@ -115,7 +115,7 @@
                 </select>
               </label>
               <div class="grant-readout" id="grant-readout" role="status" aria-live="polite">
-                <span>Prazo final do intervalo</span>
+                <span>Prazo final desta frente</span>
                 <strong id="grant-deadline">—</strong>
                 <small id="grant-note">Sem concessão registrada.</small>
               </div>
