@@ -1078,7 +1078,9 @@
         const chosen = Math.round((Date.parse(`${parts.date}T00:00:00`) - Date.parse(`${plan.date}T00:00:00`)) / 86400000);
         if (Number.isFinite(chosen) && chosen > 0) absolute += chosen * 1440;
       }
-      while (minimum != null && absolute < minimum) absolute += 1440;
+      // Uma data explícita é uma escolha do usuário ou um registro salvo.
+      // Só inferimos a virada de dia para valores que contêm apenas a hora.
+      while (!parts && minimum != null && absolute < minimum) absolute += 1440;
       return { stamp: absoluteToStamp(absolute, plan.date), absolute };
     };
 
@@ -1088,8 +1090,13 @@
     plan.windowEnd = closing.stamp;
 
     let cursor = opening.absolute;
-    plan.steps.forEach((step) => {
-      const start = attach(step.plannedStart, cursor);
+    plan.steps.forEach((step, index) => {
+      // Uma frente pode começar antes da abertura comum. Uma diferença curta
+      // significa o mesmo dia; a madrugada após uma janela noturna vira o dia.
+      const clock = /^\d{2}:\d{2}$/.test(step.plannedStart || "") ? timeToMinutes(step.plannedStart) : null;
+      const firstMinimum = index === 0 && clock != null && opening.absolute != null
+        && opening.absolute - clock > 0 && opening.absolute - clock <= 720 ? null : cursor;
+      const start = attach(step.plannedStart, firstMinimum);
       step.plannedStart = start.stamp;
       const end = attach(step.plannedEnd, start.absolute);
       step.plannedEnd = end.stamp;

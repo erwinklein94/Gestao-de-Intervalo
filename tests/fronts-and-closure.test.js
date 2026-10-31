@@ -785,3 +785,34 @@ test("o horário realizado é legível: campo com fonte própria e largura intei
 });
 
 console.log("fronts-and-closure: frentes, silêncio, encerramento, PWA e remoção da SUB aprovados");
+
+test("frentes podem começar antes ou depois da janela sem alterar registros reais", () => {
+  const api = loadAppApi();
+  for (const hora of ["06:43", "10:00"]) {
+    const plan = api.blankPlan("Frente", {date:"2026-10-31",windowStart:"2026-10-31T08:43",windowEnd:"2026-10-31T17:43"});
+    plan.steps = [{id:"s1",name:"Etapa",plannedStart:hora,plannedEnd:"12:00",actualStart:"2026-10-31T09:10",actualEnd:"",actualNotes:"Registro existente",substeps:[{id:"sub",name:"Conferir",done:true}]}];
+    api.normalizePlan(plan);
+    assert.equal(plan.steps[0].plannedStart,"2026-10-31T"+hora);
+    assert.equal(plan.steps[0].actualStart,"2026-10-31T09:10");
+    assert.equal(plan.steps[0].actualNotes,"Registro existente");
+    assert.equal(plan.steps[0].substeps[0].done,true);
+  }
+});
+
+test("datas explícitas sobrevivem à normalização mesmo antes da janela", () => {
+  const api = loadAppApi();
+  const plan = api.blankPlan("Frente", {date:"2026-10-31",windowStart:"2026-10-31T08:43",windowEnd:"2026-10-31T17:43"});
+  plan.steps = [{id:"s1",name:"Etapa",plannedStart:"2026-10-31T06:43",plannedEnd:"2026-10-31T07:43"}];
+  api.normalizePlan(plan); api.normalizePlan(plan);
+  assert.equal(plan.steps[0].plannedStart,"2026-10-31T06:43");
+  assert.equal(plan.steps[0].plannedEnd,"2026-10-31T07:43");
+});
+
+test("janela noturna continua inferindo a madrugada do dia seguinte", () => {
+  const api = loadAppApi();
+  const plan = api.blankPlan("Noturno", {date:"2026-10-31",windowStart:"23:00",windowEnd:"05:00"});
+  plan.steps = [{id:"s1",name:"Etapa",plannedStart:"01:00",plannedEnd:"02:00"}];
+  api.normalizePlan(plan);
+  assert.equal(plan.steps[0].plannedStart,"2026-11-01T01:00");
+  assert.equal(plan.windowEnd,"2026-11-01T05:00");
+});
