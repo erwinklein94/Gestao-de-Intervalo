@@ -2314,3 +2314,8 @@ input[data-field="name"],
   .execution-report-comment header { display:flex; gap:12px; align-items:baseline; }
   .execution-report-comment header span, .execution-report-credit { color:#627888; font-size:9px; }
 }
+
+/* Escala mais compacta no computador; celular e PDF mantêm o tamanho atual. */
+@media screen and (min-width: 1001px) {
+  html { zoom: .9; }
+}
