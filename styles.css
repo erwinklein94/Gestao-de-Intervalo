@@ -2323,3 +2323,9 @@ input[data-field="name"],
 /* Títulos longos permanecem na coluna de identificação do Gantt. */
 .timeline-compare-label > div { min-width:0; flex:1 1 0; }
 .timeline-compare-label strong { display:block; white-space:normal; overflow-wrap:anywhere; line-height:1.45; }
+
+/* Edição explícita de data e hora, estável no seletor nativo do iPhone. */
+.time-entry input[readonly] { cursor:pointer; }
+.execution-time-dialog input { min-width:0; width:100%; min-height:48px; font-size:16px; }
+.execution-time-tools { display:flex; flex-wrap:wrap; gap:8px; }
+.execution-time-dialog .cloud-dialog-actions .button { min-height:44px; }

@@ -128,6 +128,7 @@
   // -- e isso leva segundos. Enquanto isso, qualquer redesenho que troque o
   // innerHTML da lista destroi o elemento e joga fora o que ja foi digitado.
   function isEditingField() {
+    if (document.querySelector?.(".execution-time-dialog[open]")) return true;
     const active = document.activeElement;
     if (!active) return false;
     if (active.isContentEditable) return true;
@@ -236,6 +237,33 @@
     dialog.setAttribute("aria-labelledby", "substeps-dialog-title");
     dialog.querySelector("[data-cancel]").addEventListener("click", () => dialog.close());
     dialog.querySelector("[data-confirm]").addEventListener("click", () => { dialog.close(); onConfirm(); });
+  }
+
+  // O seletor vive fora da lista de etapas: atualizações não desmontam seus campos.
+  function openExecutionTimeEditor({ value = "", field, stepName, onSave }) {
+    const parts = stampParts(value) || stampParts(nowStamp());
+    const label = field === "actualEnd" ? "Fim realizado" : "Início realizado";
+    const dialog = createDialog("execution-time-dialog", '<form class="cloud-dialog-content"><h2 id="execution-time-title">' + label + '</h2><p id="execution-time-description">' + escapeHtml(stepName || "Etapa") + ' · Escolha a data e o horário e toque em Salvar.</p><label class="field"><span>Data</span><input name="date" type="date" required value="' + escapeHtml(parts.date) + '"></label><label class="field"><span>Horário (hora e minutos)</span><input name="time" type="time" step="60" required value="' + escapeHtml(parts.clock) + '"></label><div class="execution-time-tools"><button class="button button-ghost" type="button" data-current-time>Usar horário atual</button>' + (value ? '<button class="button button-ghost" type="button" data-clear-time>Limpar horário</button>' : '') + '</div><div class="cloud-dialog-actions"><button class="button button-ghost" type="button" data-cancel-time>Cancelar</button><button class="button button-secondary" type="submit">Salvar</button></div></form>');
+    dialog.setAttribute("aria-labelledby", "execution-time-title");
+    dialog.setAttribute("aria-describedby", "execution-time-description");
+    const form = dialog.querySelector("form");
+    const close = () => { if (dialog.open) dialog.close(); };
+    dialog.querySelector("[data-cancel-time]").addEventListener("click", close);
+    dialog.querySelector("[data-current-time]").addEventListener("click", () => {
+      const now = stampParts(nowStamp());
+      form.elements.date.value = now.date;
+      form.elements.time.value = now.clock;
+    });
+    dialog.querySelector("[data-clear-time]")?.addEventListener("click", () => {
+      if (onSave("", close)) close();
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      const stamp = form.elements.date.value + "T" + form.elements.time.value;
+      if (onSave(stamp, close)) close();
+    });
+    return dialog;
   }
 
   function blankStep() {
@@ -3368,12 +3396,12 @@
                 <div class="time-entry">
                   <label for="realizado-inicio-${step.id}">Início</label>
                   <button class="now-button" type="button" data-now="actualStart" ${disabled}>Agora</button>
-                  <input id="realizado-inicio-${step.id}" data-field="actualStart" type="datetime-local" value="${escapeHtml(stampInput(step.actualStart))}" aria-label="Data e hora de início realizado da etapa ${index + 1}" ${disabled}>
+                  <input id="realizado-inicio-${step.id}" data-field="actualStart" type="datetime-local" readonly aria-haspopup="dialog" value="${escapeHtml(stampInput(step.actualStart))}" aria-label="Data e hora de início realizado da etapa ${index + 1}" ${disabled}>
                 </div>
                 <div class="time-entry">
                   <label for="realizado-fim-${step.id}">Fim</label>
                   <button class="now-button" type="button" data-now="actualEnd" ${step.actualStart && !skipped && !executionClosed ? "" : "disabled"}>Agora</button>
-                  <input id="realizado-fim-${step.id}" data-field="actualEnd" type="datetime-local" value="${escapeHtml(stampInput(step.actualEnd))}" aria-label="Data e hora de fim realizado da etapa ${index + 1}" ${step.actualStart && !skipped && !executionClosed ? "" : "disabled"}>
+                  <input id="realizado-fim-${step.id}" data-field="actualEnd" type="datetime-local" readonly aria-haspopup="dialog" value="${escapeHtml(stampInput(step.actualEnd))}" aria-label="Data e hora de fim realizado da etapa ${index + 1}" ${step.actualStart && !skipped && !executionClosed ? "" : "disabled"}>
                 </div>
               </div>
               <small class="realized-duration${durationOverClass(step, status.nowAbs)}" data-step-duration>${escapeHtml(realizedDurationText)}</small>
@@ -3628,7 +3656,7 @@
       }
     }
 
-    function updateActualTime(step, field, value, confirmedPending = false) {
+    function updateActualTime(step, field, value, confirmedPending = false, onConfirmed = () => {}) {
       if (plan.status === "completed") return false;
       const previous = step[field];
       if (isStepSkipped(step)) {
@@ -3654,6 +3682,7 @@
         step[field] = previous;
         confirmPendingSubsteps(step, () => {
           if (updateActualTime(step, field, value, true)) {
+            onConfirmed();
             showToast("Fim realizado registrado. As subetapas pendentes foram mantidas.");
             agendarRedesenho();
           }
@@ -3712,7 +3741,34 @@
       }, 0);
     }
 
+    function editActualTime(input) {
+      if (!input || input.disabled || plan.status === "completed") return;
+      const stepId = input.closest("[data-step-id]")?.dataset.stepId;
+      const step = plan.steps.find((item) => item.id === stepId);
+      if (!step) return;
+      const planId = plan.id;
+      const field = input.dataset.field;
+      openExecutionTimeEditor({ value: step[field], field, stepName: step.name, onSave: (value, close) => {
+        const currentStep = plan.id === planId && plan.steps.find((item) => item.id === stepId);
+        if (!currentStep) { showToast("A etapa mudou. Reabra o horário para continuar."); return false; }
+        const saved = updateActualTime(currentStep, field, value, false, close);
+        if (saved) {
+          showToast(value ? "Horário realizado registrado em " + stampHuman(value) + "." : "Horário realizado removido.");
+          agendarRedesenho();
+        }
+        return saved;
+      }});
+    }
+
+    root.addEventListener("keydown", (event) => {
+      if ((event.key === "Enter" || event.key === " ") && event.target.matches('input[type="datetime-local"][readonly]')) {
+        event.preventDefault();
+        editActualTime(event.target);
+      }
+    });
+
     root.addEventListener("click", (event) => {
+      if (event.target.matches('input[type="datetime-local"][readonly]')) { editActualTime(event.target); return; }
       const button = event.target.closest("[data-now], [data-step-action]");
       if (!button) return;
       if (plan.status === "completed") return;
@@ -5617,7 +5673,7 @@
       photoRotation, reusePhotoUrls, withSignedPhotoUrls, openPhotoViewer, closePhotoViewer,
       photoPhase, phaseAcceptsPhotos, photosPage, PHOTO_PHASES, PHOTO_PHASE_LABELS,
       blankPlan, blankStep, normalizePlan, planToDatabase, databaseToPlan, stepsToDatabase,
-      executionReportHtml, planningReportHtml, substepsOf, substepsHtml, pendingSubsteps, mergeStep, confirmPendingSubsteps,
+      openExecutionTimeEditor, executionReportHtml, planningReportHtml, substepsOf, substepsHtml, pendingSubsteps, mergeStep, confirmPendingSubsteps,
       frontsOf, frontLabel, nextFrontPosition, propagateSharedFields, closureCredit,
       ccoGrantMinutes, ccoGrantLabel, planDeadlineStamp, shiftPlanSchedule, hasStartedExecution,
       silenceMinutes, lastOperationalStamp,
