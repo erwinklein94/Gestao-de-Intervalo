@@ -1830,10 +1830,9 @@
 
   // No PDF as miniaturas continuam onde estao, dentro do relato da execucao,
   // e as mesmas fotos voltam no fim em tamanho de leitura, duas por linha.
-  function photoAppendixHtml(photos) {
+  function photoAppendixHtml(photos, { offset = 0, mixedPhases = new Set(photos.map(photoPhase)).size > 1 } = {}) {
     // O anexo da pagina de Fotos ja separa os momentos pelo titulo; quando a
     // lista mistura os tres, cada foto diz a qual momento pertence.
-    const mixedPhases = new Set(photos.map(photoPhase)).size > 1;
     return photos.map((photo, index) => {
       const date = new Date(photo.created_at);
       const dateLabel = Number.isNaN(date.getTime()) ? "" : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
@@ -1841,7 +1840,7 @@
       const credit = `${photo.author_name || "Usuário"}${dateLabel ? ` · ${dateLabel}` : ""}`;
       return `<figure class="print-photo">
         <span class="print-photo-frame" data-rotation="${photoRotation(photo)}"><img src="${escapeHtml(photo.signed_url)}" alt="${escapeHtml(description)}"></span>
-        <figcaption><strong>Foto ${String(index + 1).padStart(2, "0")}${mixedPhases ? ` · ${PHOTO_PHASE_LABELS[photoPhase(photo)]}` : ""}${photo.caption ? ` · ${escapeHtml(photo.caption)}` : ""}</strong><span>${escapeHtml(credit)}</span></figcaption>
+        <figcaption><strong>Foto ${String(index + offset + 1).padStart(2, "0")}${mixedPhases ? ` · ${PHOTO_PHASE_LABELS[photoPhase(photo)]}` : ""}${photo.caption ? ` · ${escapeHtml(photo.caption)}` : ""}</strong><span>${escapeHtml(credit)}</span></figcaption>
       </figure>`;
     }).join("");
   }
@@ -1864,14 +1863,21 @@
 
   // O planejamento e o painel nao carregam fotos para a tela; na exportacao
   // elas sao buscadas sob demanda para que toda planilha tenha a mesma aba.
-  async function planPhotosForExport(plan, known = []) {
+  async function planPhotosForExport(plan, known = [], { strict = false } = {}) {
     if (known.length) return known;
-    if (!plan?.databaseId || !cloudClient || !navigator.onLine) return [];
+    if (!plan?.databaseId) return [];
+    if (!cloudClient || !navigator.onLine) {
+      if (strict) throw new Error("Conecte-se à internet para carregar as fotos do PDF.");
+      return [];
+    }
     try {
       const { data, error } = await cloudClient.from("interval_photos").select("*").eq("plan_id", plan.databaseId).order("created_at");
       if (error) throw error;
-      return await withSignedPhotoUrls(cloudClient, data || []);
+      const signed = await withSignedPhotoUrls(cloudClient, data || []);
+      if (strict && signed.length !== (data || []).length) throw new Error("Não foi possível carregar todas as fotos. Tente exportar novamente.");
+      return signed;
     } catch (error) {
+      if (strict) throw error;
       console.warn("Fotos indisponíveis para a exportação.", error);
       return [];
     }
@@ -2326,6 +2332,43 @@
     };
     window.addEventListener("afterprint", restore);
     waitForPrintImages().then(() => setTimeout(() => window.print(), 80));
+  }
+
+  function dashboardPhotoPagesHtml(photos) {
+    const mixedPhases = new Set(photos.map(photoPhase)).size > 1;
+    const pages = [];
+    for (let offset = 0; offset < photos.length; offset += 2) {
+      pages.push('<section class="dashboard-photo-page"><header><h2>Registro fotográfico</h2><span>Fotos ' + (offset + 1) + (offset + 1 < photos.length ? '–' + Math.min(offset + 2, photos.length) : '') + ' de ' + photos.length + '</span></header><div class="dashboard-photo-pair">' + photoAppendixHtml(photos.slice(offset, offset + 2), { offset, mixedPhases }) + '</div></section>');
+    }
+    return pages.join("");
+  }
+
+  async function exportDashboardPdf(button) {
+    const plan = activePlan();
+    let appendix = null;
+    button.disabled = true;
+    button.textContent = "Carregando fotos…";
+    try {
+      const photos = await planPhotosForExport(plan, [], { strict: true });
+      if (activePlan()?.id !== plan.id) throw new Error("O plano selecionado mudou. Exporte novamente o dashboard desejado.");
+      appendix = document.createElement("div");
+      appendix.className = "dashboard-photo-appendix";
+      appendix.innerHTML = dashboardPhotoPagesHtml(photos);
+      document.querySelector(".dashboard-workspace").append(appendix);
+      await waitForPrintImages(30000);
+      if ([...appendix.querySelectorAll("img")].some((image) => !image.complete || !image.naturalWidth)) {
+        throw new Error("Algumas fotos não carregaram. Tente exportar novamente para incluir todas as imagens.");
+      }
+      if (activePlan()?.id !== plan.id) throw new Error("O plano selecionado mudou. Exporte novamente o dashboard desejado.");
+      window.addEventListener("afterprint", () => appendix.remove(), { once: true });
+      exportPageToPdf(button, 'dashboard-' + (plan.title || 'intervalo'), "Exportar PDF", "dashboard-printing");
+    } catch (error) {
+      appendix?.remove();
+      button.disabled = false;
+      button.textContent = "Exportar PDF";
+      console.error("Falha ao preparar o PDF do dashboard.", error);
+      showToast(error.message || "Não foi possível carregar as fotos do relatório.");
+    }
   }
 
   async function exportPlanFromButton(button, plan, idleLabel = "Exportar Excel", knownPhotos = []) {
@@ -4094,7 +4137,7 @@
     $("#export-dashboard-xlsx")?.addEventListener("click", async () => {
       try { await exportPlanFromButton($("#export-dashboard-xlsx"), activePlan()); } catch (_) { /* feedback exibido */ }
     });
-    $("#export-dashboard-pdf")?.addEventListener("click", () => exportPageToPdf($("#export-dashboard-pdf"), `dashboard-${activePlan()?.title || "intervalo"}`, "Exportar PDF", "dashboard-printing"));
+    $("#export-dashboard-pdf")?.addEventListener("click", () => exportDashboardPdf($("#export-dashboard-pdf")));
 
     const requestedPlan = new URLSearchParams(location.search).get("plan");
     if (requestedPlan) selectPlan(requestedPlan);
@@ -5511,7 +5554,7 @@
     window.__GESTAO_TEST_API__ = {
       buildTimeline, executionStatus, intervalElapsedTime, operationalDeviation,
       stepScheduleDeviation, wholeMinutes, snapshotSignature, exportPlanToXlsx,
-      photoGalleryHtml, photoAppendixHtml, renderPhotoAppendix, photosSheetXml,
+      dashboardPhotoPagesHtml, photoGalleryHtml, photoAppendixHtml, renderPhotoAppendix, photosSheetXml,
       photoRotation, reusePhotoUrls, withSignedPhotoUrls, openPhotoViewer, closePhotoViewer,
       photoPhase, phaseAcceptsPhotos, photosPage, PHOTO_PHASES, PHOTO_PHASE_LABELS,
       blankPlan, blankStep, normalizePlan, planToDatabase, databaseToPlan, stepsToDatabase,

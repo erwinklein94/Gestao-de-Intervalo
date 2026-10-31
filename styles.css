@@ -2280,3 +2280,21 @@ input[data-field="name"],
 .detail-progress-list > div > span,
 .planning-report td > strong,
 .planning-report .report-chart-row > div > strong { font-weight: 700; }
+
+/* O anexo do dashboard vem depois de todos os gráficos e tabelas. */
+.dashboard-photo-appendix { display:none; }
+@media print {
+  body.dashboard-printing .dashboard-photo-appendix { display:block; }
+  .dashboard-photo-page { break-before:page; page-break-before:always; }
+  .dashboard-photo-page > header { display:flex; justify-content:space-between; align-items:baseline; gap:10mm; margin-bottom:5mm; padding-bottom:3mm; border-bottom:2px solid var(--blue); break-after:avoid; }
+  .dashboard-photo-page > header h2 { margin:0; font-size:16px; color:var(--blue); }
+  .dashboard-photo-page > header span { font-size:10px; color:var(--muted); }
+  .dashboard-photo-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8mm; align-items:start; }
+  .dashboard-photo-pair .print-photo { min-width:0; }
+  .dashboard-photo-pair .print-photo-frame { height:135mm; }
+  .dashboard-photo-pair .print-photo-frame img { width:auto; height:auto; object-fit:contain; }
+  .dashboard-photo-pair .print-photo-frame[data-rotation="90"] img,
+  .dashboard-photo-pair .print-photo-frame[data-rotation="270"] img { max-width:125mm; max-height:125mm; }
+  .dashboard-photo-pair figcaption strong { font-size:10px; line-height:1.35; }
+  .dashboard-photo-pair figcaption span { font-size:9px; line-height:1.3; }
+}

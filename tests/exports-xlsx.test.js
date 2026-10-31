@@ -111,3 +111,16 @@ test("Excel gerencial contém escopo, indicadores e gráficos filtráveis", asyn
   assert.match(sheet, /Encerrado por/);
   assert.match(sheet, /Concessão do CCO/);
 });
+
+test("PDF do dashboard pagina fotos em pares mantendo ordem, legendas e orientação", () => {
+  const api = loadAppApi();
+  assert.equal(api.dashboardPhotoPagesHtml([]), "");
+  const photos = Array.from({length:5}, (_,i)=>({id:'p'+i,caption:'Registro <'+i+'>',phase:['before','during','after'][i%3],rotation:i===1?90:0,signed_url:'https://example.invalid/photo'+i,author_name:'Equipe',created_at:'2026-10-31T10:00:00'}));
+  const html=api.dashboardPhotoPagesHtml(photos);
+  const pages=html.split('<section class="dashboard-photo-page">').slice(1);
+  assert.equal(pages.length,3);
+  assert.deepEqual(pages.map(page=>(page.match(/class="print-photo"/g)||[]).length),[2,2,1]);
+  assert.ok(pages[0].includes('Foto 01')); assert.ok(pages[1].includes('Foto 04')); assert.ok(pages[2].includes('Foto 05'));
+  assert.ok(pages[0].includes('data-rotation="90"'));
+  assert.ok(pages[2].includes('Durante')); assert.ok(pages[2].includes('Registro &lt;4&gt;'));
+});
