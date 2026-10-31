@@ -124,3 +124,19 @@ test("PDF do dashboard pagina fotos em pares mantendo ordem, legendas e orienta�
   assert.ok(pages[0].includes('data-rotation="90"'));
   assert.ok(pages[2].includes('Durante')); assert.ok(pages[2].includes('Registro &lt;4&gt;'));
 });
+
+test("PDF da execução apresenta dados estáticos, subetapas e registros sem controles", () => {
+  const api=loadAppApi();
+  const plan=api.blankPlan('Teste de execução',{date:'2026-10-31',windowStart:'2026-10-31T08:00',windowEnd:'2026-10-31T12:00',ccoGrantMinutes:30});
+  plan.steps=[{...api.blankStep(),name:'Atividade principal',plannedStart:'2026-10-31T08:00',plannedEnd:'2026-10-31T09:00',actualStart:'2026-10-31T08:10',actualEnd:'2026-10-31T09:10',actualNotes:'Inspeção concluída',substeps:[{id:'sub',name:'Conferir apoio',description:'Descrição breve',done:true}]}];
+  plan.executionNotes='Comunicação com o CCO mantida.';
+  const comments=[{author_name:'Operador',author_role:'coordinator',content:'Registro permanente',created_at:'2026-10-31T09:15:00'},{content:'Apagado',deleted_at:'2026-10-31T09:16:00'}];
+  const before=JSON.stringify(plan);
+  const html=api.executionReportHtml(plan,comments);
+  for(const value of ['EXECUÇÃO','Atividade principal','08:10','09:10','1h 00min','Inspeção concluída','Conferir apoio','Descrição breve','Comunicação com o CCO mantida.','Registro permanente','12:30']) assert.ok(html.includes(value),value);
+  assert.ok(!/<(input|textarea|select|button|form)\b/i.test(html));
+  assert.ok(!html.includes('Apagado'));
+  assert.equal(JSON.stringify(plan),before);
+  plan.steps[0].actualEnd='';
+  assert.ok(api.executionReportHtml(plan).includes('Em andamento'));
+});

@@ -2283,7 +2283,7 @@
     ]);
   }
 
-  function planningReportHtml(plan) {
+  function planningReportHtml(plan, { execution = false } = {}) {
     const timeline = buildTimeline(plan);
     const text = (value) => escapeHtml(value || "—");
     const fields = [
@@ -2291,7 +2291,7 @@
       ["Frente", frontLabel(plan)], ["Local", plan.location],
       ["Tipo de serviço", plan.serviceType], ["Responsável", plan.coordinator],
       ["Contratada", plan.contractorName], ["Encarregado", plan.foremanName],
-      ["Situação", plan.locked ? "Planejamento confirmado" : "Em planejamento"]
+      ["Situação", execution ? (plan.status === "completed" ? "Encerrado" : hasExecutionData(plan) ? "Em execução" : "Aguardando início") : plan.locked ? "Planejamento confirmado" : "Em planejamento"]
     ];
     const substeps = (step) => substepsOf(step).filter((item) => !item.deleted).map((item) =>
       '<li><span>' + text(item.name) + '</span>' + (item.description ? '<small>' + text(item.description) + '</small>' : '') + '</li>').join("");
@@ -2301,7 +2301,7 @@
     const end = Math.max(timeline.windowEnd ?? -Infinity, ...valid.map((step) => step.end));
     const span = end - start;
     const chart = span > 0 && Number.isFinite(span) ? '<div class="report-chart-axis"><span>' + absoluteToTime(start) + '</span><span>' + absoluteToTime(start + span / 2) + '</span><span>' + absoluteToTime(end) + '</span></div>' + valid.map((step) => '<div class="report-chart-row"><div><strong>' + text(step.name) + '</strong>' + substepsHtml(step, "gantt") + '</div><div class="report-chart-track"><i style="left:' + ((step.start - start) / span * 100) + '%;width:' + Math.max(.5, (step.end - step.start) / span * 100) + '%"></i></div><span>' + text(stampShort(step.plannedStart)) + '–' + text(stampShort(step.plannedEnd)) + '</span></div>').join("") : '<p>Preencha os horários para visualizar a linha do tempo.</p>';
-    return '<header class="report-header"><div><p>GESTÃO DE INTERVALO / PLANEJAMENTO</p><h1>' + text(plan.title || "Planejamento do intervalo") + '</h1></div><span>' + text(frontLabel(plan)) + '</span></header>' +
+    return '<header class="report-header"><div><p>GESTÃO DE INTERVALO / ' + (execution ? 'EXECUÇÃO' : 'PLANEJAMENTO') + '</p><h1>' + text(plan.title || "Planejamento do intervalo") + '</h1></div><span>' + text(frontLabel(plan)) + '</span></header>' +
       '<dl class="report-details">' + fields.map(([label, value]) => '<div><dt>' + label + '</dt><dd>' + text(value) + '</dd></div>').join("") + '</dl>' +
       '<div class="report-window"><div><span>Janela programada</span><strong>' + text(stampHuman(plan.windowStart)) + ' → ' + text(stampHuman(plan.windowEnd)) + '</strong></div><div><span>Duração da janela</span><strong>' + formatMinutes(timeline.duration) + '</strong></div>' + (ccoGrantMinutes(plan) ? '<div><span>Concessão CCO</span><strong>+' + text(ccoGrantLabel(plan)) + '</strong></div><div><span>Prazo final</span><strong>' + text(stampHuman(planDeadlineStamp(plan))) + '</strong></div>' : '') + '</div>' +
       '<section class="report-schedule"><h2>Etapas programadas <span>' + plan.steps.length + ' etapas</span></h2><table><colgroup><col style="width:5%"><col style="width:47%"><col style="width:19%"><col style="width:19%"><col style="width:10%"></colgroup><thead><tr><th>Ordem</th><th>Atividade e subetapas</th><th>Início</th><th>Fim</th><th>Duração</th></tr></thead><tbody>' + (rows || '<tr><td colspan="5">Nenhuma etapa cadastrada.</td></tr>') + '</tbody></table></section>' +
@@ -2368,6 +2368,65 @@
       button.textContent = "Exportar PDF";
       console.error("Falha ao preparar o PDF do dashboard.", error);
       showToast(error.message || "Não foi possível carregar as fotos do relatório.");
+    }
+  }
+
+  function executionReportHtml(plan, comments = []) {
+    const timeline = buildTimeline(plan);
+    const status = executionStatus(plan, timeline);
+    const text = (value) => escapeHtml(value || "—");
+    const elapsed = intervalElapsedTime(timeline, status.nowAbs);
+    const header = planningReportHtml(plan, { execution: true }).split('<section class="report-schedule">')[0];
+    const summary = [
+      ["Progresso", status.resolved.length + " / " + status.steps.length + " etapas"],
+      ["Tempo gasto", formatMinutes(elapsed.minutes)],
+      ["Etapas em andamento", String(status.active.length)],
+      ["Etapas em atraso", String(status.lateNow.length)],
+      ["Término previsto", status.projectedEnd == null ? "—" : stampHuman(absoluteToStamp(status.projectedEnd, plan.date))],
+      ["Saldo da frente", status.operational.value == null ? "Aguardando início" : (wholeMinutes(status.operational.value) > 0 ? "+" : wholeMinutes(status.operational.value) < 0 ? "−" : "") + formatMinutes(Math.abs(status.operational.value))]
+    ];
+    const rows = timeline.steps.map((step, index) => {
+      const skipped = isStepSkipped(step);
+      const state = skipped ? "Não executada" : isStepComplete(step) ? "Concluída" : step.actualStart ? "Em andamento" : "Aguardando";
+      const deviation = stepScheduleDeviation(step, status.nowAbs);
+      const duration = step.actualDuration ?? (step.actualStartMinutes != null && status.nowAbs != null && !skipped ? Math.max(0, status.nowAbs - step.actualStartMinutes) : null);
+      const notes = [step.actualNotes, step.skipReason].filter(Boolean).filter((value, i, list) => list.indexOf(value) === i).join("\n");
+      return '<tr><td class="report-order">' + String(index + 1).padStart(2,"0") + '</td><td><strong>' + text(step.name) + '</strong>' + substepsHtml(step) + (notes ? '<p class="execution-report-note">' + text(notes) + '</p>' : '') + '</td><td class="report-time">' + text(stampHuman(step.plannedStart)) + '<br>' + text(stampHuman(step.plannedEnd)) + '<small>' + formatMinutes(step.duration) + '</small></td><td class="report-time">' + (skipped ? 'Não executada' : text(step.actualStart ? stampHuman(step.actualStart) : '') + '<br>' + text(step.actualEnd ? stampHuman(step.actualEnd) : step.actualStart ? 'Em andamento' : '')) + '</td><td class="report-time">' + formatMinutes(duration) + '</td><td class="report-time">' + (deviation == null || skipped ? '—' : (wholeMinutes(deviation) > 0 ? '+' : wholeMinutes(deviation) < 0 ? '−' : '') + formatMinutes(Math.abs(deviation))) + '</td><td><span class="execution-report-state">' + state + '</span></td></tr>';
+    }).join("");
+    const visible = comments.filter((comment) => !comment.deleted_at);
+    const commentHtml = visible.map((comment) => '<article class="execution-report-comment"><header><strong>' + text(comment.author_name) + '</strong><span>' + text(roleLabel(comment.author_role, comment.author_role_gender)) + ' · ' + text(comment.created_at ? new Date(comment.created_at).toLocaleString("pt-BR") : '') + (comment.pending ? ' · Pendente de sincronização' : '') + '</span></header><p>' + text(comment.content) + '</p></article>').join("");
+    return header + '<div class="execution-report-summary">' + summary.map(([label,value]) => '<div><span>' + label + '</span><strong>' + text(value) + '</strong></div>').join("") + '</div>' +
+      '<section><h2>Programado x realizado</h2><table><colgroup><col style="width:5%"><col style="width:32%"><col style="width:15%"><col style="width:15%"><col style="width:10%"><col style="width:10%"><col style="width:13%"></colgroup><thead><tr><th>Ordem</th><th>Atividade e registros</th><th>Programado<br>Início / fim</th><th>Realizado<br>Início / fim</th><th>Duração real</th><th>Desvio</th><th>Situação</th></tr></thead><tbody>' + (rows || '<tr><td colspan="7">Nenhuma etapa cadastrada.</td></tr>') + '</tbody></table></section>' +
+      (plan.notes ? '<section class="report-notes"><h2>Observações do planejamento</h2><p>' + text(plan.notes) + '</p></section>' : '') +
+      '<section class="report-notes"><h2>Registro geral da execução</h2><p>' + text(plan.executionNotes || 'Nenhuma observação registrada.') + '</p></section>' +
+      '<section><h2>Comentários da execução</h2>' + (commentHtml || '<p>Nenhum comentário registrado.</p>') + '</section>' +
+      (plan.completedAt ? '<p class="execution-report-credit">Encerrado por ' + text(closureCredit(plan)) + '</p>' : '');
+  }
+
+  async function exportExecutionPdf(button, plan, comments) {
+    const snapshot = JSON.parse(JSON.stringify(plan));
+    const savedComments = JSON.parse(JSON.stringify(comments));
+    let report = null;
+    button.disabled = true;
+    button.textContent = "Preparando relatório…";
+    try {
+      const photos = await planPhotosForExport(snapshot, [], { strict: true });
+      if (activePlan()?.id !== snapshot.id) throw new Error("A frente selecionada mudou. Exporte novamente a execução desejada.");
+      report = document.createElement("article");
+      report.className = "planning-report execution-report";
+      report.innerHTML = executionReportHtml(snapshot, savedComments) + dashboardPhotoPagesHtml(photos);
+      document.body.append(report);
+      await waitForPrintImages(30000);
+      if ([...report.querySelectorAll("img")].some((image) => !image.complete || !image.naturalWidth)) throw new Error("Algumas fotos não carregaram. Tente exportar novamente.");
+      if (activePlan()?.id !== snapshot.id) throw new Error("A frente selecionada mudou. Exporte novamente a execução desejada.");
+      window.addEventListener("afterprint", () => report.remove(), { once: true });
+      exportPageToPdf(button, 'execucao-' + (snapshot.title || 'intervalo'), "Exportar PDF", "execution-printing");
+    } catch (error) {
+      report?.remove();
+      button.disabled = false;
+      button.textContent = "Exportar PDF";
+      console.error("Falha ao preparar o PDF da execução.", error);
+      showToast(error.message || "Não foi possível gerar o relatório da execução.");
     }
   }
 
@@ -3808,7 +3867,7 @@
     $("#export-execution-xlsx").addEventListener("click", async () => {
       try { await exportPlanFromButton($("#export-execution-xlsx"), plan, "Exportar Excel", photos); } catch (_) { /* feedback exibido */ }
     });
-    $("#print-button").addEventListener("click", () => exportPageToPdf($("#print-button"), `execucao-${plan.title || "intervalo"}`, "Exportar PDF", "execution-printing"));
+    $("#print-button").addEventListener("click", () => exportExecutionPdf($("#print-button"), plan, comments));
 
     finishButton?.addEventListener("click", async () => {
       if (!isOperatorRole(currentProfile?.role) || plan.status === "completed") return;
@@ -5558,7 +5617,7 @@
       photoRotation, reusePhotoUrls, withSignedPhotoUrls, openPhotoViewer, closePhotoViewer,
       photoPhase, phaseAcceptsPhotos, photosPage, PHOTO_PHASES, PHOTO_PHASE_LABELS,
       blankPlan, blankStep, normalizePlan, planToDatabase, databaseToPlan, stepsToDatabase,
-      planningReportHtml, substepsOf, substepsHtml, pendingSubsteps, mergeStep, confirmPendingSubsteps,
+      executionReportHtml, planningReportHtml, substepsOf, substepsHtml, pendingSubsteps, mergeStep, confirmPendingSubsteps,
       frontsOf, frontLabel, nextFrontPosition, propagateSharedFields, closureCredit,
       ccoGrantMinutes, ccoGrantLabel, planDeadlineStamp, shiftPlanSchedule, hasStartedExecution,
       silenceMinutes, lastOperationalStamp,
